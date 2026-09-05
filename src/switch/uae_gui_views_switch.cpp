@@ -21,10 +21,9 @@
 #include "gui.h"
 #include "cfgfile.h"
 #include "cdrom.h"
-#include "whdload_manager.h"
 #include "hdf_manager.h"
 #include "midi_synth.h"
-
+#include "autoconf.h"
 
 #include <SDL_image.h>
 
@@ -60,26 +59,534 @@ static volatile int s_switch_ftp_running = 0;
 static int s_switch_server_fd = -1;
 static pthread_t s_switch_ftp_thread;
 
-static void ftp_resolve_path(const char *v_cwd, const char *arg, char *out_fs, size_t out_sz) {
-    char combined[768];
-    if (!arg || arg[0] == '\0') {
-        snprintf(combined, sizeof(combined), "%s", v_cwd);
-    } else if (arg[0] == '/') {
-        snprintf(combined, sizeof(combined), "%s", arg);
-    } else {
-        if (strcmp(v_cwd, "/") == 0) {
-            snprintf(combined, sizeof(combined), "/%s", arg);
-        } else {
-            snprintf(combined, sizeof(combined), "%s/%s", v_cwd, arg);
+#define MAX_FTP_CLIENTS 8
+static int s_switch_client_fds[MAX_FTP_CLIENTS] = { -1, -1, -1, -1, -1, -1, -1, -1 };
+static pthread_mutex_t s_switch_clients_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static void switch_ftp_register_client(int fd) {
+    pthread_mutex_lock(&s_switch_clients_mutex);
+    for (int i = 0; i < MAX_FTP_CLIENTS; i++) {
+        if (s_switch_client_fds[i] < 0) {
+            s_switch_client_fds[i] = fd;
+            break;
         }
     }
-    if (combined[0] == '/' && (combined[1] == '\0' || (combined[1] == '.' && combined[2] == '\0'))) {
-        snprintf(out_fs, out_sz, ".");
-    } else if (combined[0] == '/') {
-        snprintf(out_fs, out_sz, ".%s", combined);
-    } else {
-        snprintf(out_fs, out_sz, "./%s", combined);
+    pthread_mutex_unlock(&s_switch_clients_mutex);
+}
+
+static void switch_ftp_unregister_client(int fd) {
+    pthread_mutex_lock(&s_switch_clients_mutex);
+    for (int i = 0; i < MAX_FTP_CLIENTS; i++) {
+        if (s_switch_client_fds[i] == fd) {
+            s_switch_client_fds[i] = -1;
+            break;
+        }
     }
+    pthread_mutex_unlock(&s_switch_clients_mutex);
+}
+
+/*
+ * The FTP root is the Switch SD card.  Older versions exposed the process
+ * working directory as "/" and added a fake "sdmc" entry to LIST output.
+ * That made clients which issue CWD / after login operate on a different
+ * root than the one shown by the server.  Keep /sdmc as a compatibility
+ * alias while keeping "/" mapped to the application's working directory.
+ */
+static void ftp_normalize_virtual_path(const char *v_cwd, const char *arg, char *out, size_t out_sz) {
+    char combined[768];
+    char normalized[768] = "/";
+    const char *p;
+
+    if (!arg || arg[0] == '\0') {
+        snprintf(combined, sizeof(combined), "%s", v_cwd ? v_cwd : "/");
+    } else if (arg[0] == '/') {
+        snprintf(combined, sizeof(combined), "%s", arg);
+    } else if (v_cwd && strcmp(v_cwd, "/") != 0) {
+        snprintf(combined, sizeof(combined), "%s/%s", v_cwd, arg);
+    } else {
+        snprintf(combined, sizeof(combined), "/%s", arg);
+    }
+
+    p = combined;
+    while (*p) {
+        const char *segment;
+        size_t segment_len;
+        char *last_slash;
+        size_t used;
+
+        while (*p == '/') p++;
+        if (*p == '\0') break;
+        segment = p;
+        while (*p && *p != '/') p++;
+        segment_len = (size_t)(p - segment);
+
+        if (segment_len == 1 && segment[0] == '.') continue;
+        if (segment_len == 2 && segment[0] == '.' && segment[1] == '.') {
+            last_slash = strrchr(normalized + 1, '/');
+            if (last_slash)
+                *last_slash = '\0';
+            else
+                normalized[1] = '\0';
+            continue;
+        }
+
+        used = strlen(normalized);
+        if (used > 1) {
+            if (used + 1 + segment_len >= sizeof(normalized)) break;
+            normalized[used++] = '/';
+        } else {
+            if (used + segment_len >= sizeof(normalized)) break;
+        }
+        memcpy(normalized + used, segment, segment_len);
+        normalized[used + segment_len] = '\0';
+    }
+
+    snprintf(out, out_sz, "%s", normalized);
+}
+
+static void ftp_resolve_path(const char *v_cwd, const char *arg, char *out_fs, size_t out_sz) {
+    char virtual_path[768];
+    ftp_normalize_virtual_path(v_cwd, arg, virtual_path, sizeof(virtual_path));
+    if (strcmp(virtual_path, "/sdmc") == 0 || strcmp(virtual_path, "/sdmc/") == 0) {
+        snprintf(out_fs, out_sz, "sdmc:/");
+    } else if (strncmp(virtual_path, "/sdmc/", 6) == 0) {
+        snprintf(out_fs, out_sz, "sdmc:/%s", virtual_path + 6);
+    } else if (strcmp(virtual_path, "/") == 0) {
+        snprintf(out_fs, out_sz, "./");
+    } else {
+        snprintf(out_fs, out_sz, ".%s", virtual_path);
+    }
+}
+
+static void ftp_ensure_dir(const char *path) {
+    char buffer[512];
+    strncpy(buffer, path, sizeof(buffer) - 1);
+    buffer[sizeof(buffer) - 1] = '\0';
+    for (char *p = buffer; *p; p++) {
+        if (*p == '\\') *p = '/';
+    }
+    char *start = buffer;
+    if (strncmp(buffer, "sdmc:/", 6) == 0) {
+        start = buffer + 6;
+    } else if (strncmp(buffer, "./", 2) == 0) {
+        start = buffer + 2;
+    }
+    for (char *p = start; *p; p++) {
+        if (*p == '/') {
+            *p = '\0';
+            mkdir(buffer, 0777);
+            *p = '/';
+        }
+    }
+    mkdir(buffer, 0777);
+}
+
+static int ftp_accept_data(int *pasv_fd_ptr) {
+    if (!pasv_fd_ptr || *pasv_fd_ptr < 0) return -1;
+    struct sockaddr_in d_addr;
+    socklen_t d_len = sizeof(d_addr);
+    struct timeval tv;
+    tv.tv_sec = 5;
+    tv.tv_usec = 0;
+    fd_set rfds;
+    FD_ZERO(&rfds);
+    FD_SET(*pasv_fd_ptr, &rfds);
+    int s = select(*pasv_fd_ptr + 1, &rfds, NULL, NULL, &tv);
+    if (s <= 0) {
+        close(*pasv_fd_ptr);
+        *pasv_fd_ptr = -1;
+        return -1;
+    }
+    int data_client = accept(*pasv_fd_ptr, (struct sockaddr*)&d_addr, &d_len);
+    close(*pasv_fd_ptr);
+    *pasv_fd_ptr = -1;
+    return data_client;
+}
+
+struct FtpClientContext {
+    int client_fd;
+};
+
+static void* switch_ftp_client_session(void *arg) {
+    FtpClientContext *ctx = (FtpClientContext*)arg;
+    int client_fd = ctx->client_fd;
+    free(ctx);
+    switch_ftp_register_client(client_fd);
+
+    struct timeval ctv;
+    ctv.tv_sec = 2;
+    ctv.tv_usec = 0;
+    setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &ctv, sizeof(ctv));
+
+    const char *welcome = "220 UAE4All2 HD Switch FTP Server Ready\r\n";
+    send(client_fd, welcome, strlen(welcome), 0);
+
+    char buf[1024];
+    char pending[4096];
+    size_t pending_len = 0;
+    int pasv_fd = -1;
+    char v_cwd[512] = "/";
+
+    while (s_switch_ftp_running) {
+        size_t line_len = 0;
+        bool have_line = false;
+        bool disconnected = false;
+
+        /* TCP may split or combine commands; process exactly one line at a time. */
+        while (!have_line) {
+            char *newline = (char*)memchr(pending, '\n', pending_len);
+            if (newline) {
+                line_len = (size_t)(newline - pending) + 1;
+                have_line = true;
+                break;
+            }
+            if (pending_len >= sizeof(pending) - 1) {
+                const char *err = "500 Command line too long.\r\n";
+                send(client_fd, err, strlen(err), 0);
+                pending_len = 0;
+                continue;
+            }
+            int len = recv(client_fd, pending + pending_len, sizeof(pending) - pending_len - 1, 0);
+            if (len <= 0) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    continue;
+                }
+                pending_len = 0;
+                disconnected = true;
+                break;
+            }
+            pending_len += (size_t)len;
+            pending[pending_len] = '\0';
+        }
+        if (!have_line) {
+            if (!s_switch_ftp_running || disconnected) break;
+            continue;
+        }
+        if (line_len >= sizeof(buf)) {
+            const char *err = "500 Command line too long.\r\n";
+            send(client_fd, err, strlen(err), 0);
+        } else {
+            memcpy(buf, pending, line_len);
+            buf[line_len] = '\0';
+        }
+        memmove(pending, pending + line_len, pending_len - line_len);
+        pending_len -= line_len;
+        if (line_len >= sizeof(buf)) continue;
+
+        char *p = buf;
+        while (*p == ' ' || *p == '\t') p++;
+        char *cmd = p;
+        while (*p && *p != ' ' && *p != '\t' && *p != '\r' && *p != '\n') p++;
+        if (*p) {
+            *p++ = '\0';
+            while (*p == ' ' || *p == '\t') p++;
+        }
+        char *arg_val = p;
+        char *end = arg_val + strlen(arg_val);
+        while (end > arg_val && (*(end-1) == '\r' || *(end-1) == '\n' || *(end-1) == ' ')) {
+            *(--end) = '\0';
+        }
+        if (arg_val[0] == '\0') arg_val = NULL;
+        if (arg_val && arg_val[0] == '"') {
+            arg_val++;
+            char *q = strrchr(arg_val, '"');
+            if (q) *q = '\0';
+        }
+        if (arg_val && arg_val[0] == '\0') arg_val = NULL;
+        if (cmd[0] == '\0') continue;
+
+        if (strcasecmp(cmd, "USER") == 0 || strcasecmp(cmd, "PASS") == 0) {
+            const char *res = "230 User logged in.\r\n";
+            send(client_fd, res, strlen(res), 0);
+        } else if (strcasecmp(cmd, "SYST") == 0) {
+            const char *res = "215 UNIX Type: L8\r\n";
+            send(client_fd, res, strlen(res), 0);
+        } else if (strcasecmp(cmd, "FEAT") == 0) {
+            const char *res = "211-Features:\r\n PASV\r\n EPSV\r\n UTF8\r\n SIZE\r\n MDTM\r\n REST STREAM\r\n211 End\r\n";
+            send(client_fd, res, strlen(res), 0);
+        } else if (strcasecmp(cmd, "OPTS") == 0) {
+            const char *res = "200 UTF8 enabled.\r\n";
+            send(client_fd, res, strlen(res), 0);
+        } else if (strcasecmp(cmd, "NOOP") == 0) {
+            const char *res = "200 OK.\r\n";
+            send(client_fd, res, strlen(res), 0);
+        } else if (strcasecmp(cmd, "PWD") == 0) {
+            char res[256];
+            snprintf(res, sizeof(res), "257 \"%s\" is current directory\r\n", v_cwd);
+            send(client_fd, res, strlen(res), 0);
+        } else if (strcasecmp(cmd, "TYPE") == 0) {
+            const char *res = "200 Type set to I.\r\n";
+            send(client_fd, res, strlen(res), 0);
+        } else if (strcasecmp(cmd, "REST") == 0) {
+            const char *res = "350 Restart position accepted (0).\r\n";
+            send(client_fd, res, strlen(res), 0);
+        } else if (strcasecmp(cmd, "PASV") == 0) {
+            if (pasv_fd >= 0) close(pasv_fd);
+            pasv_fd = socket(AF_INET, SOCK_STREAM, 0);
+            int opt = 1;
+            setsockopt(pasv_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+            struct sockaddr_in p_addr;
+            memset(&p_addr, 0, sizeof(p_addr));
+            p_addr.sin_family = AF_INET;
+            p_addr.sin_addr.s_addr = INADDR_ANY;
+            p_addr.sin_port = 0;
+            bind(pasv_fd, (struct sockaddr*)&p_addr, sizeof(p_addr));
+            listen(pasv_fd, 1);
+
+            socklen_t addr_len = sizeof(p_addr);
+            getsockname(pasv_fd, (struct sockaddr*)&p_addr, &addr_len);
+            int assigned_port = ntohs(p_addr.sin_port);
+
+            unsigned int ip1 = 127, ip2 = 0, ip3 = 0, ip4 = 1;
+            sscanf(s_switch_ftp_ip, "%u.%u.%u.%u", &ip1, &ip2, &ip3, &ip4);
+            char pasv_res[128];
+            snprintf(pasv_res, sizeof(pasv_res), "227 Entering Passive Mode (%u,%u,%u,%u,%d,%d)\r\n",
+                     ip1, ip2, ip3, ip4, assigned_port >> 8, assigned_port & 0xFF);
+            send(client_fd, pasv_res, strlen(pasv_res), 0);
+        } else if (strcasecmp(cmd, "EPSV") == 0) {
+            if (pasv_fd >= 0) close(pasv_fd);
+            pasv_fd = socket(AF_INET, SOCK_STREAM, 0);
+            int opt = 1;
+            setsockopt(pasv_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+            struct sockaddr_in p_addr;
+            memset(&p_addr, 0, sizeof(p_addr));
+            p_addr.sin_family = AF_INET;
+            p_addr.sin_addr.s_addr = INADDR_ANY;
+            p_addr.sin_port = 0;
+            bind(pasv_fd, (struct sockaddr*)&p_addr, sizeof(p_addr));
+            listen(pasv_fd, 1);
+
+            socklen_t addr_len = sizeof(p_addr);
+            getsockname(pasv_fd, (struct sockaddr*)&p_addr, &addr_len);
+            int assigned_port = ntohs(p_addr.sin_port);
+
+            char epsv_res[128];
+            snprintf(epsv_res, sizeof(epsv_res), "229 Entering Extended Passive Mode (|||%d|)\r\n", assigned_port);
+            send(client_fd, epsv_res, strlen(epsv_res), 0);
+        } else if (strcasecmp(cmd, "LIST") == 0 || strcasecmp(cmd, "NLST") == 0) {
+            const char *res = "150 Opening data connection for directory list.\r\n";
+            send(client_fd, res, strlen(res), 0);
+
+            int data_client = ftp_accept_data(&pasv_fd);
+            if (data_client >= 0) {
+                char fs_path[768];
+                const char *target = (arg_val && arg_val[0] != '-') ? arg_val : "";
+                ftp_resolve_path(v_cwd, target, fs_path, sizeof(fs_path));
+                DIR *d = opendir(fs_path);
+                if (!d) {
+                    char with_slash[780];
+                    snprintf(with_slash, sizeof(with_slash), "%s/", fs_path);
+                    d = opendir(with_slash);
+                }
+                if (d) {
+                    struct dirent *de;
+                    size_t plen = strlen(fs_path);
+                    bool has_slash = (plen > 0 && fs_path[plen - 1] == '/');
+                    while ((de = readdir(d)) != NULL) {
+                        if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0) continue;
+                        char lbuf[512];
+                        char fullp[768];
+                        if (has_slash)
+                            snprintf(fullp, sizeof(fullp), "%s%s", fs_path, de->d_name);
+                        else
+                            snprintf(fullp, sizeof(fullp), "%s/%s", fs_path, de->d_name);
+                        struct stat st;
+                        memset(&st, 0, sizeof(st));
+                        stat(fullp, &st);
+                        bool is_d = S_ISDIR(st.st_mode);
+                        snprintf(lbuf, sizeof(lbuf), "%crwxr-xr-x 1 root root %llu Jan 01 2026 %s\r\n",
+                                 is_d ? 'd' : '-', (unsigned long long)st.st_size, de->d_name);
+                        send(data_client, lbuf, strlen(lbuf), 0);
+                    }
+                    closedir(d);
+                }
+                close(data_client);
+                const char *done = "226 Directory send OK.\r\n";
+                send(client_fd, done, strlen(done), 0);
+            } else {
+                const char *err = "425 Can't open data connection.\r\n";
+                send(client_fd, err, strlen(err), 0);
+            }
+        } else if (strcasecmp(cmd, "CWD") == 0) {
+            char new_cwd[512];
+            ftp_normalize_virtual_path(v_cwd, arg_val, new_cwd, sizeof(new_cwd));
+
+            if (strcmp(new_cwd, "/") == 0) {
+                strncpy(v_cwd, new_cwd, sizeof(v_cwd) - 1);
+                v_cwd[sizeof(v_cwd) - 1] = '\0';
+                const char *res = "250 Directory successfully changed.\r\n";
+                send(client_fd, res, strlen(res), 0);
+            } else {
+                char fs_path[768];
+                ftp_resolve_path(new_cwd, "", fs_path, sizeof(fs_path));
+                DIR *test_d = opendir(fs_path);
+                if (!test_d) {
+                    char with_slash[780];
+                    snprintf(with_slash, sizeof(with_slash), "%s/", fs_path);
+                    test_d = opendir(with_slash);
+                }
+                struct stat st;
+                if (test_d || (stat(fs_path, &st) == 0 && S_ISDIR(st.st_mode))) {
+                    if (test_d) closedir(test_d);
+                    strncpy(v_cwd, new_cwd, sizeof(v_cwd) - 1);
+                    v_cwd[sizeof(v_cwd) - 1] = '\0';
+                    const char *res = "250 Directory successfully changed.\r\n";
+                    send(client_fd, res, strlen(res), 0);
+                } else {
+                    const char *err = "550 Directory not found.\r\n";
+                    send(client_fd, err, strlen(err), 0);
+                }
+            }
+        } else if (strcasecmp(cmd, "CDUP") == 0) {
+            ftp_normalize_virtual_path(v_cwd, "..", v_cwd, sizeof(v_cwd));
+            const char *res = "200 Directory changed to parent.\r\n";
+            send(client_fd, res, strlen(res), 0);
+        } else if (strcasecmp(cmd, "MDTM") == 0) {
+            char fullp[768];
+            ftp_resolve_path(v_cwd, arg_val, fullp, sizeof(fullp));
+            struct stat st;
+            if (stat(fullp, &st) == 0) {
+                struct tm *gm = gmtime(&st.st_mtime);
+                char res[128];
+                if (gm) {
+                    snprintf(res, sizeof(res), "213 %04d%02d%02d%02d%02d%02d\r\n",
+                             gm->tm_year + 1900, gm->tm_mon + 1, gm->tm_mday, gm->tm_hour, gm->tm_min, gm->tm_sec);
+                } else {
+                    snprintf(res, sizeof(res), "213 20260101000000\r\n");
+                }
+                send(client_fd, res, strlen(res), 0);
+            } else {
+                const char *err = "550 File not found.\r\n";
+                send(client_fd, err, strlen(err), 0);
+            }
+        } else if (strcasecmp(cmd, "RETR") == 0) {
+            char fullp[768];
+            ftp_resolve_path(v_cwd, arg_val, fullp, sizeof(fullp));
+            FILE *f = fopen(fullp, "rb");
+            if (f) {
+                const char *res = "150 Opening BINARY mode data connection.\r\n";
+                send(client_fd, res, strlen(res), 0);
+                int data_client = ftp_accept_data(&pasv_fd);
+                if (data_client >= 0) {
+                    char *file_buf = (char*)malloc(64 * 1024);
+                    if (file_buf) {
+                        size_t rb;
+                        while (s_switch_ftp_running && (rb = fread(file_buf, 1, 64 * 1024, f)) > 0) {
+                            send(data_client, file_buf, rb, 0);
+                        }
+                        free(file_buf);
+                    }
+                    close(data_client);
+                    const char *done = "226 Transfer complete.\r\n";
+                    send(client_fd, done, strlen(done), 0);
+                } else {
+                    const char *err = "425 Can't open data connection.\r\n";
+                    send(client_fd, err, strlen(err), 0);
+                }
+                fclose(f);
+            } else {
+                const char *err = "550 File not found.\r\n";
+                send(client_fd, err, strlen(err), 0);
+            }
+        } else if (strcasecmp(cmd, "STOR") == 0) {
+            char fullp[768];
+            ftp_resolve_path(v_cwd, arg_val, fullp, sizeof(fullp));
+            char *sep = strrchr(fullp, '/');
+            if (sep) {
+                *sep = '\0';
+                ftp_ensure_dir(fullp);
+                *sep = '/';
+            }
+            FILE *f = fopen(fullp, "wb");
+            if (!f) {
+                remove(fullp);
+                f = fopen(fullp, "wb");
+            }
+            if (!f) {
+                write_log("[SWITCH] FTP: STOR '%s' -> fopen('%s') failed: errno=%d (%s)\n",
+                          arg_val ? arg_val : "", fullp, errno, strerror(errno));
+            }
+            if (f) {
+                const char *res = "150 Ok to send data.\r\n";
+                send(client_fd, res, strlen(res), 0);
+                int data_client = ftp_accept_data(&pasv_fd);
+                if (data_client >= 0) {
+                    char *file_buf = (char*)malloc(64 * 1024);
+                    if (file_buf) {
+                        int rb;
+                        while (s_switch_ftp_running && (rb = recv(data_client, file_buf, 64 * 1024, 0)) > 0) {
+                            fwrite(file_buf, 1, rb, f);
+                        }
+                        free(file_buf);
+                    }
+                    close(data_client);
+                    const char *done = "226 Transfer complete.\r\n";
+                    send(client_fd, done, strlen(done), 0);
+                } else {
+                    const char *err = "425 Can't open data connection.\r\n";
+                    send(client_fd, err, strlen(err), 0);
+                }
+                fclose(f);
+            } else {
+                const char *err = "550 Failed to open file for writing.\r\n";
+                send(client_fd, err, strlen(err), 0);
+            }
+        } else if (strcasecmp(cmd, "DELE") == 0) {
+            char fullp[768];
+            ftp_resolve_path(v_cwd, arg_val, fullp, sizeof(fullp));
+            if (remove(fullp) == 0) {
+                const char *res = "250 File deleted.\r\n";
+                send(client_fd, res, strlen(res), 0);
+            } else {
+                const char *err = "550 Failed to delete file.\r\n";
+                send(client_fd, err, strlen(err), 0);
+            }
+        } else if (strcasecmp(cmd, "MKD") == 0) {
+            char fullp[768];
+            ftp_resolve_path(v_cwd, arg_val, fullp, sizeof(fullp));
+            if (mkdir(fullp, 0777) == 0) {
+                char res[512];
+                snprintf(res, sizeof(res), "257 \"%s\" created.\r\n", arg_val ? arg_val : "directory");
+                send(client_fd, res, strlen(res), 0);
+            } else {
+                const char *err = "550 Failed to create directory.\r\n";
+                send(client_fd, err, strlen(err), 0);
+            }
+        } else if (strcasecmp(cmd, "RMD") == 0) {
+            char fullp[768];
+            ftp_resolve_path(v_cwd, arg_val, fullp, sizeof(fullp));
+            if (rmdir(fullp) == 0) {
+                const char *res = "250 Directory removed.\r\n";
+                send(client_fd, res, strlen(res), 0);
+            } else {
+                const char *err = "550 Failed to remove directory.\r\n";
+                send(client_fd, err, strlen(err), 0);
+            }
+        } else if (strcasecmp(cmd, "SIZE") == 0) {
+            char fullp[768];
+            ftp_resolve_path(v_cwd, arg_val, fullp, sizeof(fullp));
+            struct stat st;
+            if (stat(fullp, &st) == 0 && S_ISREG(st.st_mode)) {
+                char res[128];
+                snprintf(res, sizeof(res), "213 %llu\r\n", (unsigned long long)st.st_size);
+                send(client_fd, res, strlen(res), 0);
+            } else {
+                const char *err = "550 Could not get file size.\r\n";
+                send(client_fd, err, strlen(err), 0);
+            }
+        } else if (strcasecmp(cmd, "QUIT") == 0) {
+            const char *res = "221 Goodbye.\r\n";
+            send(client_fd, res, strlen(res), 0);
+            break;
+        } else {
+            const char *res = "502 Command not implemented.\r\n";
+            send(client_fd, res, strlen(res), 0);
+        }
+    }
+    if (pasv_fd >= 0) close(pasv_fd);
+    close(client_fd);
+    switch_ftp_unregister_client(client_fd);
+    return NULL;
 }
 
 static void* switch_ftp_thread_func(void *arg) {
@@ -103,292 +610,32 @@ static void* switch_ftp_thread_func(void *arg) {
             continue;
         }
 
-        struct timeval ctv;
-        ctv.tv_sec = 1;
-        ctv.tv_usec = 0;
-        setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &ctv, sizeof(ctv));
-
-        const char *welcome = "220 UAE4All2 HD Switch FTP Server Ready\r\n";
-        send(client_fd, welcome, strlen(welcome), 0);
-
-        char buf[1024];
-        int data_port = 5001;
-        int pasv_fd = -1;
-        char v_cwd[512] = "/";
-
-        while (s_switch_ftp_running) {
-            memset(buf, 0, sizeof(buf));
-            int len = recv(client_fd, buf, sizeof(buf) - 1, 0);
-            if (len <= 0) {
-                if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                    continue;
-                }
-                break;
-            }
-
-            char *cmd = strtok(buf, " \r\n");
-            char *arg_val = strtok(NULL, "\r\n");
-
-            if (!cmd) continue;
-
-            if (strcasecmp(cmd, "USER") == 0 || strcasecmp(cmd, "PASS") == 0) {
-                const char *res = "230 User logged in.\r\n";
-                send(client_fd, res, strlen(res), 0);
-            } else if (strcasecmp(cmd, "SYST") == 0) {
-                const char *res = "215 UNIX Type: L8\r\n";
-                send(client_fd, res, strlen(res), 0);
-            } else if (strcasecmp(cmd, "FEAT") == 0) {
-                const char *res = "211-Features:\r\n PASV\r\n EPSV\r\n UTF8\r\n SIZE\r\n MDTM\r\n211 End\r\n";
-                send(client_fd, res, strlen(res), 0);
-            } else if (strcasecmp(cmd, "OPTS") == 0) {
-                const char *res = "200 UTF8 enabled.\r\n";
-                send(client_fd, res, strlen(res), 0);
-            } else if (strcasecmp(cmd, "NOOP") == 0) {
-                const char *res = "200 OK.\r\n";
-                send(client_fd, res, strlen(res), 0);
-            } else if (strcasecmp(cmd, "PWD") == 0) {
-                char res[256];
-                snprintf(res, sizeof(res), "257 \"%s\" is current directory\r\n", v_cwd);
-                send(client_fd, res, strlen(res), 0);
-            } else if (strcasecmp(cmd, "TYPE") == 0) {
-                const char *res = "200 Type set to I.\r\n";
-                send(client_fd, res, strlen(res), 0);
-            } else if (strcasecmp(cmd, "PASV") == 0) {
-                if (pasv_fd >= 0) close(pasv_fd);
-                pasv_fd = socket(AF_INET, SOCK_STREAM, 0);
-                int opt = 1;
-                setsockopt(pasv_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-                struct sockaddr_in p_addr;
-                memset(&p_addr, 0, sizeof(p_addr));
-                p_addr.sin_family = AF_INET;
-                p_addr.sin_addr.s_addr = INADDR_ANY;
-                p_addr.sin_port = htons(data_port);
-                bind(pasv_fd, (struct sockaddr*)&p_addr, sizeof(p_addr));
-                listen(pasv_fd, 1);
-
-                unsigned int ip1 = 127, ip2 = 0, ip3 = 0, ip4 = 1;
-                sscanf(s_switch_ftp_ip, "%u.%u.%u.%u", &ip1, &ip2, &ip3, &ip4);
-                char pasv_res[128];
-                snprintf(pasv_res, sizeof(pasv_res), "227 Entering Passive Mode (%u,%u,%u,%u,%d,%d)\r\n",
-                         ip1, ip2, ip3, ip4, data_port >> 8, data_port & 0xFF);
-                send(client_fd, pasv_res, strlen(pasv_res), 0);
-            } else if (strcasecmp(cmd, "EPSV") == 0) {
-                if (pasv_fd >= 0) close(pasv_fd);
-                pasv_fd = socket(AF_INET, SOCK_STREAM, 0);
-                int opt = 1;
-                setsockopt(pasv_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-                struct sockaddr_in p_addr;
-                memset(&p_addr, 0, sizeof(p_addr));
-                p_addr.sin_family = AF_INET;
-                p_addr.sin_addr.s_addr = INADDR_ANY;
-                p_addr.sin_port = htons(data_port);
-                bind(pasv_fd, (struct sockaddr*)&p_addr, sizeof(p_addr));
-                listen(pasv_fd, 1);
-                char epsv_res[128];
-                snprintf(epsv_res, sizeof(epsv_res), "229 Entering Extended Passive Mode (|||%d|)\r\n", data_port);
-                send(client_fd, epsv_res, strlen(epsv_res), 0);
-            } else if (strcasecmp(cmd, "LIST") == 0 || strcasecmp(cmd, "NLST") == 0) {
-                const char *res = "150 Opening data connection for directory list.\r\n";
-                send(client_fd, res, strlen(res), 0);
-
-                int data_client = -1;
-                if (pasv_fd >= 0) {
-                    struct sockaddr_in d_addr;
-                    socklen_t d_len = sizeof(d_addr);
-                    data_client = accept(pasv_fd, (struct sockaddr*)&d_addr, &d_len);
-                    close(pasv_fd);
-                    pasv_fd = -1;
-                }
-
-                if (data_client >= 0) {
-                    char fs_path[768];
-                    ftp_resolve_path(v_cwd, "", fs_path, sizeof(fs_path));
-                    DIR *d = opendir(fs_path);
-                    if (d) {
-                        struct dirent *de;
-                        while ((de = readdir(d)) != NULL) {
-                            if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0) continue;
-                            char lbuf[512];
-                            char fullp[768];
-                            snprintf(fullp, sizeof(fullp), "%s/%s", fs_path, de->d_name);
-                            struct stat st;
-                            memset(&st, 0, sizeof(st));
-                            stat(fullp, &st);
-                            bool is_d = S_ISDIR(st.st_mode);
-                            snprintf(lbuf, sizeof(lbuf), "%crwxr-xr-x 1 root root %llu Jan 01 2026 %s\r\n",
-                                     is_d ? 'd' : '-', (unsigned long long)st.st_size, de->d_name);
-                            send(data_client, lbuf, strlen(lbuf), 0);
-                        }
-                        closedir(d);
-                    }
-                    close(data_client);
-                    const char *done = "226 Directory send OK.\r\n";
-                    send(client_fd, done, strlen(done), 0);
-                } else {
-                    const char *err = "425 Can't open data connection.\r\n";
-                    send(client_fd, err, strlen(err), 0);
-                }
-            } else if (strcasecmp(cmd, "CWD") == 0) {
-                if (!arg_val || strcmp(arg_val, "/") == 0) {
-                    strcpy(v_cwd, "/");
-                } else if (strcmp(arg_val, "..") == 0) {
-                    char *last_slash = strrchr(v_cwd, '/');
-                    if (last_slash && last_slash != v_cwd) {
-                        *last_slash = '\0';
-                    } else {
-                        strcpy(v_cwd, "/");
-                    }
-                } else if (arg_val[0] == '/') {
-                    strncpy(v_cwd, arg_val, sizeof(v_cwd) - 1);
-                    v_cwd[sizeof(v_cwd) - 1] = '\0';
-                } else {
-                    if (strcmp(v_cwd, "/") == 0) {
-                        snprintf(v_cwd, sizeof(v_cwd), "/%s", arg_val);
-                    } else {
-                        char tmp[512];
-                        snprintf(tmp, sizeof(tmp), "%s/%s", v_cwd, arg_val);
-                        strncpy(v_cwd, tmp, sizeof(v_cwd) - 1);
-                    }
-                }
-                size_t clen = strlen(v_cwd);
-                if (clen > 1 && v_cwd[clen - 1] == '/') v_cwd[clen - 1] = '\0';
-                const char *res = "250 Directory successfully changed.\r\n";
-                send(client_fd, res, strlen(res), 0);
-            } else if (strcasecmp(cmd, "CDUP") == 0) {
-                char *last_slash = strrchr(v_cwd, '/');
-                if (last_slash && last_slash != v_cwd) {
-                    *last_slash = '\0';
-                } else {
-                    strcpy(v_cwd, "/");
-                }
-                const char *res = "200 Directory changed to parent.\r\n";
-                send(client_fd, res, strlen(res), 0);
-            } else if (strcasecmp(cmd, "MDTM") == 0) {
-                char fullp[768];
-                ftp_resolve_path(v_cwd, arg_val, fullp, sizeof(fullp));
-                struct stat st;
-                if (stat(fullp, &st) == 0) {
-                    struct tm *gm = gmtime(&st.st_mtime);
-                    char res[128];
-                    if (gm) {
-                        snprintf(res, sizeof(res), "213 %04d%02d%02d%02d%02d%02d\r\n",
-                                 gm->tm_year + 1900, gm->tm_mon + 1, gm->tm_mday, gm->tm_hour, gm->tm_min, gm->tm_sec);
-                    } else {
-                        snprintf(res, sizeof(res), "213 20260101000000\r\n");
-                    }
-                    send(client_fd, res, strlen(res), 0);
-                } else {
-                    const char *err = "550 File not found.\r\n";
-                    send(client_fd, err, strlen(err), 0);
-                }
-            } else if (strcasecmp(cmd, "RETR") == 0) {
-                char fullp[768];
-                ftp_resolve_path(v_cwd, arg_val, fullp, sizeof(fullp));
-                FILE *f = fopen(fullp, "rb");
-                if (f) {
-                    const char *res = "150 Opening BINARY mode data connection.\r\n";
-                    send(client_fd, res, strlen(res), 0);
-                    int data_client = -1;
-                    if (pasv_fd >= 0) {
-                        struct sockaddr_in d_addr;
-                        socklen_t d_len = sizeof(d_addr);
-                        data_client = accept(pasv_fd, (struct sockaddr*)&d_addr, &d_len);
-                        close(pasv_fd);
-                        pasv_fd = -1;
-                    }
-                    if (data_client >= 0) {
-                        char file_buf[4096];
-                        size_t rb;
-                        while ((rb = fread(file_buf, 1, sizeof(file_buf), f)) > 0) {
-                            send(data_client, file_buf, rb, 0);
-                        }
-                        close(data_client);
-                        const char *done = "226 Transfer complete.\r\n";
-                        send(client_fd, done, strlen(done), 0);
-                    }
-                    fclose(f);
-                } else {
-                    const char *err = "550 File not found.\r\n";
-                    send(client_fd, err, strlen(err), 0);
-                }
-            } else if (strcasecmp(cmd, "STOR") == 0) {
-                char fullp[768];
-                ftp_resolve_path(v_cwd, arg_val, fullp, sizeof(fullp));
-                FILE *f = fopen(fullp, "wb");
-                if (f) {
-                    const char *res = "150 Ok to send data.\r\n";
-                    send(client_fd, res, strlen(res), 0);
-                    int data_client = -1;
-                    if (pasv_fd >= 0) {
-                        struct sockaddr_in d_addr;
-                        socklen_t d_len = sizeof(d_addr);
-                        data_client = accept(pasv_fd, (struct sockaddr*)&d_addr, &d_len);
-                        close(pasv_fd);
-                        pasv_fd = -1;
-                    }
-                    if (data_client >= 0) {
-                        char file_buf[4096];
-                        int rb;
-                        while ((rb = recv(data_client, file_buf, sizeof(file_buf), 0)) > 0) {
-                            fwrite(file_buf, 1, rb, f);
-                        }
-                        close(data_client);
-                        const char *done = "226 Transfer complete.\r\n";
-                        send(client_fd, done, strlen(done), 0);
-                    }
-                    fclose(f);
-                } else {
-                    const char *err = "550 Failed to open file for writing.\r\n";
-                    send(client_fd, err, strlen(err), 0);
-                }
-            } else if (strcasecmp(cmd, "DELE") == 0) {
-                char fullp[768];
-                ftp_resolve_path(v_cwd, arg_val, fullp, sizeof(fullp));
-                remove(fullp);
-                const char *res = "250 File deleted.\r\n";
-                send(client_fd, res, strlen(res), 0);
-            } else if (strcasecmp(cmd, "MKD") == 0) {
-                char fullp[768];
-                ftp_resolve_path(v_cwd, arg_val, fullp, sizeof(fullp));
-                mkdir(fullp, 0777);
-                char res[512];
-                snprintf(res, sizeof(res), "257 \"%s\" created.\r\n", arg_val ? arg_val : "directory");
-                send(client_fd, res, strlen(res), 0);
-            } else if (strcasecmp(cmd, "RMD") == 0) {
-                char fullp[768];
-                ftp_resolve_path(v_cwd, arg_val, fullp, sizeof(fullp));
-                rmdir(fullp);
-                const char *res = "250 Directory removed.\r\n";
-                send(client_fd, res, strlen(res), 0);
-            } else if (strcasecmp(cmd, "SIZE") == 0) {
-                char fullp[768];
-                ftp_resolve_path(v_cwd, arg_val, fullp, sizeof(fullp));
-                struct stat st;
-                if (stat(fullp, &st) == 0) {
-                    char res[128];
-                    snprintf(res, sizeof(res), "213 %llu\r\n", (unsigned long long)st.st_size);
-                    send(client_fd, res, strlen(res), 0);
-                } else {
-                    const char *err = "550 Could not get file size.\r\n";
-                    send(client_fd, err, strlen(err), 0);
-                }
-            } else if (strcasecmp(cmd, "QUIT") == 0) {
-                const char *res = "221 Goodbye.\r\n";
-                send(client_fd, res, strlen(res), 0);
-                break;
+        FtpClientContext *ctx = (FtpClientContext*)malloc(sizeof(FtpClientContext));
+        if (ctx) {
+            ctx->client_fd = client_fd;
+            pthread_t client_tid;
+            if (pthread_create(&client_tid, NULL, switch_ftp_client_session, ctx) == 0) {
+                pthread_detach(client_tid);
             } else {
-                const char *res = "502 Command not implemented.\r\n";
-                send(client_fd, res, strlen(res), 0);
+                free(ctx);
+                close(client_fd);
             }
+        } else {
+            close(client_fd);
         }
-        if (pasv_fd >= 0) close(pasv_fd);
-        close(client_fd);
     }
     return NULL;
 }
 
 static inline int vita_ftp_start(void) {
     if (s_switch_ftp_running) return 0;
+    mkdir("./screenshots", 0777);
+    mkdir("./saves", 0777);
+    mkdir("./roms", 0777);
+    mkdir("./conf", 0777);
+    mkdir("./thumbs", 0777);
+    mkdir("./kickstarts", 0777);
+    mkdir("./tmp", 0777);
     Result rc = nifmInitialize(NifmServiceType_User);
     if (R_SUCCEEDED(rc)) {
         u32 ip_val = 0;
@@ -399,7 +646,6 @@ static inline int vita_ftp_start(void) {
         }
         nifmExit();
     }
-    socketInitializeDefault();
     s_switch_server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (s_switch_server_fd < 0) return -1;
     int opt = 1;
@@ -412,7 +658,6 @@ static inline int vita_ftp_start(void) {
     if (bind(s_switch_server_fd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
         close(s_switch_server_fd);
         s_switch_server_fd = -1;
-        socketExit();
         return -1;
     }
     listen(s_switch_server_fd, 4);
@@ -429,8 +674,17 @@ static inline void vita_ftp_stop(void) {
         close(s_switch_server_fd);
         s_switch_server_fd = -1;
     }
+    pthread_mutex_lock(&s_switch_clients_mutex);
+    for (int i = 0; i < MAX_FTP_CLIENTS; i++) {
+        if (s_switch_client_fds[i] >= 0) {
+            shutdown(s_switch_client_fds[i], SHUT_RDWR);
+            close(s_switch_client_fds[i]);
+            s_switch_client_fds[i] = -1;
+        }
+    }
+    pthread_mutex_unlock(&s_switch_clients_mutex);
     pthread_join(s_switch_ftp_thread, NULL);
-    socketExit();
+    SDL_Delay(50);
 }
 
 static inline int vita_ftp_is_running(void) { return s_switch_ftp_running; }
@@ -855,7 +1109,7 @@ void switch_view_floppy(SwitchInputState *input, int *selected_item)
         s_circle_cooldown--;
     for (int i = 0; i < 4; i++)
         disk_set_write_protect(i, mainMenu_floppyWriteProtect[i]);
-    const int total_items = 7;
+    const int total_items = 8;
     if (*selected_item < 0) *selected_item = 0;
     if (*selected_item >= total_items) *selected_item = total_items - 1;
 
@@ -866,6 +1120,21 @@ void switch_view_floppy(SwitchInputState *input, int *selected_item)
     if (input->pressed & SWITCH_BTN_DOWN) {
         (*selected_item)++;
         if (*selected_item >= total_items) *selected_item = 0;
+    }
+
+    if (input->pressed & SWITCH_BTN_LEFT) {
+        if (*selected_item == 7) {
+            mainMenu_diskSoundVolume -= 5;
+            if (mainMenu_diskSoundVolume < 0) mainMenu_diskSoundVolume = 0;
+            disk_sound_set_volume(mainMenu_diskSoundVolume);
+        }
+    }
+    if (input->pressed & SWITCH_BTN_RIGHT) {
+        if (*selected_item == 7) {
+            mainMenu_diskSoundVolume += 5;
+            if (mainMenu_diskSoundVolume > 100) mainMenu_diskSoundVolume = 100;
+            disk_sound_set_volume(mainMenu_diskSoundVolume);
+        }
     }
 
     if (input->pressed & SWITCH_BTN_A) {
@@ -880,7 +1149,13 @@ void switch_view_floppy(SwitchInputState *input, int *selected_item)
             s_circle_cooldown = 3;
             if (res == 1) {
                 write_log("[VITA] floppy: selected DF%d path=%s\n", *selected_item, new_file);
-                if (*selected_item == 0) copy_drive_path(uae4all_image_file0, new_file);
+                if (*selected_item == 0) {
+                    copy_drive_path(uae4all_image_file0, new_file);
+                    mainMenu_whdload_game[0] = '\0';
+                    uae4all_hard_dir[0] = '\0';
+                    mainMenu_bootHD = 0;
+                    reset_hdConf();
+                }
                 if (*selected_item == 1) copy_drive_path(uae4all_image_file1, new_file);
                 if (*selected_item == 2) copy_drive_path(uae4all_image_file2, new_file);
                 if (*selected_item == 3) copy_drive_path(uae4all_image_file3, new_file);
@@ -912,6 +1187,9 @@ void switch_view_floppy(SwitchInputState *input, int *selected_item)
             uae4all_image_file2[0] = '\0';
             uae4all_image_file3[0] = '\0';
             gui_update();
+        } else if (*selected_item == 7) {
+            mainMenu_diskSoundVolume = (mainMenu_diskSoundVolume >= 100) ? 0 : (mainMenu_diskSoundVolume + 25);
+            disk_sound_set_volume(mainMenu_diskSoundVolume);
         }
     }
 
@@ -931,6 +1209,14 @@ void switch_view_floppy(SwitchInputState *input, int *selected_item)
     }
 
     if (input->pressed & SWITCH_BTN_X) {
+        if (uae4all_image_file0[0] != '\0') {
+            mainMenu_whdload_game[0] = '\0';
+            uae4all_hard_dir[0] = '\0';
+            mainMenu_bootHD = 0;
+            reset_hdConf();
+            ApplyAutomaticGamePreset(0);
+            switch_set_kickstart(kickstart, 0);
+        }
         mainMenu_case = MAIN_MENU_CASE_RESET;
     }
 
@@ -953,7 +1239,7 @@ void switch_view_floppy(SwitchInputState *input, int *selected_item)
         snprintf(drive_tag, sizeof(drive_tag), "DF%d", i);
         switch_draw_badge(card_x + 14.0f, cy + 18.0f, drive_tag, has_disk ? SWITCH_COLOR_AMIGA_RED : RGBA8(40, 50, 70, 255), SWITCH_COLOR_TEXT_WHITE);
 
-        switch_draw_text(card_x + 64.0f, cy + 10.0f, SWITCH_COLOR_TEXT_MUTED, 0.85f, drive_labels[i]);
+        switch_draw_text(card_x + 64.0f, cy + 10.0f, focused ? SWITCH_COLOR_TEXT_WHITE : SWITCH_COLOR_TEXT_MUTED, 0.85f, drive_labels[i]);
 
         char filename_buf[128];
         switch_truncate_text(get_filename_only(drive_files[i]), card_w - 200.0f, 1.00f, filename_buf, sizeof(filename_buf));
@@ -974,6 +1260,9 @@ void switch_view_floppy(SwitchInputState *input, int *selected_item)
 
     float swap_y = spd_y + 50.0f;
     switch_draw_switch_item(card_x, swap_y, card_w, 38.0f, "Swap DF0 / DF1", s_swap_active, *selected_item == 6);
+
+    float vol_y = swap_y + 44.0f;
+    switch_draw_slider_item(card_x, vol_y, card_w, 42.0f, "Floppy Sound Volume", mainMenu_diskSoundVolume, 0, 100, "%", *selected_item == 7);
 }
 
 static int s_hdf_mgr_slot = -1;
@@ -1390,23 +1679,7 @@ static void whdload_cover_load(const char *game_name)
         strncpy(s_whdload_cover_game, game_name, sizeof(s_whdload_cover_game) - 1);
 }
 
-static void whdload_install_flow(void)
-{
-    char archive_path[512];
-    char installed_path[512];
-    archive_path[0] = '\0';
-    installed_path[0] = '\0';
-    int result = switch_gui_run_browser(archive_path, currentDir, 11);
-    if (result == 1) {
-        if (switch_whdload_install_lha(archive_path, installed_path, sizeof(installed_path))) {
-            switch_show_message_box("WHDLoad Installed", "The LHA archive was extracted to the WHDLoad library.", "OK (A)");
-        } else {
-            char err_buf[300];
-            snprintf(err_buf, sizeof(err_buf), "The LHA archive could not be extracted.\n%s", switch_whdload_get_last_error());
-            switch_show_message_box("Installation Failed", err_buf, "OK (A)");
-        }
-    }
-}
+static void whdload_install_flow(void);
 
 #define WHDLOAD_FAVORITES_FILE "./data/favorites.txt"
 #define WHDLOAD_RECENT_FILE    "./data/recent.txt"
@@ -1589,9 +1862,9 @@ static int vita_confirm_eject_for_whdload_launch(void)
 
 static void whdload_ensure_game_dir(const char *game)
 {
-    mkdir("./data/saves", 0777);
+    mkdir(SAVE_PREFIX, 0777);
     char dir[256];
-    snprintf(dir, sizeof(dir), "./data/saves/%s", game);
+    snprintf(dir, sizeof(dir), "%s%s", SAVE_PREFIX, game);
     mkdir(dir, 0777);
 }
 
@@ -1606,7 +1879,7 @@ static char whdload_get_entry_letter(const char *name)
     return (char)toupper((unsigned char)name[idx]);
 }
 
-static int whdload_find_next_letter_index(char games[64][128], const int *vis_index, int vis_count, int cur_vis_idx, int direction)
+static int whdload_find_next_letter_index(char games[][128], const int *vis_index, int vis_count, int cur_vis_idx, int direction)
 {
     if (vis_count <= 1) return 0;
     if (cur_vis_idx < 0) cur_vis_idx = 0;
@@ -1635,14 +1908,58 @@ static int whdload_find_next_letter_index(char games[64][128], const int *vis_in
     }
 }
 
+static void whdload_install_flow(void)
+{
+    char archive_path[512];
+    char installed_path[512];
+    archive_path[0] = '\0';
+    installed_path[0] = '\0';
+    int result = switch_gui_run_browser(archive_path, currentDir, 11);
+    if (result == 1) {
+        if (switch_whdload_install_lha(archive_path, installed_path, sizeof(installed_path))) {
+            const char *folder = strrchr(installed_path, '/');
+            folder = folder ? folder + 1 : installed_path;
+            if (folder && folder[0]) {
+                if (switch_whdload_can_launch(folder)) {
+                    if (vita_confirm_eject_for_whdload_launch()) {
+                        filesys_prepare_reset();
+                        filesys_reset();
+
+                        strncpy(mainMenu_whdload_game, folder, sizeof(mainMenu_whdload_game) - 1);
+                        mainMenu_whdload_game[sizeof(mainMenu_whdload_game) - 1] = '\0';
+                        whdload_ensure_game_dir(folder);
+                        whdload_mark_recent(folder);
+
+                        strncpy(uae4all_hard_dir, switch_whdload_root(), 255);
+                        uae4all_hard_dir[255] = '\0';
+                        ApplyAutomaticGamePreset(2);
+                        switch_set_kickstart(kickstart, 0);
+
+                        switch_whdload_prepare_launch(folder);
+
+                        gui_update();
+                        mainMenu_case = MAIN_MENU_CASE_RESET;
+                        return;
+                    }
+                }
+            }
+            switch_show_message_box("WHDLoad Installed", "The LHA archive was extracted to the WHDLoad library.", "OK (A)");
+        } else {
+            char err_buf[300];
+            snprintf(err_buf, sizeof(err_buf), "The LHA archive could not be extracted.\n%s", switch_whdload_get_last_error());
+            switch_show_message_box("Installation Failed", err_buf, "OK (A)");
+        }
+    }
+}
+
 void switch_view_whdload(SwitchInputState *input, int *selected_item)
 {
-    char games[64][128];
-    int game_count = switch_whdload_list(games, 64);
+    static char games[256][128];
+    int game_count = switch_whdload_list(games, 256);
 
     whdload_refresh_meta();
 
-    int vis_index[64];
+    static int vis_index[256];
     int vis_count = 0;
     for (int k = 0; k < game_count; k++) {
         bool keep;
@@ -1685,9 +2002,6 @@ void switch_view_whdload(SwitchInputState *input, int *selected_item)
         const char *game = games[vis_index[*selected_item - 5]];
         strncpy(s_whdload_last_game, game, sizeof(s_whdload_last_game) - 1);
         s_whdload_last_game[sizeof(s_whdload_last_game) - 1] = '\0';
-        strncpy(mainMenu_whdload_game, game, sizeof(mainMenu_whdload_game) - 1);
-        mainMenu_whdload_game[sizeof(mainMenu_whdload_game) - 1] = '\0';
-        whdload_ensure_game_dir(game);
         whdload_cover_load(game);
     } else {
         whdload_cover_unload();
@@ -1738,9 +2052,12 @@ void switch_view_whdload(SwitchInputState *input, int *selected_item)
             s_whdload_filter = (s_whdload_filter + 1) % 3;
         } else {
             const char *game_name = games[vis_index[*selected_item - 5]];
-            if (switch_whdload_prepare_launch(game_name)) {
+            if (switch_whdload_can_launch(game_name)) {
                 if (!vita_confirm_eject_for_whdload_launch())
                     return;
+
+                filesys_prepare_reset();
+                filesys_reset();
 
                 strncpy(mainMenu_whdload_game, game_name, sizeof(mainMenu_whdload_game) - 1);
                 mainMenu_whdload_game[sizeof(mainMenu_whdload_game) - 1] = '\0';
@@ -1752,10 +2069,12 @@ void switch_view_whdload(SwitchInputState *input, int *selected_item)
                 ApplyAutomaticGamePreset(2);
                 switch_set_kickstart(kickstart, 0);
 
+                switch_whdload_prepare_launch(game_name);
+
                 gui_update();
-                mainMenu_case = MAIN_MENU_CASE_RUN;
+                mainMenu_case = MAIN_MENU_CASE_RESET;
             } else {
-                switch_show_message_box("WHDLoad Error", "No .slave file was found or the startup script could not be prepared.", "OK (A)");
+                switch_show_message_box("WHDLoad Error", "No .slave file was found in the game directory.", "OK (A)");
             }
         }
     }
@@ -2081,6 +2400,7 @@ void switch_view_hardware(SwitchInputState *input, int *selected_item)
         int res = switch_gui_run_browser(new_file, currentDir, 8);
         if (res == 1) {
             if (cdrom_open_image(new_file)) {
+                mainMenu_whdload_game[0] = '\0';
                 ApplyCd32Profile();
                 switch_set_kickstart(kickstart, 0);
                 bReloadKickstart = 1;
@@ -2994,12 +3314,12 @@ void switch_view_savestates(SwitchInputState *input, int *selected_item)
             if (exp_name && exp_name[0] != '\0') {
                 char out_asf[300];
                 char out_png[300];
-                snprintf(out_asf, sizeof(out_asf), "./data/saves/%s.asf", exp_name);
-                snprintf(out_png, sizeof(out_png), "./data/saves/%s.png", exp_name);
+                snprintf(out_asf, sizeof(out_asf), "%s%s.asf", SAVE_PREFIX, exp_name);
+                snprintf(out_png, sizeof(out_png), "%s%s.png", SAVE_PREFIX, exp_name);
                 vita_copy_file(state_path, out_asf);
                 if (vita_savestate_file_exists(thumb_path))
                     vita_copy_file(thumb_path, out_png);
-                switch_show_message_box("Export Complete", "Save state and preview exported to ./data/saves/", "OK (A)");
+                switch_show_message_box("Export Complete", "Save state and preview exported to ./saves/", "OK (A)");
             }
         }
     }
@@ -3007,7 +3327,7 @@ void switch_view_savestates(SwitchInputState *input, int *selected_item)
     if (do_import) {
         char import_path[512];
         import_path[0] = '\0';
-        int res = switch_gui_run_browser(import_path, "./data/saves", 10);
+        int res = switch_gui_run_browser(import_path, SAVE_PREFIX, 10);
         if (res == 1 && import_path[0] != '\0') {
             char state_path[256];
             char thumb_path[256];
@@ -3162,22 +3482,22 @@ void switch_view_savestates(SwitchInputState *input, int *selected_item)
         bool f_save = (focused && s_savestate_subaction == 0);
         bool f_load = (focused && s_savestate_subaction == 1);
         switch_draw_card(act_x, row1_y, half_w, btn_h, f_save, false);
-        switch_draw_button_glyph(act_x + 6.0f, row1_y + 5.0f, SWITCH_GLYPH_A);
-        switch_draw_text(act_x + 28.0f, row1_y + 7.0f, f_save ? SWITCH_COLOR_TEXT_WHITE : SWITCH_COLOR_TEXT_MUTED, 0.70f, "SAVE");
+        switch_draw_button_glyph(act_x + 6.0f, row1_y + 4.0f, SWITCH_GLYPH_A);
+        switch_draw_text(act_x + 35.0f, row1_y + 6.0f, f_save ? SWITCH_COLOR_TEXT_WHITE : SWITCH_COLOR_TEXT_MUTED, 0.70f, "SAVE");
 
         switch_draw_card(act_x + half_w + 6.0f, row1_y, half_w, btn_h, f_load, false);
-        switch_draw_button_glyph(act_x + half_w + 8.0f, row1_y + 5.0f, SWITCH_GLYPH_X);
-        switch_draw_text(act_x + half_w + 30.0f, row1_y + 7.0f, f_load ? SWITCH_COLOR_TEXT_WHITE : SWITCH_COLOR_TEXT_MUTED, 0.70f, "LOAD");
+        switch_draw_button_glyph(act_x + half_w + 6.0f, row1_y + 4.0f, SWITCH_GLYPH_X);
+        switch_draw_text(act_x + half_w + 35.0f, row1_y + 6.0f, f_load ? SWITCH_COLOR_TEXT_WHITE : SWITCH_COLOR_TEXT_MUTED, 0.70f, "LOAD");
 
         bool f_exp = (focused && s_savestate_subaction == 2);
         bool f_imp = (focused && s_savestate_subaction == 3);
         switch_draw_card(act_x, row2_y, half_w, btn_h, f_exp, false);
-        switch_draw_button_glyph(act_x + 6.0f, row2_y + 5.0f, SWITCH_GLYPH_Y);
-        switch_draw_text(act_x + 28.0f, row2_y + 7.0f, f_exp ? SWITCH_COLOR_TEXT_WHITE : SWITCH_COLOR_TEXT_MUTED, 0.70f, "EXP");
+        switch_draw_button_glyph(act_x + 6.0f, row2_y + 4.0f, SWITCH_GLYPH_Y);
+        switch_draw_text(act_x + 35.0f, row2_y + 6.0f, f_exp ? SWITCH_COLOR_TEXT_WHITE : SWITCH_COLOR_TEXT_MUTED, 0.70f, "EXP");
 
         switch_draw_card(act_x + half_w + 6.0f, row2_y, half_w, btn_h, f_imp, false);
-        switch_draw_text_centered(act_x + half_w + 6.0f + (half_w * 0.5f), row2_y + 7.0f,
-            f_imp ? SWITCH_COLOR_TEXT_WHITE : SWITCH_COLOR_TEXT_MUTED, 0.70f, "IMP (-)");
+        switch_draw_button_glyph(act_x + half_w + 6.0f, row2_y + 4.0f, SWITCH_GLYPH_MINUS);
+        switch_draw_text(act_x + half_w + 35.0f, row2_y + 6.0f, f_imp ? SWITCH_COLOR_TEXT_WHITE : SWITCH_COLOR_TEXT_MUTED, 0.70f, "IMP");
 
         bool f_del = (focused && s_savestate_subaction == 4);
         switch_draw_card(act_x, row3_y, act_w, btn_h, f_del, false);
@@ -3199,15 +3519,19 @@ void switch_view_ftp(SwitchInputState *input, int *selected_item)
     if (!vita_ftp_is_running() && vita_ftp_start() != 0) {
         switch_show_message_box("FTP Server", "Unable to start FTP service. Check Wi-Fi connection.", "OK (A)");
         s_ftp_modal_active = false;
+        input->pressed = 0;
         return;
     }
 
     vita_ftp_get_ip(ip, sizeof(ip));
     snprintf(endpoint, sizeof(endpoint), "ftp://%s:%d", ip, vita_ftp_get_port());
 
-    if ((input->pressed & SWITCH_BTN_B) || (input->pressed & SWITCH_BTN_A) || (input->pressed & SWITCH_BTN_PLUS) || input->touch_tap) {
+    if ((input->pressed & (SWITCH_BTN_B | SWITCH_BTN_A | SWITCH_BTN_PLUS)) || input->touch_tap) {
         vita_ftp_stop();
         s_ftp_modal_active = false;
+        input->pressed = 0;
+        input->held = 0;
+        SDL_Delay(100);
         return;
     }
 

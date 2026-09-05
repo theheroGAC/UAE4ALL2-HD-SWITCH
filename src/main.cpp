@@ -49,6 +49,9 @@ extern "C" int main( int argc, char *argv[] );
 #include "menu.h" 
 #include "menu_config.h"
 #include "gp2xutil.h"
+#ifdef __SWITCH__
+#include "switch/whdload_manager_switch.h"
+#endif
 /* PocketUAE */
 #include "native2amiga.h"
 
@@ -233,8 +236,14 @@ void reset_all_systems (void)
 {
     init_eventtab ();
     memory_reset ();
-    // the following is a workaround to prevent failed fdopen commands for hdf files
+    filesys_prepare_reset ();
     filesys_reset ();
+#ifdef __SWITCH__
+    if (mainMenu_whdload_game[0] != '\0') {
+        write_log("[SWITCH] reset_all_systems: preparing whdload launch for '%s'\n", mainMenu_whdload_game);
+        switch_whdload_prepare_launch(mainMenu_whdload_game);
+    }
+#endif
     reset_hdConf();
     filesys_start_threads ();
 }
@@ -392,6 +401,7 @@ void real_main (int argc, char **argv)
 	mkdir("./kickstarts", 0777);
 	mkdir("./thumbs", 0777);
 	mkdir("./tmp", 0777);
+	mkdir("./screenshots", 0777);
     strcpy(launchDir, ".");
 #else
 	getcwd(launchDir,250);

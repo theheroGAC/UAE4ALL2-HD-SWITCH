@@ -896,13 +896,17 @@ void switch_draw_button_glyph(float x, float y, SwitchButtonGlyph glyph)
         case SWITCH_GLYPH_PLUS: {
             switch_draw_rounded_rect(x, y, 22.0f, 22.0f, 11.0f, RGBA8(45, 55, 75, 255));
             switch_draw_rounded_rect_outline(x, y, 22.0f, 22.0f, 11.0f, 1.0f, RGBA8(80, 95, 125, 255));
-            switch_draw_text_centered(x + 11.0f, y + 3.0f, SWITCH_COLOR_TEXT_WHITE, 0.95f, "+");
+            SDL_Rect h_bar = { (Sint16)(x + 6.0f), (Sint16)(y + 10.0f), 10, 2 };
+            SDL_Rect v_bar = { (Sint16)(x + 10.0f), (Sint16)(y + 6.0f), 2, 10 };
+            SDL_FillRect(prSDLScreen, &h_bar, to_sdl_color(SWITCH_COLOR_TEXT_WHITE));
+            SDL_FillRect(prSDLScreen, &v_bar, to_sdl_color(SWITCH_COLOR_TEXT_WHITE));
             break;
         }
         case SWITCH_GLYPH_MINUS: {
             switch_draw_rounded_rect(x, y, 22.0f, 22.0f, 11.0f, RGBA8(45, 55, 75, 255));
             switch_draw_rounded_rect_outline(x, y, 22.0f, 22.0f, 11.0f, 1.0f, RGBA8(80, 95, 125, 255));
-            switch_draw_text_centered(x + 11.0f, y + 3.0f, SWITCH_COLOR_TEXT_WHITE, 0.95f, "-");
+            SDL_Rect h_bar = { (Sint16)(x + 6.0f), (Sint16)(y + 10.0f), 10, 2 };
+            SDL_FillRect(prSDLScreen, &h_bar, to_sdl_color(SWITCH_COLOR_TEXT_WHITE));
             break;
         }
         default:
@@ -1048,9 +1052,9 @@ void switch_draw_footer(const char *left_hint, const char *right_hint)
         }
     }
 
-    switch_draw_hint_item(620.0f, btn_y, SWITCH_GLYPH_ZL, "");
-    switch_draw_hint_item(665.0f, btn_y, SWITCH_GLYPH_ZR, "TAB");
-    switch_draw_hint_item(770.0f, btn_y, SWITCH_GLYPH_PLUS, "START / RESUME");
+    switch_draw_hint_item(420.0f, btn_y, SWITCH_GLYPH_PLUS, "START / RESUME");
+    switch_draw_hint_item(790.0f, btn_y, SWITCH_GLYPH_ZL, "");
+    switch_draw_hint_item(835.0f, btn_y, SWITCH_GLYPH_ZR, "TAB");
 }
 
 void switch_draw_button_item_custom(float x, float y, float w, float h, const char *title, const char *subtitle, const char *badge, unsigned int badge_col, bool focused, bool active)
@@ -1325,7 +1329,7 @@ void switch_show_about_box(void)
 {
     static const CreditLine credits[] = {
         { "UAE4ALL2 HD Switch", CR_TITLE },
-        { "Version 1.00 - Amiga Emulator for Nintendo Switch", CR_SUBTITLE },
+        { "Version 1.01 - Amiga Emulator for Nintendo Switch", CR_SUBTITLE },
         { "", CR_EMPTY },
         { "A high-definition port of the classic UAE4ALL Amiga emulator,", CR_TEXT },
         { "now with WHDLoad, HDF, IPF and CD32 support on Switch.", CR_TEXT },
@@ -1814,19 +1818,32 @@ int run_mainMenu_switch(void)
             }
         }
         if (input.pressed & SWITCH_BTN_PLUS) {
+            if (emulating) {
+                mainMenu_case = MAIN_MENU_CASE_RUN;
+                break;
+            }
+
             int automatic_media = -1;
             if (mainMenu_whdload_game[0] != '\0')
                 automatic_media = 2;
             else if (current_cd_image[0] != '\0')
                 automatic_media = 3;
+            else if (uae4all_image_file0[0] != '\0' && mainMenu_bootHD == 0)
+                automatic_media = 0;
+            else if (mainMenu_bootHD == 2 && (uae4all_hard_file0[0] != '\0' || uae4all_hard_file1[0] != '\0' ||
+                     uae4all_hard_file2[0] != '\0' || uae4all_hard_file3[0] != '\0'))
+                automatic_media = 1;
+            else if (mainMenu_bootHD == 1 && uae4all_hard_dir[0] != '\0')
+                automatic_media = 2;
+            else if (uae4all_image_file0[0] != '\0' || uae4all_image_file1[0] != '\0' ||
+                     uae4all_image_file2[0] != '\0' || uae4all_image_file3[0] != '\0')
+                automatic_media = 0;
             else if (uae4all_hard_file0[0] != '\0' || uae4all_hard_file1[0] != '\0' ||
                      uae4all_hard_file2[0] != '\0' || uae4all_hard_file3[0] != '\0')
                 automatic_media = 1;
             else if (uae4all_hard_dir[0] != '\0')
                 automatic_media = 2;
-            else if (uae4all_image_file0[0] != '\0' || uae4all_image_file1[0] != '\0' ||
-                     uae4all_image_file2[0] != '\0' || uae4all_image_file3[0] != '\0')
-                automatic_media = 0;
+
             if ((automatic_media == 1 || automatic_media == 2) && !switch_confirm_eject_for_hard_disk_launch())
                 continue;
             if (automatic_media >= 0 && !emulating) {

@@ -22,6 +22,8 @@ mode_t umask(mode_t mask) { (void)mask; return 0; }
 struct passwd *getpwnam(const char *name) { (void)name; return NULL; }
 struct group *getgrnam(const char *name) { (void)name; return NULL; }
 }
+#include "sysconfig.h"
+#include "sysdeps.h"
 #include "menu_config.h"
 
 static int path_exists(const char *path, int *is_dir)
@@ -743,13 +745,72 @@ static int read_text_file(const char *path, char *buffer, size_t buffer_size)
 
 static int write_text_file(const char *path, const char *text)
 {
+    remove(path);
     FILE *output = fopen(path, "wb");
-    if (!output)
+    if (!output) {
+        write_log("[SWITCH] write_text_file: fopen('%s', 'wb') failed: errno=%d (%s)\n", path, errno, strerror(errno));
         return 0;
+    }
     size_t length = strlen(text);
-    int success = fwrite(text, 1, length, output) == length;
+    size_t written = fwrite(text, 1, length, output);
+    fflush(output);
     fclose(output);
-    return success;
+    write_log("[SWITCH] write_text_file: wrote %zu/%zu bytes to '%s'\n", written, length, path);
+    return (written == length);
+}
+
+static bool contains_case_insensitive(const char *haystack, const char *needle)
+{
+    if (!haystack || !needle) return false;
+    size_t nlen = strlen(needle);
+    if (nlen == 0) return true;
+    for (const char *h = haystack; *h; h++) {
+        if (strncasecmp(h, needle, nlen) == 0)
+            return true;
+    }
+    return false;
+}
+
+static void strip_whdload_lines(char *text)
+{
+    if (!text || text[0] == '\0') return;
+    char *src = text;
+    char *dst = text;
+
+    while (*src) {
+        char *line_start = src;
+        while (*src && *src != '\r' && *src != '\n') {
+            src++;
+        }
+        size_t len = (size_t)(src - line_start);
+
+        char line_buf[512];
+        if (len >= sizeof(line_buf)) len = sizeof(line_buf) - 1;
+        memcpy(line_buf, line_start, len);
+        line_buf[len] = '\0';
+
+        const char *p = line_buf;
+        while (*p == ' ' || *p == '\t') p++;
+
+        bool drop = false;
+        if (contains_case_insensitive(p, "WHDLoad") ||
+            (strncasecmp(p, "CD ", 3) == 0 && contains_case_insensitive(p, "DH0:"))) {
+            drop = true;
+        }
+
+        if (!drop) {
+            if (dst != line_start) {
+                memmove(dst, line_start, src - line_start);
+            }
+            dst += (src - line_start);
+            if (*src == '\r') { *dst++ = *src++; }
+            if (*src == '\n') { *dst++ = *src++; }
+        } else {
+            if (*src == '\r') src++;
+            if (*src == '\n') src++;
+        }
+    }
+    *dst = '\0';
 }
 
 static char *find_endcli(char *text)
@@ -1004,6 +1065,20 @@ static void deploy_whdload_base(void)
     deploy_whdload_file("S/WHDLoad-Cleanup", SWITCH_WHDLOAD_ROOT "/S/WHDLoad-Cleanup");
 }
 
+int switch_whdload_can_launch(const char *game_name)
+{
+    if (!game_name || game_name[0] == '\0' || strchr(game_name, '/') || strchr(game_name, '\\') || strchr(game_name, ':'))
+        return 0;
+
+    char game_root[512];
+    char slave_relative[384];
+    snprintf(game_root, sizeof(game_root), "%s/%s", SWITCH_WHDLOAD_ROOT, game_name);
+    int is_dir = 0;
+    if (!path_exists(game_root, &is_dir) || !is_dir)
+        return 0;
+    return find_slave_recursive(game_root, "", slave_relative, sizeof(slave_relative), 0);
+}
+
 int switch_whdload_prepare_launch(const char *game_name)
 {
     if (!game_name || game_name[0] == '\0' || strchr(game_name, '/') || strchr(game_name, '\\') || strchr(game_name, ':'))
@@ -1036,12 +1111,22 @@ int switch_whdload_prepare_launch(const char *game_name)
     int has_real_workbench = 0;
     if (path_exists(backup_path, NULL)) {
         read_text_file(backup_path, original_startup, 65536);
+        strip_whdload_lines(original_startup);
+        if (original_startup[0] && strstr(original_startup, "SetPatch") != NULL) {
+            has_real_workbench = 1;
+        } else {
+            remove(backup_path);
+            original_startup[0] = '\0';
+        }
     } else if (startup_exists) {
         read_text_file(startup_path, original_startup, 65536);
-    }
-
-    if (original_startup[0] && strstr(original_startup, "SetPatch") != NULL) {
-        has_real_workbench = 1;
+        strip_whdload_lines(original_startup);
+        if (original_startup[0] && strstr(original_startup, "SetPatch") != NULL) {
+            write_text_file(backup_path, original_startup);
+            has_real_workbench = 1;
+        } else {
+            original_startup[0] = '\0';
+        }
     }
 
     char amiga_dir[512];
@@ -1082,16 +1167,23 @@ int switch_whdload_prepare_launch(const char *game_name)
             strcpy(updated_startup + prefix_length + strlen(launch_line), endcli);
         } else {
             strcpy(updated_startup, original_startup);
+            size_t ulen = strlen(updated_startup);
+            if (ulen > 0 && updated_startup[ulen - 1] != '\n') {
+                strcat(updated_startup, "\n");
+            }
             strcat(updated_startup, launch_line);
         }
     } else {
         snprintf(updated_startup, 66000, "%s", launch_line);
     }
 
-    write_text_file(startup_path, updated_startup);
+    remove(startup_path);
+    int ok = write_text_file(startup_path, updated_startup);
+    write_log("[SWITCH] whdload_prepare_launch: game='%s', slave='%s', path='%s', ok=%d\n",
+              game_name, slave_file, startup_path, ok);
     free(updated_startup);
     free(original_startup);
-    return 1;
+    return ok;
 }
 
 int switch_whdload_list(char names[][128], int max_names)

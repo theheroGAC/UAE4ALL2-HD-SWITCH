@@ -893,11 +893,17 @@ void expamem_reset (void)
       do_mount = 0;
 
    if (fastmemory != NULL) {
+      if (savestate_state != STATE_RESTORE) {
+         memset (fastmemory, 0, allocated_fastmem);
+      }
       card_init[cardno] = expamem_init_fastcard;
       card_map[cardno++] = expamem_map_fastcard;
    }
 #if !( defined(PANDORA) || defined(ANDROIDSDL) )
    if (z3fastmem != NULL) {
+      if (savestate_state != STATE_RESTORE) {
+         memset (z3fastmem, 0, allocated_z3fastmem);
+      }
       card_init[cardno] = expamem_init_z3fastmem;
       card_map[cardno++] = expamem_map_z3fastmem;
    }

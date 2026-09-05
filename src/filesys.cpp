@@ -3134,6 +3134,15 @@ void filesys_reset (void)
 
     for (u = units; u; u = u1) {
 	u1 = u->next;
+	Key *k = u->keys;
+	while (k) {
+	    Key *next_k = k->next;
+	    if (k->fd >= 0)
+		close (k->fd);
+	    free (k);
+	    k = next_k;
+	}
+	u->keys = 0;
 	free (u);
     }
     unit_num = 0;
@@ -3156,6 +3165,8 @@ static void free_all_ainos (Unit *u, a_inode *parent)
 
 void filesys_prepare_reset (void)
 {
+    if (current_mountinfo == 0)
+        return;
     UnitInfo *uip = current_mountinfo->ui;
     Unit *u;
     int i;

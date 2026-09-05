@@ -409,6 +409,28 @@ void save_state (char *filename, const char *description)
 #ifdef DEBUG_SAVESTATE
     printf("-->save_state('%s','%s'\n",filename,description);fflush(stdout);
 #endif
+    if (filename && filename[0] != '\0') {
+        char dir_tmp[512];
+        strncpy(dir_tmp, filename, sizeof(dir_tmp) - 1);
+        dir_tmp[sizeof(dir_tmp) - 1] = '\0';
+        char *sep = strrchr(dir_tmp, '/');
+        char *bsep = strrchr(dir_tmp, '\\');
+        if (bsep && (!sep || bsep > sep)) sep = bsep;
+        if (sep) {
+            *sep = '\0';
+            for (char *p = dir_tmp; *p; p++) {
+                if (*p == '\\') *p = '/';
+            }
+            for (char *p = dir_tmp + 1; *p; p++) {
+                if (*p == '/') {
+                    *p = '\0';
+                    mkdir(dir_tmp, 0777);
+                    *p = '/';
+                }
+            }
+            mkdir(dir_tmp, 0777);
+        }
+    }
     f = fopen (filename, "wb");
     if (!f)
 	return;

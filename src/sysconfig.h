@@ -383,12 +383,15 @@
 #undef HAVE_SYS_MOUNT_H
 #undef HAVE_SYS_VFS_H
 #undef HAVE_SYS_STATFS_H
-#ifdef __PSP2__ // NOT __SWITCH__
+#ifdef __PSP2__
 #include <psp2/power.h>
-#endif
 #include "psp2_input.h"
 #ifdef DEBUG_UAE4ALL
 void vita_write_log (const char *, ...);
+#endif
+#endif
+#ifdef __SWITCH__
+#include "switch_input.h"
 #endif
 #endif
 

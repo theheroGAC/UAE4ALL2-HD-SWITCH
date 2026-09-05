@@ -48,7 +48,9 @@
 #include "rpt.h"
 #include "events.h"
 
-#if defined(__PSP2__) || defined(__SWITCH__)
+#if defined(__SWITCH__)
+#define SDL_PollEvent switch_poll_event
+#elif defined(__PSP2__)
 #define SDL_PollEvent PSP2_PollEvent
 #endif
 
@@ -159,10 +161,11 @@ void flush_block ()
 			CreateScreenshot(SCREENSHOT);
 #endif
 		}
-#if defined(__PSP2__)
+#if defined(__PSP2__) || defined(__SWITCH__)
 		if (vita_screenshot_request) {
 			char screenshot_path[256];
-			static unsigned int screenshot_number;
+			static unsigned int screenshot_number = 0;
+#if defined(__PSP2__)
 			mkdir("ux0:/data/uae4all", 0777);
 			mkdir("ux0:/data/uae4all/screenshots", 0777);
 			SDL_UnlockSurface(prSDLScreen);
@@ -171,6 +174,18 @@ void flush_block ()
 			screenshot_number++;
 			snprintf(screenshot_path, sizeof(screenshot_path), "ux0:/data/uae4all/screenshots/shot_%u.png", screenshot_number);
 			save_thumb(SCREENSHOT, screenshot_path);
+#else
+			mkdir("./screenshots", 0777);
+			CreateScreenshot(SCREENSHOT);
+			do {
+				screenshot_number++;
+				snprintf(screenshot_path, sizeof(screenshot_path), "./screenshots/shot_%04u.png", screenshot_number);
+			} while (access(screenshot_path, F_OK) == 0);
+			if (save_thumb(SCREENSHOT, screenshot_path)) {
+				OSD_TriggerDiskSwap(1, false);
+				write_log("[SWITCH] Screenshot saved: %s\n", screenshot_path);
+			}
+#endif
 			vita_screenshot_request = 0;
 		}
 #endif

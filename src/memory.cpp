@@ -1084,7 +1084,21 @@ void memory_reset (void)
 
     allocate_memory ();
 
-//    memset(chipmemory,0,allocated_chipmem);
+    if (savestate_state != STATE_RESTORE)
+    {
+        if (chipmemory) {
+            memset (chipmemory, 0, allocated_chipmem);
+            do_put_mem_long ((uae_u32 *)(chipmemory + 4), 0);
+        }
+        if (bogomemory) {
+            memset (bogomemory, 0, allocated_bogomem);
+        }
+#if !( defined(PANDORA) || defined(ANDROIDSDL) )
+        if (a3000memory) {
+            memset (a3000memory, 0, allocated_a3000mem);
+        }
+#endif
+    }
     clear_fame_mem_dummy();
 
     /* Can't be done here, or we'll lose all the extension/filesys traps that were set up */
@@ -1119,8 +1133,6 @@ void memory_reset (void)
 
     if (bogomemory != 0) {
        int t = allocated_bogomem >> 16;
-
-//       memset(bogomemory,0,allocated_bogomem);
        map_banks (&bogomem_bank, 0xC0, t, allocated_bogomem);
     }
     
