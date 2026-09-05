@@ -1160,10 +1160,12 @@ void set_joyConf()
 void kill_hd_configs()
 {
 	 //properly close all open hdf and hd dirs
-	for (int i = 0; i < mainMenu_filesysUnits; i++) {
-        kill_filesys_unit(currprefs.mountinfo, 0);
-    }
-    mainMenu_filesysUnits = 0;
+	if (currprefs.mountinfo) {
+		while (nr_units(currprefs.mountinfo) > 0) {
+			kill_filesys_unit(currprefs.mountinfo, 0);
+		}
+	}
+	mainMenu_filesysUnits = 0;
 }
 
 void reset_hdConf()
