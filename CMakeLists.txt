@@ -74,7 +74,6 @@ endif(BUILD_PSP2)
 set(TITLEID "UAE4ALLHD")
 
 set(SRC_FILES
-        src/psp2/psp2_input.c
         src/vkbd/vkbd.cpp
         src/audio.cpp
         src/autoconf.cpp
@@ -157,7 +156,6 @@ include_directories(
         ../common/include
         include
         src
-        src/psp2
         src/switch
         src/gp2x
         src/menu
@@ -192,6 +190,7 @@ if(BUILD_PSP2)
   set(SRC_FILES ${PSP2_SRC_FILES} ${SRC_FILES})
 
   include_directories(
+    src/psp2
     ${VITASDK}/arm-vita-eabi/include/SDL
   )
 
@@ -255,6 +254,7 @@ endif(BUILD_PSP2)
 
 if(BUILD_NX)
   set(NX_SRC_FILES
+    src/switch/switch_input.c
     src/switch/switch_touch.c
     src/switch/sdl2_to_sdl1.cpp
     src/switch/switch_kbd.c
@@ -364,9 +364,8 @@ if(BUILD_NX)
   target_link_libraries(${PROJECT_NAME}.elf PRIVATE ${LIBS})
   add_custom_target(${PROJECT_NAME}.nro
     DEPENDS ${PROJECT_NAME}.elf
-    COMMAND ${DEVKITPRO}/tools/bin/nacptool --create "UAE4All2 HD" "theheroGAC" "v1.00" ${PROJECT_NAME}.nacp
+    COMMAND ${DEVKITPRO}/tools/bin/nacptool --create "UAE4All2 HD" "theheroGAC" "v1.01" ${PROJECT_NAME}.nacp
     COMMAND ${DEVKITPRO}/tools/bin/elf2nro ${PROJECT_NAME}.elf uae4all2hd.nro --icon=${CMAKE_SOURCE_DIR}/switchdata/icon0.jpg --nacp=${PROJECT_NAME}.nacp
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different uae4all2hd.nro ${PROJECT_NAME}.nro
   )
   add_custom_target(${PROJECT_NAME}_switch.zip
     DEPENDS ${PROJECT_NAME}.nro
@@ -380,6 +379,7 @@ if(BUILD_NX)
     COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/release/${PROJECT_NAME}/thumbs
     COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/release/${PROJECT_NAME}/tmp
     COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/release/${PROJECT_NAME}/WHDLoad
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/release/${PROJECT_NAME}/screenshots
     COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_BINARY_DIR}/uae4all2hd.nro ${CMAKE_BINARY_DIR}/release/${PROJECT_NAME}/uae4all2hd.nro
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/switchdata/data ${CMAKE_BINARY_DIR}/release/${PROJECT_NAME}/data
     COMMAND ${CMAKE_COMMAND} -E tar cf ${CMAKE_BINARY_DIR}/uae4all2hd_switch.zip --format=zip ${CMAKE_BINARY_DIR}/release/${PROJECT_NAME}

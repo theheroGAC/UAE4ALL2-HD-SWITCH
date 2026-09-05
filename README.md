@@ -1,4 +1,4 @@
-# UAE4ALL2 HD — Nintendo Switch Edition v1.00
+# UAE4ALL2 HD — Nintendo Switch Edition v1.01
 
 A modern, high-performance Nintendo Switch release of **UAE4ALL2 HD**, the Amiga emulator for OCS, ECS, and AGA chipsets.
 
