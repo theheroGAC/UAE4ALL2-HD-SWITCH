@@ -263,11 +263,24 @@ if(BUILD_NX)
     src/switch/uae_gui_browser_switch.cpp
     src/switch/whdload_manager_switch.cpp
     src/switch/hdf_manager_switch.cpp
+    src/switch/m3u_manager.cpp
     src/stb_vorbis.c
   )
   set(SRC_FILES ${NX_SRC_FILES} ${SRC_FILES})
 
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+  set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+  set(CHDR_WANT_TESTS OFF CACHE BOOL "" FORCE)
+  set(INSTALL_STATIC_LIBS OFF CACHE BOOL "" FORCE)
+  add_subdirectory(src/libchdr EXCLUDE_FROM_ALL)
+  target_compile_options(chdr-static PRIVATE -march=armv8-a -mtune=cortex-a57 -mtp=soft -O2 -fPIC)
+  target_compile_options(chdr-lzma PRIVATE -march=armv8-a -mtune=cortex-a57 -mtp=soft -O2 -fPIC)
+  target_compile_options(miniz PRIVATE -march=armv8-a -mtune=cortex-a57 -mtp=soft -O2 -fPIC)
+  target_compile_options(zstd PRIVATE -march=armv8-a -mtune=cortex-a57 -mtp=soft -O2 -fPIC)
+
   include_directories(
+    src/libchdr/include
+    src/libchdr/include/libchdr
     ${DEVKITPRO}/portlibs/switch/include/SDL2
     ${DEVKITPRO}/libnx/include
     ${DEVKITPRO}/portlibs/switch/include
@@ -346,6 +359,7 @@ if(BUILD_NX)
     m
     c
     stdc++
+    chdr-static
   )
 
   foreach(flag ${FLAGS})
@@ -364,7 +378,7 @@ if(BUILD_NX)
   target_link_libraries(${PROJECT_NAME}.elf PRIVATE ${LIBS})
   add_custom_target(${PROJECT_NAME}.nro
     DEPENDS ${PROJECT_NAME}.elf
-    COMMAND ${DEVKITPRO}/tools/bin/nacptool --create "UAE4All2 HD" "theheroGAC" "v1.01" ${PROJECT_NAME}.nacp
+    COMMAND ${DEVKITPRO}/tools/bin/nacptool --create "UAE4All2 HD" "theheroGAC" "v1.02" ${PROJECT_NAME}.nacp
     COMMAND ${DEVKITPRO}/tools/bin/elf2nro ${PROJECT_NAME}.elf uae4all2hd.nro --icon=${CMAKE_SOURCE_DIR}/switchdata/icon0.jpg --nacp=${PROJECT_NAME}.nacp
   )
   add_custom_target(${PROJECT_NAME}_switch.zip

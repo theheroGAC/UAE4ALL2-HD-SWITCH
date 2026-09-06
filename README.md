@@ -1,4 +1,4 @@
-# UAE4ALL2 HD — Nintendo Switch Edition v1.01
+# UAE4ALL2 HD — Nintendo Switch Edition v1.02
 
 A modern, high-performance Nintendo Switch release of **UAE4ALL2 HD**, the Amiga emulator for OCS, ECS, and AGA chipsets.
 
@@ -8,6 +8,10 @@ This repository contains the complete Nintendo Switch source tree and ready-to-r
 
 - **`uae4all2hd.nro`** — Nintendo Switch homebrew executable.
 - **`uae4all2hd_switch.zip`** — Full standalone release archive ready to be extracted to SD card.
+
+> [!NOTE]
+> Looking for the PS Vita version? The official PS Vita release is available here:
+> 👉 **[UAE4ALL2-HD-VITA](https://github.com/theheroGAC/UAE4ALL2-HD-VITA)**
 
 ---
 
@@ -49,6 +53,13 @@ This repository contains the complete Nintendo Switch source tree and ready-to-r
   - Standard RFC 959 compliance, Extended Passive Mode (`EPSV`), and UTF-8 support for seamless transfer with FileZilla, WinSCP, or Windows Explorer.
   - Non-blocking server loop with instant exit on **B**, **A**, **+**, or touchscreen tap.
 - **CD32 Emulation**: Akiko CD controller with ISO, raw BIN, and multi-track CUE images with CD audio mixing.
+- **Compressed CHD Image Support**: Direct block decoding of `.chd` images for CD-ROM (CD32) and Hard Disks (HDF) with zero decompression overhead on RAM or SD card.
+- **Multi-Disk Playlist (`.m3u`)**: Fast in-game disk swapping across up to 16 disks with hotkeys (`ZL + D-Pad Left/Right`) and Quick Menu integration.
+- **Fast-Forward (Turbo Mode)**: Hold **ZR** or toggle via Quick Menu to skip disk loading screens and slow Amiga sequences.
+- **5-Level Stereo Separation**: Customizable panning profiles (0% Mono, 25%, 50% Headphones, 75%, 100% Original Amiga).
+- **Single Joy-Con Mode (Instant 2-Player Co-op / VS)**: Detach both Joy-Cons and play Amiga multiplayer classics (e.g. Sensible World of Soccer, Speedball 2, Lotus 2, Worms, Micro Machines) horizontally in Tabletop or TV Docked mode with SL/SR shoulder and face button fire support.
+- **Auto Crop & Screen Offsets**: Real-time black border detection (Both, Vertical, Horizontal) and fine X/Y positioning.
+- **Quick Save & Quick Load**: On-the-fly savestates with native on-screen toast notifications (`ZL + R`, `ZL + L`, `ZL + Up/Down`).
 - **Screenshots**: High-resolution PNG captures saved directly to `./screenshots/`.
 
 ---
@@ -129,7 +140,12 @@ UAE4All2 HD includes a built-in FTP server on Nintendo Switch:
 | **A** | Fire Button 1 |
 | **B** | Fire Button 2 / Jump |
 | **X / Y** | Configurable Custom Buttons (Space, Return, Autofire) |
-| **L Shoulder** | Quick Menu (Resume, Savestate, Eject, Screenshot) |
+| **L Shoulder** | Quick Menu (Resume, Savestate, Turbo, Stereo, M3U Swap, Eject, Screenshot) |
+| **ZR (Hold)** | Fast-Forward / Turbo Mode |
+| **ZL + R** | Quick Save to active slot |
+| **ZL + L** | Quick Load from active slot |
+| **ZL + D-Pad Up / Down** | Cycle Quick Save Slot (1–5) |
+| **ZL + D-Pad Right / Left** | Next / Previous Disk in `.m3u` playlist |
 | **+ (Plus)** | Toggle Virtual On-Screen Keyboard (`vkbd`) |
 | **- (Minus)** | Open Main Menu / Pause Emulation |
 | **Touchscreen** | Mouse Pointer & Multi-touch Buttons |
@@ -146,6 +162,60 @@ UAE4All2 HD includes a built-in FTP server on Nintendo Switch:
 | **Right Stick (Up/Down)** | Move virtual keyboard position on screen |
 | **Right Stick (Left/Right)** | Adjust keyboard transparency level |
 | **+ (Plus)** | Close virtual keyboard |
+
+---
+
+## Special Features & In-Game Utilities
+
+### ⚡ Fast-Forward / Turbo Mode
+Skip slow disk loading sequences, long intro screens, and floppy wait times:
+- **Hold ZR Trigger**: Instantly fast-forwards the emulation as long as held; release to return to normal speed.
+- **Quick Menu (L Shoulder)**: Toggle **Turbo: ON** for hands-free, continuous fast-forward until toggled back to **OFF**.
+
+### 🎮 Single Joy-Con Mode (2-Player Multiplayer)
+Play Amiga co-op and versus classics (e.g. *Sensible Soccer*, *Speedball 2*, *Lotus 2*, *Worms*) anywhere without needing extra controllers:
+- **Activate**: Enable `"Single Joy-Con Mode"` in the **Controls** menu tab or via the **Quick Menu** (**L**).
+- **Detach Joy-Cons**: Both Joy-Cons are held horizontally. Works in both **TV Docked** mode and **Tabletop** mode (with the console kickstand open).
+- **Controls**:
+  - **SL / SR shoulders**: Fire 1 / Fire 2.
+  - **Face buttons**: Directional actions & secondary fire.
+  - **Analog Stick**: 8-way digital Amiga joystick movement.
+  - **+ / - buttons**: Open menu / pause emulation.
+  - Joy-Con 1 is assigned to Amiga Port 1 (Player 1); Joy-Con 2 is assigned to Amiga Port 0 (Player 2).
+
+### 💽 Multi-Disk Playlist (`.m3u`)
+Effortless disk swapping for multi-floppy games (e.g. *Monkey Island*, *Beneath a Steel Sky*):
+- Create a text file with `.m3u` extension containing the names of your ADF files in order, one per line:
+  ```text
+  Monkey_Disk1.adf
+  Monkey_Disk2.adf
+  Monkey_Disk3.adf
+  Monkey_Disk4.adf
+  ```
+- Insert the `.m3u` file into drive DF0.
+- When prompted by the game to change disks, press **ZL + D-Pad Right** (next disk) or **ZL + D-Pad Left** (previous disk), or select the disk directly from the **Quick Menu** (**L**).
+- An on-screen toast notification displays the newly inserted disk name.
+
+### 📦 Compressed CHD Image Support (`.chd`)
+Save substantial microSD card space with CHD compressed disk images:
+- **CD32 CD-ROMs & Amiga Hardfiles (HDF)** can be loaded directly in `.chd` format.
+- Reduces storage requirements by 50% to 70% with zero decompression overhead or wear on the microSD card.
+
+### 🎧 Stereo Separation (Audio Panning)
+Amiga's Paula sound chip outputs 2 channels hard-left and 2 channels hard-right (100% panning), which can be fatiguing when using headphones on the Nintendo Switch:
+- Open the **Quick Menu** (**L**) or the **Display/Audio** menu tab to select between 5 stereo separation profiles:
+  - **0% (Mono)**
+  - **25%**
+  - **50% (Recommended for headphones)**
+  - **75%**
+  - **100% (Original Amiga hard-panning)**
+
+### 💾 Quick Save & Quick Load
+Save and reload game states in real-time without leaving gameplay:
+- **ZL + R**: Quick Save to the active slot.
+- **ZL + L**: Quick Load from the active slot.
+- **ZL + D-Pad Up / Down**: Cycle active save slot (1 through 5).
+- On-screen toast notifications confirm each save, load, and slot change.
 
 ---
 
