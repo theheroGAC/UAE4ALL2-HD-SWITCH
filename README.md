@@ -11,7 +11,7 @@ This repository contains the complete Nintendo Switch source tree and ready-to-r
 
 > [!NOTE]
 > Looking for the PS Vita version? The official PS Vita release is available here:
-> 👉 **[UAE4ALL2-HD-VITA](https://github.com/theheroGAC/UAE4ALL2-HD-VITA)**
+> **[UAE4ALL2-HD-VITA](https://github.com/theheroGAC/UAE4ALL2-HD-VITA)**
 
 ---
 
@@ -167,12 +167,12 @@ UAE4All2 HD includes a built-in FTP server on Nintendo Switch:
 
 ## Special Features & In-Game Utilities
 
-### ⚡ Fast-Forward / Turbo Mode
+### Fast-Forward / Turbo Mode
 Skip slow disk loading sequences, long intro screens, and floppy wait times:
 - **Hold ZR Trigger**: Instantly fast-forwards the emulation as long as held; release to return to normal speed.
 - **Quick Menu (L Shoulder)**: Toggle **Turbo: ON** for hands-free, continuous fast-forward until toggled back to **OFF**.
 
-### 🎮 Single Joy-Con Mode (2-Player Multiplayer)
+### Single Joy-Con Mode (2-Player Multiplayer)
 Play Amiga co-op and versus classics (e.g. *Sensible Soccer*, *Speedball 2*, *Lotus 2*, *Worms*) anywhere without needing extra controllers:
 - **Activate**: Enable `"Single Joy-Con Mode"` in the **Controls** menu tab or via the **Quick Menu** (**L**).
 - **Detach Joy-Cons**: Both Joy-Cons are held horizontally. Works in both **TV Docked** mode and **Tabletop** mode (with the console kickstand open).
@@ -183,7 +183,7 @@ Play Amiga co-op and versus classics (e.g. *Sensible Soccer*, *Speedball 2*, *Lo
   - **+ / - buttons**: Open menu / pause emulation.
   - Joy-Con 1 is assigned to Amiga Port 1 (Player 1); Joy-Con 2 is assigned to Amiga Port 0 (Player 2).
 
-### 💽 Multi-Disk Playlist (`.m3u`)
+### Multi-Disk Playlist (`.m3u`)
 Effortless disk swapping for multi-floppy games (e.g. *Monkey Island*, *Beneath a Steel Sky*):
 - Create a text file with `.m3u` extension containing the names of your ADF files in order, one per line:
   ```text
@@ -196,12 +196,12 @@ Effortless disk swapping for multi-floppy games (e.g. *Monkey Island*, *Beneath 
 - When prompted by the game to change disks, press **ZL + D-Pad Right** (next disk) or **ZL + D-Pad Left** (previous disk), or select the disk directly from the **Quick Menu** (**L**).
 - An on-screen toast notification displays the newly inserted disk name.
 
-### 📦 Compressed CHD Image Support (`.chd`)
+### Compressed CHD Image Support (`.chd`)
 Save substantial microSD card space with CHD compressed disk images:
 - **CD32 CD-ROMs & Amiga Hardfiles (HDF)** can be loaded directly in `.chd` format.
 - Reduces storage requirements by 50% to 70% with zero decompression overhead or wear on the microSD card.
 
-### 🎧 Stereo Separation (Audio Panning)
+### Stereo Separation (Audio Panning)
 Amiga's Paula sound chip outputs 2 channels hard-left and 2 channels hard-right (100% panning), which can be fatiguing when using headphones on the Nintendo Switch:
 - Open the **Quick Menu** (**L**) or the **Display/Audio** menu tab to select between 5 stereo separation profiles:
   - **0% (Mono)**
@@ -210,7 +210,7 @@ Amiga's Paula sound chip outputs 2 channels hard-left and 2 channels hard-right 
   - **75%**
   - **100% (Original Amiga hard-panning)**
 
-### 💾 Quick Save & Quick Load
+### Quick Save & Quick Load
 Save and reload game states in real-time without leaving gameplay:
 - **ZL + R**: Quick Save to the active slot.
 - **ZL + L**: Quick Load from the active slot.
@@ -291,6 +291,7 @@ This project is a derivative work and would not exist without the original UAE4A
 - **Bert Jahn (Wepl)** for WHDLoad (http://www.whdload.de)
 - **Aminet** for the Amiga software and WHDLoad game archive (https://aminet.net)
 - **SPS (Software Preservation Society)** for CAPS / IPF image decoding support
+- **Romain Tisserand (rtissera)** for libchdr (CHD image decompression library), and **Aaron Giles / The MAME Team** for the original CHD format and compression code
 
 Please preserve the original project credits and license notices when redistributing or modifying this project.
 
