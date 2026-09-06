@@ -958,8 +958,11 @@ int switch_whdload_install_lha(const char *archive_path, char *installed_path, s
 
 static void deploy_file_if_missing(const char *src, const char *dst)
 {
-    struct stat st;
-    if (stat(dst, &st) >= 0 && st.st_size > 0) return;
+    struct stat st_src, st_dst;
+    if (stat(src, &st_src) != 0 || st_src.st_size <= 0)
+        return;
+    if (stat(dst, &st_dst) == 0 && st_dst.st_size == st_src.st_size)
+        return;
     char dst_copy[512];
     strncpy(dst_copy, dst, sizeof(dst_copy) - 1);
     dst_copy[sizeof(dst_copy) - 1] = '\0';
@@ -970,6 +973,131 @@ static void deploy_file_if_missing(const char *src, const char *dst)
         *slash = '/';
     }
     copy_text_file(src, dst);
+}
+
+static int deploy_rom_clean(const char *src, const char *dst)
+{
+    FILE *in = fopen(src, "rb");
+    if (!in)
+        return 0;
+    fseek(in, 0, SEEK_END);
+    long fsize = ftell(in);
+    fseek(in, 0, SEEK_SET);
+    if (fsize <= 0) {
+        fclose(in);
+        return 0;
+    }
+
+    long read_offset = 0;
+    long target_len = fsize;
+    if (fsize == 524800 || fsize == 262656) {
+        read_offset = 512;
+        target_len = fsize - 512;
+    }
+
+    unsigned char header[12];
+    memset(header, 0, sizeof(header));
+    fseek(in, read_offset, SEEK_SET);
+    size_t hread = fread(header, 1, 11, in);
+    int is_cloanto = (hread == 11 && memcmp(header, "AMIROMTYPE1", 11) == 0);
+    if (is_cloanto) {
+        read_offset += 11;
+        target_len -= 11;
+    }
+
+    fseek(in, read_offset, SEEK_SET);
+    unsigned char *buf = (unsigned char *)malloc(target_len > 0 ? (size_t)target_len : 1);
+    if (!buf) {
+        fclose(in);
+        return 0;
+    }
+    size_t actual_read = fread(buf, 1, (size_t)target_len, in);
+    fclose(in);
+    if (actual_read != (size_t)target_len) {
+        free(buf);
+        return 0;
+    }
+
+    if (is_cloanto) {
+        const char *key_dirs[] = {
+            "./kickstarts/rom.key",
+            "./kickstarts/rom.keys",
+            "./roms/kickstarts/rom.key",
+            "./roms/rom.key",
+            "./data/kickstarts/rom.key",
+            "kickstarts/rom.key",
+            "rom.key",
+            NULL
+        };
+        FILE *kf = NULL;
+        for (int k = 0; key_dirs[k]; k++) {
+            kf = fopen(key_dirs[k], "rb");
+            if (kf) break;
+        }
+        if (kf) {
+            fseek(kf, 0, SEEK_END);
+            long klen = ftell(kf);
+            fseek(kf, 0, SEEK_SET);
+            if (klen > 0) {
+                unsigned char *kbuf = (unsigned char *)malloc((size_t)klen);
+                if (kbuf) {
+                    size_t kread = fread(kbuf, 1, (size_t)klen, kf);
+                    if (kread == (size_t)klen) {
+                        long t = 0;
+                        for (long cnt = 0; cnt < target_len; cnt++, t = (t + 1) % klen) {
+                            buf[cnt] ^= kbuf[t];
+                            if (target_len == cnt + 1)
+                                t = klen - 1;
+                        }
+                    }
+                    free(kbuf);
+                }
+            }
+            fclose(kf);
+        }
+    }
+
+    struct stat st_dst;
+    if (stat(dst, &st_dst) == 0 && st_dst.st_size == (off_t)target_len) {
+        FILE *check_f = fopen(dst, "rb");
+        if (check_f) {
+            unsigned char *check_buf = (unsigned char *)malloc((size_t)target_len);
+            if (check_buf) {
+                size_t cr = fread(check_buf, 1, (size_t)target_len, check_f);
+                fclose(check_f);
+                if (cr == (size_t)target_len && memcmp(buf, check_buf, (size_t)target_len) == 0) {
+                    free(check_buf);
+                    free(buf);
+                    return 1;
+                }
+                free(check_buf);
+            } else {
+                fclose(check_f);
+            }
+        }
+    }
+
+    char dst_copy[512];
+    strncpy(dst_copy, dst, sizeof(dst_copy) - 1);
+    dst_copy[sizeof(dst_copy) - 1] = '\0';
+    char *slash = strrchr(dst_copy, '/');
+    if (slash) {
+        *slash = '\0';
+        ensure_directory(dst_copy);
+        *slash = '/';
+    }
+
+    remove(dst);
+    FILE *out = fopen(dst, "wb");
+    if (!out) {
+        free(buf);
+        return 0;
+    }
+    size_t written = fwrite(buf, 1, (size_t)target_len, out);
+    fflush(out);
+    fclose(out);
+    free(buf);
+    return (written == (size_t)target_len);
 }
 
 static void deploy_kickstart_file(const char *destination_name, const char *const *source_names)
@@ -991,7 +1119,7 @@ static void deploy_kickstart_file(const char *destination_name, const char *cons
             snprintf(source, sizeof(source), "%s/%s", search_dirs[d], source_names[i]);
             struct stat st;
             if (stat(source, &st) >= 0 && st.st_size > 0) {
-                deploy_file_if_missing(source, destination);
+                deploy_rom_clean(source, destination);
                 return;
             }
         }
@@ -1000,10 +1128,12 @@ static void deploy_kickstart_file(const char *destination_name, const char *cons
 
 static void deploy_kickstart_aliases(void)
 {
-    static const char *kick12[] = { "kick12.rom", "kick33180.A500", "amiga-os-120.rom", NULL };
-    static const char *kick13[] = { "kick13.rom", "kick34005.A500", "amiga-os-130.rom", NULL };
-    static const char *kick20[] = { "kick20.rom", "kick37175.A500", "amiga-os-204.rom", NULL };
-    static const char *kick31[] = { "kick31.rom", "kick40068.A1200", "amiga-os-310-a1200.rom", NULL };
+    static const char *kick12[] = { "kick33180.A500", "kick12.rom", "amiga-os-120.rom", NULL };
+    static const char *kick13[] = { "kick34005.A500", "kick13.rom", "amiga-os-130.rom", NULL };
+    static const char *kick20[] = { "kick37175.A500", "kick20.rom", "amiga-os-204.rom", NULL };
+    static const char *kick31_a1200[] = { "kick40068.A1200", "kick40068.a1200", "amiga-os-310-a1200.rom", "kick31.rom", "kick3.1.rom", NULL };
+    static const char *kick31_a4000[] = { "kick40068.A4000", "kick40068.a4000", "amiga-os-310-a4000.rom", "kick31.rom", NULL };
+    static const char *kick31_a600[] = { "kick40063.A600", "kick40063.a600", "amiga-os-310-a600.rom", NULL };
     static const char *kick205[] = { "kick37350.A600", "kick205.rom", "amiga-os-205-a600.rom", NULL };
     static const char *cd32[] = { "kick40060.CD32", "amiga-os-310-cd32.rom", NULL };
     static const struct {
@@ -1013,7 +1143,10 @@ static void deploy_kickstart_aliases(void)
         { "kick12.rom", kick12 }, { "kick33180.A500", kick12 },
         { "kick34005.A500", kick13 }, { "kick13.rom", kick13 },
         { "kick20.rom", kick20 }, { "kick37175.A500", kick20 },
-        { "kick31.rom", kick31 }, { "kick40068.A1200", kick31 },
+        { "kick31.rom", kick31_a1200 }, { "kick40068.A1200", kick31_a1200 },
+        { "kick40068.a1200", kick31_a1200 },
+        { "kick40068.A4000", kick31_a4000 }, { "kick40068.a4000", kick31_a4000 },
+        { "kick40063.A600", kick31_a600 }, { "kick40063.a600", kick31_a600 },
         { "kick37350.A600", kick205 }, { "kick205.rom", kick205 },
         { "kick40060.CD32", cd32 }, { "amiga-os-310-cd32.rom", cd32 },
         { NULL, NULL }
@@ -1021,8 +1154,36 @@ static void deploy_kickstart_aliases(void)
     ensure_directory(SWITCH_WHDLOAD_ROOT "/Devs/Kickstarts");
     for (int i = 0; files[i].name; i++)
         deploy_kickstart_file(files[i].name, files[i].sources);
-    static const char *kick_rtb[] = { "kick34005.A500.RTB", NULL };
-    deploy_kickstart_file("kick34005.A500.RTB", kick_rtb);
+
+    const char *search_dirs[] = {
+        "./kickstarts",
+        "./roms/kickstarts",
+        "./roms",
+        "./data/kickstarts",
+        "kickstarts",
+        "roms/kickstarts",
+        NULL
+    };
+    for (int d = 0; search_dirs[d]; d++) {
+        DIR *kdir = opendir(search_dirs[d]);
+        if (kdir) {
+            struct dirent *entry;
+            while ((entry = readdir(kdir)) != NULL) {
+                if (entry->d_name[0] == '.')
+                    continue;
+                const char *ext = strrchr(entry->d_name, '.');
+                if ((ext && (strcasecmp(ext, ".rtb") == 0 || strcasecmp(ext, ".pat") == 0 || strcasecmp(ext, ".key") == 0 || strcasecmp(ext, ".keys") == 0)) ||
+                    strcasecmp(entry->d_name, "rom.key") == 0 || strcasecmp(entry->d_name, "rom.keys") == 0) {
+                    char src_path[512];
+                    char dst_path[512];
+                    snprintf(src_path, sizeof(src_path), "%s/%s", search_dirs[d], entry->d_name);
+                    snprintf(dst_path, sizeof(dst_path), "%s/Devs/Kickstarts/%s", SWITCH_WHDLOAD_ROOT, entry->d_name);
+                    deploy_file_if_missing(src_path, dst_path);
+                }
+            }
+            closedir(kdir);
+        }
+    }
 }
 
 static void deploy_whdload_file(const char *rel_subpath, const char *dst)
@@ -1045,6 +1206,36 @@ static void deploy_whdload_file(const char *rel_subpath, const char *dst)
     }
 }
 
+static void deploy_whdload_dir(const char *rel_subpath, const char *dst_dir)
+{
+    const char *prefixes[] = {
+        "./data/whdload_base",
+        "data/whdload_base",
+        "romfs:/data/whdload_base",
+        "./switchdata/data/whdload_base",
+        NULL
+    };
+    for (int i = 0; prefixes[i]; i++) {
+        char src_dir[512];
+        snprintf(src_dir, sizeof(src_dir), "%s/%s", prefixes[i], rel_subpath);
+        DIR *dir = opendir(src_dir);
+        if (dir) {
+            struct dirent *entry;
+            while ((entry = readdir(dir)) != NULL) {
+                if (entry->d_name[0] == '.')
+                    continue;
+                char src_file[512];
+                char dst_file[512];
+                snprintf(src_file, sizeof(src_file), "%s/%s", src_dir, entry->d_name);
+                snprintf(dst_file, sizeof(dst_file), "%s/%s", dst_dir, entry->d_name);
+                deploy_file_if_missing(src_file, dst_file);
+            }
+            closedir(dir);
+            return;
+        }
+    }
+}
+
 static void deploy_whdload_base(void)
 {
     ensure_directory(SWITCH_WHDLOAD_ROOT);
@@ -1052,6 +1243,7 @@ static void deploy_whdload_base(void)
     ensure_directory(SWITCH_WHDLOAD_ROOT "/S");
     ensure_directory(SWITCH_WHDLOAD_ROOT "/Devs");
     ensure_directory(SWITCH_WHDLOAD_ROOT "/Devs/Kickstarts");
+    deploy_whdload_dir("Devs/Kickstarts", SWITCH_WHDLOAD_ROOT "/Devs/Kickstarts");
     deploy_kickstart_aliases();
     deploy_whdload_file("C/WHDLoad", SWITCH_WHDLOAD_ROOT "/C/WHDLoad");
     deploy_whdload_file("C/WHDLoadCD32", SWITCH_WHDLOAD_ROOT "/C/WHDLoadCD32");
