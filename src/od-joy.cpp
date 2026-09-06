@@ -123,11 +123,10 @@ void read_joystick(int nr, unsigned int *dir, int *button)
 		else if (nr == 0)
 			nr = 1;
 
-	// are we trying to figure out the regular GP2X controls for the primary (or first two) joysticks?
 #ifdef USE_UAE4ALL_VKBD
-	int usingRegularControls = ((!mainMenu_customControls) && ((nr == 1 && mainMenu_joyPort == 2) || (nr == 0 && mainMenu_joyPort == 1)) && !(buttonStart[0] && triggerR[0]) && !vkbd_mode);
+	int usingRegularControls = (((!mainMenu_customControls) || singleJoycons) && ((nr == 1 && mainMenu_joyPort == 2) || (nr == 0 && mainMenu_joyPort == 1)) && !(buttonStart[0] && triggerR[0]) && !vkbd_mode);
 #else
-	int usingRegularControls = ((!mainMenu_customControls) && ((nr == 1 && mainMenu_joyPort == 2) || (nr == 0 && mainMenu_joyPort == 1)) && !(buttonStart[0] && triggerR[0]));
+	int usingRegularControls = (((!mainMenu_customControls) || singleJoycons) && ((nr == 1 && mainMenu_joyPort == 2) || (nr == 0 && mainMenu_joyPort == 1)) && !(buttonStart[0] && triggerR[0]));
 #endif
 	//PSP2 updates joysticks in handle_events function which is always called 
 	//just before read_joystick is called. No need to update them again here
@@ -801,9 +800,7 @@ void read_joystick(int nr, unsigned int *dir, int *button)
 #endif
 	{
 #if defined(__PSP2__) || defined(__SWITCH__)
-		// On Vita, map the second player to always using the GP2X mapping, in addition to everything else
-		// Unless there is a custom mapping
-		if (!mainMenu_customControls && ((nr == 0 && mainMenu_joyPort == 2) || (nr == 1 && mainMenu_joyPort == 1) || nr == 2 || nr == 3))
+		if ((!mainMenu_customControls || singleJoycons) && ((nr == 0 && mainMenu_joyPort == 2) || (nr == 1 && mainMenu_joyPort == 1) || nr == 2 || nr == 3))
 		{
 			int joynum = 1;
 			if (nr == 2 || nr == 3)

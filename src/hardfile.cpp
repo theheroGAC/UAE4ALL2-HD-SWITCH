@@ -19,22 +19,22 @@
 #include "filesys.h"
 #include "execlib.h"
 #include "gui.h"
+#include "libchdr/chd.h"
 
 static int opencount = 0;
 
 static uae_u32 hardfile_open (void)
 {
-    uaecptr tmp1 = m68k_areg(regs, 1); /* IOReq */
+    uaecptr tmp1 = m68k_areg(regs, 1);
     int unit = m68k_dreg (regs, 0);
     struct hardfiledata *hfd = get_hardfile_data (unit);
 
-    /* Check unit number */
-    if (hfd && hfd->fd) {
+    if (hfd && (hfd->fd || hfd->chd_handle)) {
 	opencount++;
 	put_word (m68k_areg(regs, 6)+32, get_word (m68k_areg(regs, 6)+32) + 1);
-	put_long (tmp1 + 24, m68k_dreg (regs, 0)); /* io_Unit */
-	put_byte (tmp1 + 31, 0); /* io_Error */
-	put_byte (tmp1 + 8, 7); /* ln_type = NT_REPLYMSG */
+	put_long (tmp1 + 24, m68k_dreg (regs, 0));
+	put_byte (tmp1 + 31, 0);
+	put_byte (tmp1 + 8, 7);
 	return 0;
     }
 
@@ -53,7 +53,7 @@ static uae_u32 hardfile_close (void)
 
 static uae_u32 hardfile_expunge (void)
 {
-    return 0; /* Simply ignore this one... */
+    return 0;
 }
 
 static uae_u32 hardfile_beginio (void)
@@ -69,10 +69,10 @@ static uae_u32 hardfile_beginio (void)
 	hfd = get_hardfile_data (unit);
 	
 	put_byte (tmp1+8, NT_MESSAGE);
-	put_byte (tmp1+31, 0); /* no error yet */
-	tmp2 = get_word (tmp1+28); /* io_Command */
+	put_byte (tmp1+31, 0);
+	tmp2 = get_word (tmp1+28);
 
-	if (!hfd || !hfd->fd) {
+	if (!hfd || (!hfd->fd && !hfd->chd_handle)) {
 		put_byte (tmp1+31, (uae_u8)-3);
 		return 0;
 	}
@@ -83,35 +83,61 @@ static uae_u32 hardfile_beginio (void)
 			
 			dataptr = get_long (tmp1 + 40);
 			offset = get_long (tmp1 + 44);
-			tmp2 = get_long (tmp1 + 36); /* io_Length */
+			tmp2 = get_long (tmp1 + 36);
 
 			if (dataptr & 1 || offset & 511 || tmp2 & 511 || tmp2 + offset > (uae_u32)hfd->size)
 				goto bad_command;
 			
-			put_long (tmp1 + 32, tmp2); /* set io_Actual */
-			fseek (hfd->fd, offset, SEEK_SET);
-			while (tmp2) {
-				int i;
-				char buffer[512];
-				fread (buffer, 1, 512, hfd->fd);
-				for (i = 0; i < 512; i++, dataptr++)
-					put_byte(dataptr, buffer[i]);
-				tmp2 -= 512;
+			put_long (tmp1 + 32, tmp2);
+			if (hfd->chd_handle) {
+				chd_file *chd = (chd_file *)hfd->chd_handle;
+				const chd_header *h = chd_get_header(chd);
+				uint32_t hunkbytes = h->hunkbytes;
+				while (tmp2) {
+					uint32_t hunknum = offset / hunkbytes;
+					uint32_t hunkoff = offset % hunkbytes;
+					if (hfd->chd_cache_hunk != (int)hunknum) {
+						chd_read(chd, hunknum, hfd->chd_cache);
+						hfd->chd_cache_hunk = (int)hunknum;
+					}
+					uint32_t chunk = hunkbytes - hunkoff;
+					if (chunk > tmp2) chunk = tmp2;
+					int i;
+					uint8_t *src = (uint8_t *)hfd->chd_cache + hunkoff;
+					for (i = 0; i < (int)chunk; i++, dataptr++)
+						put_byte(dataptr, src[i]);
+					offset += chunk;
+					tmp2 -= chunk;
+				}
+			} else {
+				fseek (hfd->fd, offset, SEEK_SET);
+				while (tmp2) {
+					int i;
+					char buffer[512];
+					fread (buffer, 1, 512, hfd->fd);
+					for (i = 0; i < 512; i++, dataptr++)
+						put_byte(dataptr, buffer[i]);
+					tmp2 -= 512;
+				}
 			}
 			break;
 			
 		case CMD_WRITE:
-		case 11: /* Format */
+		case 11:
+			if (hfd->chd_handle) {
+				put_byte (tmp1+31, (uae_u8)-4);
+				break;
+			}
 			gui_data.hdled = HDLED_WRITE;
 			
 			dataptr = get_long (tmp1 + 40);
 			offset = get_long (tmp1 + 44);
-			tmp2 = get_long (tmp1 + 36); /* io_Length */
+			tmp2 = get_long (tmp1 + 36);
 
 			if (dataptr & 1 || offset & 511 || tmp2 & 511 || tmp2 + offset > (uae_u32)hfd->size)
 				goto bad_command;
 			
-			put_long (tmp1 + 32, tmp2); /* set io_Actual */
+			put_long (tmp1 + 32, tmp2);
 			fseek (hfd->fd, offset, SEEK_SET);
 			while (tmp2) {
 				char buffer[512];
@@ -124,7 +150,7 @@ static uae_u32 hardfile_beginio (void)
 			break;
 			
 			bad_command:
-			put_byte (tmp1+31, (uae_u8)-3); /* io_Error = IOERR_NOCMD */
+			put_byte (tmp1+31, (uae_u8)-3);
 			break;
 			
 		case 18: /* GetDriveType */

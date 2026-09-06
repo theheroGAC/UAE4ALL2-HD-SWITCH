@@ -861,11 +861,18 @@ int vkbd_touch_xy_to_actual(float touch_x, float touch_y)
 	int display_width = 960;
 	int display_height = 544;
 	vita_get_display_geometry(&x_offset, &y_offset, &scaled_width, &scaled_height);
+#elif defined(__SWITCH__)
+	extern void switch_get_game_viewport(int *x, int *y, int *w, int *h);
+	int display_width = 1280;
+	int display_height = 720;
+	int sw = 0, sh = 0;
+	switch_get_game_viewport(&x_offset, &y_offset, &sw, &sh);
+	scaled_width = (float)sw;
+	scaled_height = (float)sh;
 #else
 	int display_width = 1280;
 	int display_height = 720;
 	if (mainMenu_shader == 0) {
-		// integer scaling
 		int screen_width;
 		int screen_height;
 		screen_width = visibleAreaWidth;

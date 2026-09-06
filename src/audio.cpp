@@ -80,25 +80,26 @@ typedef uae_s8 sample8_t;
 		d3 &= audio_channel_adk_mask[3]; \
 		if (mainMenu_soundStereo) { \
 			switch (mainMenu_soundStereoSep) { \
-				case 3: \
+				case 4: \
 					PUT_SOUND_WORD (d0+d3) \
 					PUT_SOUND_WORD (d1+d2) \
 					break; \
-				case 2: \
+				case 3: \
 					PUT_SOUND_WORD (((d0+d3)*28+(d1+d2)*4)/32) \
 					PUT_SOUND_WORD (((d1+d2)*28+(d0+d3)*4)/32) \
 					break; \
-				case 1: \
+				case 2: \
 					PUT_SOUND_WORD (((d0+d3)*24+(d1+d2)*8)/32) \
 					PUT_SOUND_WORD (((d1+d2)*24+(d0+d3)*8)/32) \
 					break; \
-				case 0: \
+				case 1: \
 					PUT_SOUND_WORD (((d0+d3)*20+(d1+d2)*12)/32) \
 					PUT_SOUND_WORD (((d1+d2)*20+(d0+d3)*12)/32) \
 					break; \
+				case 0: \
 				default: \
-					PUT_SOUND_WORD (d0+d3) \
-					PUT_SOUND_WORD (d1+d2) \
+					PUT_SOUND_WORD (((d0+d3)*16+(d1+d2)*16)/32) \
+					PUT_SOUND_WORD (((d1+d2)*16+(d0+d3)*16)/32) \
 					break; } \
 		} else { \
 			PUT_SOUND_WORD (((d0+d3)*16+(d1+d2)*16)/32) \
@@ -136,25 +137,26 @@ typedef uae_s8 sample8_t;
 		d3 &= audio_channel_adk_mask[3]; \
 		if (mainMenu_soundStereo) { \
 			switch (mainMenu_soundStereoSep) { \
-				case 3: \
+				case 4: \
 					PUT_SOUND_WORD (d0+d3) \
 					PUT_SOUND_WORD (d1+d2) \
 					break; \
-				case 2: \
+				case 3: \
 					PUT_SOUND_WORD (((d0+d3)*28+(d1+d2)*4)/32) \
 					PUT_SOUND_WORD (((d1+d2)*28+(d0+d3)*4)/32) \
 					break; \
-				case 1: \
+				case 2: \
 					PUT_SOUND_WORD (((d0+d3)*24+(d1+d2)*8)/32) \
 					PUT_SOUND_WORD (((d1+d2)*24+(d0+d3)*8)/32) \
 					break; \
-				case 0: \
+				case 1: \
 					PUT_SOUND_WORD (((d0+d3)*20+(d1+d2)*12)/32) \
 					PUT_SOUND_WORD (((d1+d2)*20+(d0+d3)*12)/32) \
 					break; \
+				case 0: \
 				default: \
-					PUT_SOUND_WORD (d0+d3) \
-					PUT_SOUND_WORD (d1+d2) \
+					PUT_SOUND_WORD (((d0+d3)*16+(d1+d2)*16)/32) \
+					PUT_SOUND_WORD (((d1+d2)*16+(d0+d3)*16)/32) \
 					break; } \
 		} else { \
 			PUT_SOUND_WORD (d0+d1+d2+d3) } \

@@ -55,6 +55,7 @@ extern int bReloadKickstart;
 
 #ifdef __SWITCH__
 #include <switch.h>
+#include "m3u_manager.h"
 #endif
 
 #ifdef USE_SDL2
@@ -213,57 +214,44 @@ int no_limiter = 0;
 #endif
 
 #ifdef __SWITCH__
-int singleJoycons = 0;  // are single Joycons being used at the moment?
+extern void init_joystick(void);
+extern void close_joystick(void);
+int singleJoycons = 0;
 void update_joycon_mode() {
-	int handheld;
-	if (appletGetOperationMode() == AppletOperationMode_Handheld)
-		handheld = 1;
-	else
-		handheld = 0;
-	if (!handheld) {
-		if (mainMenu_singleJoycons) {
-			if (!singleJoycons) {
-				singleJoycons = 1;
-				for (int id=0; id<8; id++) {
-					hidSetNpadJoyHoldType(HidNpadJoyHoldType_Horizontal);
-					//hidScanInput();
-					hidSetNpadJoyAssignmentModeSingleByDefault((HidNpadIdType) id);
-				}
-			}
-		} else if (singleJoycons) {
-			singleJoycons = 0;
-
-			// find all left/right single JoyCon pairs and join them together
+	if (mainMenu_singleJoycons) {
+		if (!singleJoycons) {
+			singleJoycons = 1;
+			hidSetNpadJoyHoldType(HidNpadJoyHoldType_Horizontal);
 			for (int id = 0; id < 8; id++) {
-				hidSetNpadJoyHoldType(HidNpadJoyHoldType_Vertical);
+				hidSetNpadJoyAssignmentModeSingleByDefault((HidNpadIdType)id);
 			}
-			int lastRightId = 8;		
-			for (int id0 = 0; id0 < 8; id0++) {
-				if (hidGetNpadStyleSet((HidNpadIdType) id0) & HidNpadStyleTag_NpadJoyLeft ) {
-					for (int id1=lastRightId-1; id1>=0; id1--) {
-						if (hidGetNpadStyleSet((HidNpadIdType) id1) & HidNpadStyleTag_NpadJoyRight ) {
-							lastRightId=id1;
-							// prevent missing player numbers
-							if (id0 < id1) {
-								hidMergeSingleJoyAsDualJoy((HidNpadIdType) id0, (HidNpadIdType) id1);
-							} else if (id0 > id1) {
-								hidMergeSingleJoyAsDualJoy((HidNpadIdType) id1, (HidNpadIdType) id0);
-							}
-							break;
+			close_joystick();
+			init_joystick();
+		}
+	} else if (singleJoycons) {
+		singleJoycons = 0;
+		hidSetNpadJoyHoldType(HidNpadJoyHoldType_Vertical);
+		for (int id = 0; id < 8; id++) {
+			hidSetNpadJoyAssignmentModeDual((HidNpadIdType)id);
+		}
+		int lastRightId = 8;
+		for (int id0 = 0; id0 < 8; id0++) {
+			if (hidGetNpadStyleSet((HidNpadIdType)id0) & HidNpadStyleTag_NpadJoyLeft) {
+				for (int id1 = lastRightId - 1; id1 >= 0; id1--) {
+					if (hidGetNpadStyleSet((HidNpadIdType)id1) & HidNpadStyleTag_NpadJoyRight) {
+						lastRightId = id1;
+						if (id0 < id1) {
+							hidMergeSingleJoyAsDualJoy((HidNpadIdType)id0, (HidNpadIdType)id1);
+						} else if (id0 > id1) {
+							hidMergeSingleJoyAsDualJoy((HidNpadIdType)id1, (HidNpadIdType)id0);
 						}
+						break;
 					}
 				}
 			}
 		}
-	} else {
-		if (singleJoycons) {
-			singleJoycons = 0;
-			for (int id=0; id<8; id++) {
-				hidSetNpadJoyHoldType(HidNpadJoyHoldType_Vertical);
-				//hidScanInput();
-				hidSetNpadJoyAssignmentModeDual((HidNpadIdType) id);
-			}
-		}
+		close_joystick();
+		init_joystick();
 	}
 }
 #endif
@@ -815,8 +803,8 @@ void gui_handle_events (void)
 		triggerR3[i] = SDL_JoystickGetButton(currentJoy, PAD_R3);
 
 		if (singleJoycons) {
-			joyX=lX;
-			joyY=-lY;
+			joyX = lX;
+			joyY = -lY;
 
 			dpadRight[i] = 0;
 			dpadLeft[i] = 0;
@@ -828,12 +816,21 @@ void gui_handle_events (void)
 			stickRight[i] = 0;
 			triggerL2[i] = 0;
 			triggerR2[i] = 0;
-			
-			if (i == 0) {
-				buttonSelect[0] |= buttonStart[0];
-				buttonStart[0] = triggerL[0];
 
-				// push player 1 joystick in for mouse movement or keyboard adjustment
+			int sl = SDL_JoystickGetButton(currentJoy, PAD_L) || SDL_JoystickGetButton(currentJoy, PAD_SL_LEFT) || SDL_JoystickGetButton(currentJoy, PAD_SL_RIGHT);
+			int sr = SDL_JoystickGetButton(currentJoy, PAD_R) || SDL_JoystickGetButton(currentJoy, PAD_SR_LEFT) || SDL_JoystickGetButton(currentJoy, PAD_SR_RIGHT);
+
+			if (sl) {
+				buttonA[i] = 1;
+				buttonX[i] = 1;
+			}
+			if (sr) {
+				buttonB[i] = 1;
+			}
+
+			buttonSelect[i] |= buttonStart[i];
+
+			if (i == 0) {
 				if (triggerL3[0]) {
 					rAnalogX = joyX;
 					rAnalogY = -joyY;
@@ -986,9 +983,8 @@ void gui_handle_events (void)
 		}
 	}
 
-	if(buttonSelect[0])
+	if(buttonSelect[0] || (singleJoycons && buttonSelect[1]))
 	{
-		//re-center the Joysticks when the user opens the menu
 		for (int i=0; i<nr_joysticks; i++)
 		{
 			switch (i)
@@ -2228,6 +2224,161 @@ if(!vkbd_mode)
 		}
 		else
 			gui_set_message("Failed: Savestate not found", 100);
+	}
+#elif defined(__SWITCH__)
+	{
+		extern int switch_turbo_toggle;
+		extern int saveMenu_n_savestate;
+		int hold_zr = triggerR2[0];
+		switch_fast_forward = hold_zr || switch_turbo_toggle;
+		if (hold_zr) triggerR2[0] = 0;
+
+		static int just_zl_r = 0;
+		static int just_zl_l = 0;
+		static int just_zl_up = 0;
+		static int just_zl_down = 0;
+		static int just_zl_right = 0;
+		static int just_zl_left = 0;
+		static int switch_quick_slot = 1;
+
+		if (triggerL2[0])
+		{
+			if (triggerR[0])
+			{
+				if (!just_zl_r)
+				{
+					just_zl_r = 1;
+					saveMenu_n_savestate = switch_quick_slot;
+					make_savestate_filenames(savestate_filename, screenshot_filename);
+					savestate_state = STATE_DOSAVE;
+					char msg[64];
+					snprintf(msg, sizeof(msg), "QUICK SAVE -> SLOT %d", switch_quick_slot);
+					switch_osd_show(msg, 2000);
+				}
+				triggerR[0] = 0;
+			}
+			else
+			{
+				just_zl_r = 0;
+			}
+
+			if (triggerL[0])
+			{
+				if (!just_zl_l)
+				{
+					just_zl_l = 1;
+					saveMenu_n_savestate = switch_quick_slot;
+					make_savestate_filenames(savestate_filename, screenshot_filename);
+					FILE *f = fopen(savestate_filename, "rb");
+					if (f)
+					{
+						fclose(f);
+						savestate_state = STATE_DORESTORE;
+						char msg[64];
+						snprintf(msg, sizeof(msg), "QUICK LOAD <- SLOT %d", switch_quick_slot);
+						switch_osd_show(msg, 2000);
+					}
+					else
+					{
+						char msg[64];
+						snprintf(msg, sizeof(msg), "SLOT %d EMPTY", switch_quick_slot);
+						switch_osd_show(msg, 2000);
+					}
+				}
+				triggerL[0] = 0;
+			}
+			else
+			{
+				just_zl_l = 0;
+			}
+
+			if (dpadUp[0])
+			{
+				if (!just_zl_up)
+				{
+					just_zl_up = 1;
+					switch_quick_slot++;
+					if (switch_quick_slot > 5) switch_quick_slot = 1;
+					char msg[64];
+					snprintf(msg, sizeof(msg), "STATE SLOT: %d", switch_quick_slot);
+					switch_osd_show(msg, 2000);
+				}
+				dpadUp[0] = 0;
+			}
+			else
+			{
+				just_zl_up = 0;
+			}
+
+			if (dpadDown[0])
+			{
+				if (!just_zl_down)
+				{
+					just_zl_down = 1;
+					switch_quick_slot--;
+					if (switch_quick_slot < 1) switch_quick_slot = 5;
+					char msg[64];
+					snprintf(msg, sizeof(msg), "STATE SLOT: %d", switch_quick_slot);
+					switch_osd_show(msg, 2000);
+				}
+				dpadDown[0] = 0;
+			}
+			else
+			{
+				just_zl_down = 0;
+			}
+
+			if (dpadRight[0])
+			{
+				if (!just_zl_right)
+				{
+					just_zl_right = 1;
+					if (g_m3u.is_active)
+					{
+						m3u_next_disk();
+					}
+					else
+					{
+						switch_osd_show("NO M3U PLAYLIST ACTIVE", 1500);
+					}
+				}
+				dpadRight[0] = 0;
+			}
+			else
+			{
+				just_zl_right = 0;
+			}
+
+			if (dpadLeft[0])
+			{
+				if (!just_zl_left)
+				{
+					just_zl_left = 1;
+					if (g_m3u.is_active)
+					{
+						m3u_prev_disk();
+					}
+					else
+					{
+						switch_osd_show("NO M3U PLAYLIST ACTIVE", 1500);
+					}
+				}
+				dpadLeft[0] = 0;
+			}
+			else
+			{
+				just_zl_left = 0;
+			}
+		}
+		else
+		{
+			just_zl_r = 0;
+			just_zl_l = 0;
+			just_zl_up = 0;
+			just_zl_down = 0;
+			just_zl_right = 0;
+			just_zl_left = 0;
+		}
 	}
 #endif
 

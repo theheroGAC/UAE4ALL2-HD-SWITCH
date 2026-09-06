@@ -38,6 +38,7 @@
 #include "m68k/m68k_intrf.h"
 #include "filesys.h"
 #include "autoconf.h"
+#include "libchdr/chd.h"
 #include "fsusage.h"
 #include "native2amiga.h"
 #include "scsidev.h"
@@ -157,6 +158,14 @@ static void close_filesys_unit (UnitInfo *uip)
 {
     if (uip->hf.fd != 0)
  	fclose (uip->hf.fd);
+    if (uip->hf.chd_handle != 0) {
+	chd_close ((chd_file *)uip->hf.chd_handle);
+	uip->hf.chd_handle = 0;
+    }
+    if (uip->hf.chd_cache != 0) {
+	free (uip->hf.chd_cache);
+	uip->hf.chd_cache = 0;
+    }
     if (uip->volname != 0)
 	free (uip->volname);
     if (uip->devname != 0)
@@ -172,6 +181,9 @@ static void close_filesys_unit (UnitInfo *uip)
     uip->back_pipe = 0;
 
     uip->hf.fd = 0;
+    uip->hf.chd_handle = 0;
+    uip->hf.chd_cache = 0;
+    uip->hf.chd_cache_hunk = -1;
     uip->volname = 0;
     uip->devname = 0;
     uip->rootdir = 0;
@@ -227,40 +239,67 @@ static char *set_filesys_unit_1 (struct uaedev_mount_info *mountinfo, int nr,
     if (volname != 0) {
 	ui->volname = my_strdup (volname);
 	ui->hf.fd = 0;
+	ui->hf.chd_handle = 0;
+	ui->hf.chd_cache = 0;
+	ui->hf.chd_cache_hunk = -1;
     } else {
 	ui->volname = 0;
-	ui->hf.fd = fopen (rootdir, "r+b");
-	if (ui->hf.fd == 0) {
+	ui->hf.chd_handle = 0;
+	ui->hf.chd_cache = 0;
+	ui->hf.chd_cache_hunk = -1;
+
+	const char *dot = strrchr(rootdir, '.');
+	if (dot && strcasecmp(dot, ".chd") == 0) {
+	    chd_file *chd = NULL;
+	    if (chd_open(rootdir, CHD_OPEN_READ, NULL, &chd) != CHDERR_NONE)
+		return "Failed to open CHD hardfile";
+	    const chd_header *h = chd_get_header(chd);
+	    ui->hf.chd_handle = (void *)chd;
+	    ui->hf.chd_cache = malloc(h->hunkbytes);
+	    ui->hf.chd_cache_hunk = -1;
+	    ui->hf.fd = 0;
+	    ui->hf.size = (unsigned long)h->logicalbytes;
+	    ui->hf.secspertrack = secspertrack;
+	    ui->hf.surfaces = surfaces;
+	    ui->hf.reservedblocks = reserved;
+	    ui->hf.blocksize = blocksize;
+	    ui->hf.nrcyls = (secspertrack * surfaces ? (ui->hf.size / blocksize) / (secspertrack * surfaces) : 0);
 	    readonly = 1;
-	    ui->hf.fd = fopen (rootdir, "rb");
-	}
-	if (ui->hf.fd == 0)
-	    return "Hardfile not found";
-
-	if (secspertrack < 1 || secspertrack > 32767
-	    || surfaces < 1 || surfaces > 1023
-	    || reserved < 0 || reserved > 1023
-	    || (blocksize & (blocksize - 1)) != 0)
-	{
-	    return "Bad hardfile geometry";
-	}
-	fseek (ui->hf.fd, 0, SEEK_END);
-	ui->hf.size = ftell (ui->hf.fd);
-	ui->hf.secspertrack = secspertrack;
-	ui->hf.surfaces = surfaces;
-	ui->hf.reservedblocks = reserved;
-	ui->hf.nrcyls = (secspertrack * surfaces
-			 ? (ui->hf.size / blocksize) / (secspertrack * surfaces)
-			 : 0);
-	ui->hf.blocksize = blocksize;
-
-	unsigned char bhdr[4];
-	fseek (ui->hf.fd, 0, SEEK_SET);
-	if (fread (bhdr, 1, 4, ui->hf.fd) == 4 && bhdr[0] == 'D' && bhdr[1] == 'O' && bhdr[2] == 'S'
-	    && bhdr[3] <= 5) {
-	    ui->hf.dostype = ((uae_u32)bhdr[0] << 24) | ((uae_u32)bhdr[1] << 16) | ((uae_u32)bhdr[2] << 8) | (uae_u32)bhdr[3];
+	    ui->hf.dostype = 0x444f5300;
 	} else {
-	    ui->hf.dostype = 0x444f5300; /* DOS\0 = OFS */
+	    ui->hf.fd = fopen (rootdir, "r+b");
+	    if (ui->hf.fd == 0) {
+		readonly = 1;
+		ui->hf.fd = fopen (rootdir, "rb");
+	    }
+	    if (ui->hf.fd == 0)
+		return "Hardfile not found";
+
+	    if (secspertrack < 1 || secspertrack > 32767
+		|| surfaces < 1 || surfaces > 1023
+		|| reserved < 0 || reserved > 1023
+		|| (blocksize & (blocksize - 1)) != 0)
+	    {
+		return "Bad hardfile geometry";
+	    }
+	    fseek (ui->hf.fd, 0, SEEK_END);
+	    ui->hf.size = ftell (ui->hf.fd);
+	    ui->hf.secspertrack = secspertrack;
+	    ui->hf.surfaces = surfaces;
+	    ui->hf.reservedblocks = reserved;
+	    ui->hf.nrcyls = (secspertrack * surfaces
+			     ? (ui->hf.size / blocksize) / (secspertrack * surfaces)
+			     : 0);
+	    ui->hf.blocksize = blocksize;
+
+	    unsigned char bhdr[4];
+	    fseek (ui->hf.fd, 0, SEEK_SET);
+	    if (fread (bhdr, 1, 4, ui->hf.fd) == 4 && bhdr[0] == 'D' && bhdr[1] == 'O' && bhdr[2] == 'S'
+		&& bhdr[3] <= 5) {
+		ui->hf.dostype = ((uae_u32)bhdr[0] << 24) | ((uae_u32)bhdr[1] << 16) | ((uae_u32)bhdr[2] << 8) | (uae_u32)bhdr[3];
+	    } else {
+		ui->hf.dostype = 0x444f5300;
+	    }
 	}
     }
     ui->self = 0;

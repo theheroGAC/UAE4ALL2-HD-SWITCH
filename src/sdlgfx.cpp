@@ -47,6 +47,9 @@
 #include "osd.h"
 #include "rpt.h"
 #include "events.h"
+#if defined(__SWITCH__)
+extern int switch_fast_forward;
+#endif
 
 #if defined(__SWITCH__)
 #define SDL_PollEvent switch_poll_event
@@ -189,26 +192,40 @@ void flush_block ()
 			vita_screenshot_request = 0;
 		}
 #endif
-		unsigned long start = read_processor_time();
-		if(start < next_synctime && next_synctime - start > time_per_frame - 1000)
-#if defined(__PSP2__)
-			SDL_Delay(((next_synctime - start) - 1000) / 1000);
-#else
-			usleep((next_synctime - start) - 1000);
+#if defined(__SWITCH__)
+		static int s_switch_ff_cnt = 0;
+		s_switch_ff_cnt++;
+		if (switch_fast_forward) {
+			if (s_switch_ff_cnt % 5 == 0) {
+				OSD_Render(prSDLScreen);
+				SDL_Flip(prSDLScreen);
+			}
+			last_synctime = read_processor_time();
+			next_synctime = last_synctime + time_per_frame;
+		} else
 #endif
-		OSD_Render(prSDLScreen);
-		SDL_Flip(prSDLScreen);
-		last_synctime = read_processor_time();
+		{
+			unsigned long start = read_processor_time();
+			if(start < next_synctime && next_synctime - start > time_per_frame - 1000)
+#if defined(__PSP2__)
+				SDL_Delay(((next_synctime - start) - 1000) / 1000);
+#else
+				usleep((next_synctime - start) - 1000);
+#endif
+			OSD_Render(prSDLScreen);
+			SDL_Flip(prSDLScreen);
+			last_synctime = read_processor_time();
 
-		if(last_synctime - next_synctime > time_per_frame - 1000)
-			adjust_idletime(0);
-		else
-			adjust_idletime(next_synctime - start);
+			if(last_synctime - next_synctime > time_per_frame - 1000)
+				adjust_idletime(0);
+			else
+				adjust_idletime(next_synctime - start);
 
-		if(last_synctime - next_synctime > time_per_frame - 5000)
-			next_synctime = last_synctime + time_per_frame * (1 + prefs_gfx_framerate);
-		else
-			next_synctime = next_synctime + time_per_frame * (1 + prefs_gfx_framerate);
+			if(last_synctime - next_synctime > time_per_frame - 5000)
+				next_synctime = last_synctime + time_per_frame * (1 + prefs_gfx_framerate);
+			else
+				next_synctime = next_synctime + time_per_frame * (1 + prefs_gfx_framerate);
+		}
 	}
 #if defined(__SWITCH__)
 	SDL_LockSurface (prSDLScreen);
