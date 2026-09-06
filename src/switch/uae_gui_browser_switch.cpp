@@ -77,6 +77,7 @@ static bool is_supported_ext(const char *name)
         return (strcasecmp(ext, ".hdf") == 0 ||
                 strcasecmp(ext, ".hda") == 0 ||
                 strcasecmp(ext, ".vhd") == 0 ||
+                strcasecmp(ext, ".chd") == 0 ||
                 strcasecmp(ext, ".zip") == 0 ||
                 strcasecmp(ext, ".7z") == 0 ||
                 strcasecmp(ext, ".gz") == 0 ||
@@ -86,6 +87,8 @@ static bool is_supported_ext(const char *name)
     if (strcasecmp(ext, ".adf") == 0 ||
         strcasecmp(ext, ".adz") == 0 ||
         strcasecmp(ext, ".dms") == 0 ||
+        strcasecmp(ext, ".m3u") == 0 ||
+        strcasecmp(ext, ".chd") == 0 ||
         strcasecmp(ext, ".lha") == 0 ||
         strcasecmp(ext, ".lzh") == 0 ||
         strcasecmp(ext, ".ipf") == 0 ||
@@ -145,9 +148,7 @@ static void scan_directory(const char *path)
                 fsz = (size_t)st.st_size;
             }
             const char *ext = strrchr(dir->d_name, '.');
-            bool supported = s_hdf_mode
-                ? (ext != NULL && strcasecmp(ext, ".hdf") == 0)
-                : is_supported_ext(dir->d_name);
+            bool supported = is_supported_ext(dir->d_name);
             if (is_dir || supported) {
                 strncpy(s_entries[s_num_entries].name, dir->d_name, sizeof(s_entries[s_num_entries].name) - 1);
                 s_entries[s_num_entries].name[sizeof(s_entries[s_num_entries].name) - 1] = '\0';
@@ -523,6 +524,8 @@ int switch_gui_run_browser(char *out_path, const char *start_dir, int disk_drive
                 const char *type_desc = "Disk Image";
                 if (ext) {
                     if (!strcasecmp(ext, ".adf")) type_desc = "Standard ADF";
+                    else if (!strcasecmp(ext, ".m3u")) type_desc = "M3U Multi-Disk Playlist";
+                    else if (!strcasecmp(ext, ".chd")) type_desc = "CHD Compressed Image";
                     else if (!strcasecmp(ext, ".ipf")) type_desc = "CAPS / IPF Image";
                     else if (!strcasecmp(ext, ".adz")) type_desc = "Compressed ADF";
                     else if (!strcasecmp(ext, ".dms")) type_desc = "DMS Disk";

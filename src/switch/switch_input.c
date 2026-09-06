@@ -5,6 +5,7 @@
 
 extern int mainMenu_swapAB;
 extern int inside_menu;
+extern int singleJoycons;
 
 SDLKey getKey(Uint8 button) {
 
@@ -50,9 +51,13 @@ SDLKey getKey(Uint8 button) {
 		return SDLK_HOME;
 
 		case PAD_L:
+		case PAD_SL_LEFT:
+		case PAD_SL_RIGHT:
 		return SDLK_RSHIFT;
 
 		case PAD_R:
+		case PAD_SR_LEFT:
+		case PAD_SR_RIGHT:
 		return SDLK_RCTRL;
 
 		default:
@@ -77,7 +82,7 @@ int switch_poll_event(SDL_Event *event) {
 			break;
 
 			case SDL_JOYBUTTONDOWN:
-				if (event->jbutton.which==0) // Only Joystick 0 controls the menu
+				if (event->jbutton.which == 0 || (singleJoycons && event->jbutton.which == 1))
 				{
 					event->type = SDL_KEYDOWN;
 					event->key.keysym.sym = getKey(event->jbutton.button);
@@ -85,7 +90,7 @@ int switch_poll_event(SDL_Event *event) {
 				break;
 			 
 			case SDL_JOYBUTTONUP:
-				if (event->jbutton.which==0)
+				if (event->jbutton.which == 0 || (singleJoycons && event->jbutton.which == 1))
 				{
 					event->type = SDL_KEYUP;
 					event->key.keysym.sym = getKey(event->jbutton.button);

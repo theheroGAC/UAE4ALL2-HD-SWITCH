@@ -73,8 +73,8 @@ int mainMenu_CPU_model = DEFAULT_CPU_MODEL;
 int mainMenu_chipset = DEFAULT_CHIPSET_SELECT;
 int mainMenu_spriteCollisions = DEFAULT_SPRITECOLLISIONS;
 int mainMenu_sound = DEFAULT_SOUND;
-int mainMenu_soundStereo = 1; // Default is stereo
-int mainMenu_soundStereoSep = 3; // Default is 100% stereo separation
+int mainMenu_soundStereo = 1;
+int mainMenu_soundStereoSep = 4;
 int mainMenu_diskSoundVolume = 35;
 int mainMenu_CPU_speed = 0;
 
@@ -149,12 +149,13 @@ int mainMenu_cutRight = 0;
 int mainMenu_footerSize = 0;
 int mainMenu_screenOffsetY = 0;
 int mainMenu_screenOffsetX = 0;
+int mainMenu_autoCrop = 0;
 int mainMenu_ntsc = DEFAULT_NTSC;
 int mainMenu_frameskip = 0;
-int mainMenu_vkbdLanguage = 0; //Default is US Keyboard
-int mainMenu_vkbdStyle = 0; //Default is original style
-int mainMenu_vkbdTransparency = 1; //Default is 50% (128)
-int mainMenu_vkbdPosition = 0; //Default is Bottom (0 = Bottom, 1 = Top, 2 = Center)
+int mainMenu_vkbdLanguage = 0;
+int mainMenu_vkbdStyle = 0;
+int mainMenu_vkbdTransparency = 1;
+int mainMenu_vkbdPosition = 0;
 int visibleAreaWidth = 320;
 
 
@@ -295,8 +296,8 @@ void SetDefaultMenuSettings(int general)
     kickstart = DEFAULT_KICKSTART;
     mainMenu_sound = DEFAULT_SOUND;
     sound_rate = DEFAULT_SOUND_FREQ;
-    mainMenu_soundStereo = 1; // Default is stereo
-    mainMenu_soundStereoSep = 3; // Default is 100% stereo separation
+    mainMenu_soundStereo = 1;
+    mainMenu_soundStereoSep = 4;
     mainMenu_diskSoundVolume = 35;
     disk_sound_set_volume(mainMenu_diskSoundVolume);
     disk_sound_reset();
@@ -557,12 +558,13 @@ void SetDefaultMenuSettings(int general)
     mainMenu_footerSize = 0;
     mainMenu_screenOffsetY = 0;
     mainMenu_screenOffsetX = 0;
+    mainMenu_autoCrop = 0;
     mainMenu_ntsc = DEFAULT_NTSC;
     mainMenu_frameskip = 0;
-    mainMenu_vkbdLanguage = 0; //Default is US Keyboard
-    mainMenu_vkbdStyle = 0; //Default is original style
-    mainMenu_vkbdTransparency = 1; //Default is 50% (128)
-    mainMenu_vkbdPosition = 0; //Default is Bottom
+    mainMenu_vkbdLanguage = 0;
+    mainMenu_vkbdStyle = 0;
+    mainMenu_vkbdTransparency = 1;
+    mainMenu_vkbdPosition = 0;
     mainMenu_autofire = 0;
     mainMenu_autofireMode = 0;
 
@@ -1688,6 +1690,8 @@ int saveconfig(int general)
     fputs(buffer,f);
     snprintf((char*)buffer, 255, "screenOffsetX=%d\n",mainMenu_screenOffsetX);
     fputs(buffer,f);
+    snprintf((char*)buffer, 255, "autoCrop=%d\n",mainMenu_autoCrop);
+    fputs(buffer,f);
 #ifdef __SWITCH__
     snprintf((char*)buffer, 255, "swapAB=%d\n",mainMenu_swapAB);
     fputs(buffer,f);
@@ -1834,7 +1838,10 @@ void loadconfig(int general)
             mainMenu_sound -= 10;
         } else
             mainMenu_soundStereo = 0;
-        fscanf(f,"soundstereosep=%d\n",&mainMenu_soundStereoSep );
+        if (fscanf(f,"soundstereosep=%d\n",&mainMenu_soundStereoSep) != 1)
+            mainMenu_soundStereoSep = 4;
+        if (mainMenu_soundStereoSep < 0 || mainMenu_soundStereoSep > 4)
+            mainMenu_soundStereoSep = 4;
         fscanf(f,"soundrate=%d\n",&sound_rate);
 #ifdef __SWITCH__
         // only 48 kHz supported on Switch
@@ -2145,12 +2152,16 @@ void loadconfig(int general)
         if (mainMenu_footerSize > 160) mainMenu_footerSize = 160;
         if (fscanf(f,"screenOffsetY=%d\n",&mainMenu_screenOffsetY) != 1)
             mainMenu_screenOffsetY = 0;
-        if (mainMenu_screenOffsetY < -128) mainMenu_screenOffsetY = -128;
-        if (mainMenu_screenOffsetY > 128) mainMenu_screenOffsetY = 128;
+        if (mainMenu_screenOffsetY < -256) mainMenu_screenOffsetY = -256;
+        if (mainMenu_screenOffsetY > 256) mainMenu_screenOffsetY = 256;
         if (fscanf(f,"screenOffsetX=%d\n",&mainMenu_screenOffsetX) != 1)
             mainMenu_screenOffsetX = 0;
-        if (mainMenu_screenOffsetX < -128) mainMenu_screenOffsetX = -128;
-        if (mainMenu_screenOffsetX > 128) mainMenu_screenOffsetX = 128;
+        if (mainMenu_screenOffsetX < -256) mainMenu_screenOffsetX = -256;
+        if (mainMenu_screenOffsetX > 256) mainMenu_screenOffsetX = 256;
+        if (fscanf(f,"autoCrop=%d\n",&mainMenu_autoCrop) != 1)
+            mainMenu_autoCrop = 0;
+        if (mainMenu_autoCrop < 0 || mainMenu_autoCrop > 3)
+            mainMenu_autoCrop = 0;
 #ifdef __SWITCH__ 
         fscanf(f,"swapAB=%d\n",&mainMenu_swapAB);
         fscanf(f,"singleJoycons=%d\n",&mainMenu_singleJoycons);

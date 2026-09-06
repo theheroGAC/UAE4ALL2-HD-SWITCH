@@ -36,6 +36,11 @@ void SDL_Flip(SDL_Surface *surface);
 void SDL_SetVideoModeSync(int value);
 void updateResolution();
 int isDocked();
+void switch_get_game_viewport(int *x, int *y, int *w, int *h);
+void switch_reset_autocrop();
+void switch_osd_show(const char *text, int duration_ms);
+extern int switch_fast_forward;
+extern int switch_turbo_toggle;
 #endif
 
 #endif

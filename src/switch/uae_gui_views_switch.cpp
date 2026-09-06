@@ -30,6 +30,7 @@
 
 #include "uae_gui_switch.h"
 #include "whdload_manager_switch.h"
+#include "m3u_manager.h"
 static const char *switch_shader_label(int s) {
     switch (s) {
         case 0: return "None";
@@ -745,6 +746,8 @@ extern int mainMenu_frameskip;
 extern int mainMenu_floppyWriteProtect[4];
 extern int mainMenu_cycleExact;
 extern int mainMenu_joyPort;
+extern int mainMenu_singleJoycons;
+extern void update_joycon_mode(void);
 extern int mainMenu_mouseEmulation;
 extern int mainMenu_deadZone;
 extern int mainMenu_scanlines;
@@ -757,6 +760,8 @@ extern int mainMenu_cutRight;
 extern int mainMenu_footerSize;
 extern int mainMenu_screenOffsetY;
 extern int mainMenu_screenOffsetX;
+extern int mainMenu_autoCrop;
+extern void switch_reset_autocrop(void);
 extern int visibleAreaWidth;
 extern int mainMenu_displayHires;
 extern int mainMenu_case;
@@ -1150,7 +1155,13 @@ void switch_view_floppy(SwitchInputState *input, int *selected_item)
             if (res == 1) {
                 write_log("[VITA] floppy: selected DF%d path=%s\n", *selected_item, new_file);
                 if (*selected_item == 0) {
-                    copy_drive_path(uae4all_image_file0, new_file);
+                    const char *dot = strrchr(new_file, '.');
+                    if (dot && strcasecmp(dot, ".m3u") == 0) {
+                        m3u_load(new_file);
+                    } else {
+                        m3u_clear();
+                        copy_drive_path(uae4all_image_file0, new_file);
+                    }
                     mainMenu_whdload_game[0] = '\0';
                     uae4all_hard_dir[0] = '\0';
                     mainMenu_bootHD = 0;
@@ -1163,13 +1174,17 @@ void switch_view_floppy(SwitchInputState *input, int *selected_item)
                 gui_update();
                 write_log("[VITA] floppy: emulator paths updated\n");
             } else if (res == 2) {
-                if (*selected_item == 0) uae4all_image_file0[0] = '\0';
+                if (*selected_item == 0) {
+                    m3u_clear();
+                    uae4all_image_file0[0] = '\0';
+                }
                 if (*selected_item == 1) uae4all_image_file1[0] = '\0';
                 if (*selected_item == 2) uae4all_image_file2[0] = '\0';
                 if (*selected_item == 3) uae4all_image_file3[0] = '\0';
                 gui_update();
             }
         } else if (*selected_item == 6) {
+            m3u_clear();
             char temp[256];
             strncpy(temp, uae4all_image_file0, 255); temp[255] = '\0';
             strncpy(uae4all_image_file0, uae4all_image_file1, 255); uae4all_image_file0[255] = '\0';
@@ -1182,6 +1197,7 @@ void switch_view_floppy(SwitchInputState *input, int *selected_item)
             else if (mainMenu_floppyspeed == 400) mainMenu_floppyspeed = 800;
             else mainMenu_floppyspeed = 100;
         } else if (*selected_item == 5) {
+            m3u_clear();
             uae4all_image_file0[0] = '\0';
             uae4all_image_file1[0] = '\0';
             uae4all_image_file2[0] = '\0';
@@ -1194,7 +1210,10 @@ void switch_view_floppy(SwitchInputState *input, int *selected_item)
     }
 
     if (input->pressed & SWITCH_BTN_Y) {
-        if (*selected_item == 0) uae4all_image_file0[0] = '\0';
+        if (*selected_item == 0) {
+            m3u_clear();
+            uae4all_image_file0[0] = '\0';
+        }
         if (*selected_item == 1) uae4all_image_file1[0] = '\0';
         if (*selected_item == 2) uae4all_image_file2[0] = '\0';
         if (*selected_item == 3) uae4all_image_file3[0] = '\0';
@@ -1235,16 +1254,33 @@ void switch_view_floppy(SwitchInputState *input, int *selected_item)
 
         switch_draw_card(card_x, cy, card_w, slot_h, focused, false);
 
-        char drive_tag[8];
-        snprintf(drive_tag, sizeof(drive_tag), "DF%d", i);
-        switch_draw_badge(card_x + 14.0f, cy + 18.0f, drive_tag, has_disk ? SWITCH_COLOR_AMIGA_RED : RGBA8(40, 50, 70, 255), SWITCH_COLOR_TEXT_WHITE);
+        char drive_tag[16];
+        if (i == 0 && g_m3u.is_active) {
+            snprintf(drive_tag, sizeof(drive_tag), "M3U %d/%d", g_m3u.current_disk + 1, g_m3u.disk_count);
+            switch_draw_badge(card_x + 14.0f, cy + 18.0f, drive_tag, RGBA8(0, 140, 220, 255), SWITCH_COLOR_TEXT_WHITE);
+        } else {
+            snprintf(drive_tag, sizeof(drive_tag), "DF%d", i);
+            switch_draw_badge(card_x + 14.0f, cy + 18.0f, drive_tag, has_disk ? SWITCH_COLOR_AMIGA_RED : RGBA8(40, 50, 70, 255), SWITCH_COLOR_TEXT_WHITE);
+        }
 
-        switch_draw_text(card_x + 64.0f, cy + 10.0f, focused ? SWITCH_COLOR_TEXT_WHITE : SWITCH_COLOR_TEXT_MUTED, 0.85f, drive_labels[i]);
+        float text_offset_x = (i == 0 && g_m3u.is_active) ? 96.0f : 64.0f;
+        if (i == 0 && g_m3u.is_active) {
+            char m3u_lbl[128];
+            snprintf(m3u_lbl, sizeof(m3u_lbl), "DF0: M3U Multi-Disk (Disk %d of %d)", g_m3u.current_disk + 1, g_m3u.disk_count);
+            switch_draw_text(card_x + text_offset_x, cy + 10.0f, focused ? SWITCH_COLOR_TEXT_WHITE : SWITCH_COLOR_TEXT_MUTED, 0.85f, m3u_lbl);
 
-        char filename_buf[128];
-        switch_truncate_text(get_filename_only(drive_files[i]), card_w - 200.0f, 1.00f, filename_buf, sizeof(filename_buf));
-        unsigned int file_col = has_disk ? (focused ? SWITCH_COLOR_TEXT_WHITE : RGBA8(230, 240, 255, 255)) : SWITCH_COLOR_TEXT_DIM;
-        switch_draw_text(card_x + 64.0f, cy + 28.0f, file_col, 1.00f, filename_buf);
+            char filename_buf[128];
+            switch_truncate_text(g_m3u.disk_names[g_m3u.current_disk], card_w - 220.0f, 1.00f, filename_buf, sizeof(filename_buf));
+            unsigned int file_col = focused ? SWITCH_COLOR_TEXT_WHITE : RGBA8(230, 240, 255, 255);
+            switch_draw_text(card_x + text_offset_x, cy + 28.0f, file_col, 1.00f, filename_buf);
+        } else {
+            switch_draw_text(card_x + text_offset_x, cy + 10.0f, focused ? SWITCH_COLOR_TEXT_WHITE : SWITCH_COLOR_TEXT_MUTED, 0.85f, drive_labels[i]);
+
+            char filename_buf[128];
+            switch_truncate_text(get_filename_only(drive_files[i]), card_w - 200.0f, 1.00f, filename_buf, sizeof(filename_buf));
+            unsigned int file_col = has_disk ? (focused ? SWITCH_COLOR_TEXT_WHITE : RGBA8(230, 240, 255, 255)) : SWITCH_COLOR_TEXT_DIM;
+            switch_draw_text(card_x + text_offset_x, cy + 28.0f, file_col, 1.00f, filename_buf);
+        }
 
         switch_draw_led(card_x + card_w - 180.0f, cy + 18.0f, mainMenu_floppyWriteProtect[i] ? "PROT" : "RW", true, mainMenu_floppyWriteProtect[i] ? SWITCH_COLOR_AMIGA_RED : SWITCH_COLOR_AMIGA_GREEN);
 
@@ -2497,7 +2533,7 @@ void switch_view_hardware(SwitchInputState *input, int *selected_item)
                 getChanges();
                 break;
             case 12:
-                mainMenu_soundStereoSep = (mainMenu_soundStereoSep + dir + 4) % 4;
+                mainMenu_soundStereoSep = (mainMenu_soundStereoSep + dir + 5) % 5;
                 getChanges();
                 break;
             case 14:
@@ -2535,7 +2571,7 @@ void switch_view_hardware(SwitchInputState *input, int *selected_item)
     const char *slow_ram_names[4] = { "None", "512 KB (Trapdoor)", "1 MB", "1.5 MB" };
     const char *sound_out_names[4] = { "Disabled (Mute)", "22050 Hz (Low)", "44100 Hz (Standard Quality)", "48000 Hz (High Quality)" };
     const char *sound_stereo_names[2] = { "Mono", "Stereo" };
-    const char *stereo_sep_names[4] = { "25% Separation", "50% (Recommended for Headphones)", "75% Separation", "100% (Hard Amiga L/R)" };
+    const char *stereo_sep_names[5] = { "0% (Mono)", "25% Separation", "50% (Recommended for Headphones)", "75% Separation", "100% (Hard Amiga L/R)" };
     const char *cd_image_name = current_cd_image[0] ? get_filename_only(current_cd_image) : "No image selected";
 
     int curr_sound_idx = 0;
@@ -2593,7 +2629,7 @@ void switch_view_hardware(SwitchInputState *input, int *selected_item)
                 switch_draw_selector_item(card_x, y, card_w, item_h, "Audio Channels", sound_stereo_names[mainMenu_soundStereo % 2], focused);
                 break;
             case 12:
-                switch_draw_selector_item(card_x, y, card_w, item_h, "Stereo Separation", stereo_sep_names[mainMenu_soundStereoSep % 4], focused);
+                switch_draw_selector_item(card_x, y, card_w, item_h, "Stereo Separation", stereo_sep_names[mainMenu_soundStereoSep % 5], focused);
                 break;
             case 13:
                 switch_draw_selector_item(card_x, y, card_w, item_h, "CD32 CD Image", cd_image_name, focused);
@@ -2625,6 +2661,18 @@ void switch_view_display(SwitchInputState *input, int *selected_item)
         if (*selected_item >= total_items) *selected_item = 0;
     }
 
+    if (input->pressed & SWITCH_BTN_Y) {
+        if (*selected_item == 6) {
+            mainMenu_screenOffsetX = 0;
+            getChanges();
+            SDL_SetVideoModeScaling(0, 0, 0, 0);
+        } else if (*selected_item == 7) {
+            mainMenu_screenOffsetY = 0;
+            getChanges();
+            SDL_SetVideoModeScaling(0, 0, 0, 0);
+        }
+    }
+
     int dir = 0;
     if (input->pressed & (SWITCH_BTN_RIGHT | SWITCH_BTN_A)) dir = 1;
     if (input->pressed & SWITCH_BTN_LEFT) dir = -1;
@@ -2653,42 +2701,42 @@ void switch_view_display(SwitchInputState *input, int *selected_item)
                 break;
             }
             case 5:
+                mainMenu_autoCrop = (mainMenu_autoCrop + dir + 4) % 4;
+                switch_reset_autocrop();
+                break;
+            case 6:
+                mainMenu_screenOffsetX += dir * 4;
+                if (mainMenu_screenOffsetX < -256) mainMenu_screenOffsetX = -256;
+                if (mainMenu_screenOffsetX > 256) mainMenu_screenOffsetX = 256;
+                break;
+            case 7:
+                mainMenu_screenOffsetY += dir * 4;
+                if (mainMenu_screenOffsetY < -256) mainMenu_screenOffsetY = -256;
+                if (mainMenu_screenOffsetY > 256) mainMenu_screenOffsetY = 256;
+                break;
+            case 8:
                 mainMenu_frameskip += dir;
                 if (mainMenu_frameskip < 0) mainMenu_frameskip = 8;
                 if (mainMenu_frameskip > 8) mainMenu_frameskip = 0;
                 break;
-            case 6:
+            case 9:
                 mainMenu_cutLeft += dir;
                 if (mainMenu_cutLeft < 0) mainMenu_cutLeft = 0;
                 if (mainMenu_cutLeft > 100) mainMenu_cutLeft = 100;
                 break;
-            case 7:
+            case 10:
                 mainMenu_cutRight += dir;
                 if (mainMenu_cutRight < 0) mainMenu_cutRight = 0;
                 if (mainMenu_cutRight > 100) mainMenu_cutRight = 100;
                 break;
-            case 8:
+            case 11:
                 moveY += dir;
                 if (moveY < -26) moveY = -26;
                 if (moveY > 128) moveY = 128;
                 break;
-            case 9:
-                mainMenu_footerSize += dir * 8;
-                if (mainMenu_footerSize < -64) mainMenu_footerSize = -64;
-                if (mainMenu_footerSize > 160) mainMenu_footerSize = 160;
-                break;
-            case 10:
-                mainMenu_screenOffsetY += dir * 8;
-                if (mainMenu_screenOffsetY < -128) mainMenu_screenOffsetY = -128;
-                if (mainMenu_screenOffsetY > 128) mainMenu_screenOffsetY = 128;
-                break;
-            case 11:
-                mainMenu_screenOffsetX += dir * 8;
-                if (mainMenu_screenOffsetX < -128) mainMenu_screenOffsetX = -128;
-                if (mainMenu_screenOffsetX > 128) mainMenu_screenOffsetX = 128;
-                break;
         }
         getChanges();
+        SDL_SetVideoModeScaling(0, 0, 0, 0);
     }
 
     float card_x = 20.0f;
@@ -2700,6 +2748,12 @@ void switch_view_display(SwitchInputState *input, int *selected_item)
     const char *width_names[6] = {
         "320 px (Low-Res)", "640 px (Hi-Res)", "352 px (Low-Res)",
         "704 px (Hi-Res)", "384 px (Low-Res)", "768 px (Hi-Res)"
+    };
+    const char *autocrop_names[4] = {
+        "Off (Standard Amiga Frame)",
+        "Auto (Both - Complete Crop)",
+        "Auto (Vertical - Top & Bottom)",
+        "Auto (Horizontal - Left & Right)"
     };
 
     char aspect_mode[64];
@@ -2713,29 +2767,21 @@ void switch_view_display(SwitchInputState *input, int *selected_item)
     char vertical_position[32];
     snprintf(vertical_position, sizeof(vertical_position), "%d (higher = up)", moveY);
 
-    char footer_size[64];
-    if (mainMenu_footerSize > 0)
-        snprintf(footer_size, sizeof(footer_size), "+%d px footer (top fixed)", mainMenu_footerSize);
-    else if (mainMenu_footerSize < 0)
-        snprintf(footer_size, sizeof(footer_size), "%d px crop (top fixed)", mainMenu_footerSize);
-    else
-        snprintf(footer_size, sizeof(footer_size), "0 px (full height)");
-
     char screen_offset_y[64];
     if (mainMenu_screenOffsetY < 0)
-        snprintf(screen_offset_y, sizeof(screen_offset_y), "%d px up", mainMenu_screenOffsetY);
+        snprintf(screen_offset_y, sizeof(screen_offset_y), "%d px up  [Y: Reset]", mainMenu_screenOffsetY);
     else if (mainMenu_screenOffsetY > 0)
-        snprintf(screen_offset_y, sizeof(screen_offset_y), "+%d px down", mainMenu_screenOffsetY);
+        snprintf(screen_offset_y, sizeof(screen_offset_y), "+%d px down  [Y: Reset]", mainMenu_screenOffsetY);
     else
-        snprintf(screen_offset_y, sizeof(screen_offset_y), "0 px (centered at top)");
+        snprintf(screen_offset_y, sizeof(screen_offset_y), "0 px (Centered)");
 
     char screen_offset_x[64];
     if (mainMenu_screenOffsetX < 0)
-        snprintf(screen_offset_x, sizeof(screen_offset_x), "%d px left", mainMenu_screenOffsetX);
+        snprintf(screen_offset_x, sizeof(screen_offset_x), "%d px left  [Y: Reset]", mainMenu_screenOffsetX);
     else if (mainMenu_screenOffsetX > 0)
-        snprintf(screen_offset_x, sizeof(screen_offset_x), "+%d px right", mainMenu_screenOffsetX);
+        snprintf(screen_offset_x, sizeof(screen_offset_x), "+%d px right  [Y: Reset]", mainMenu_screenOffsetX);
     else
-        snprintf(screen_offset_x, sizeof(screen_offset_x), "0 px (centered)");
+        snprintf(screen_offset_x, sizeof(screen_offset_x), "0 px (Centered)");
 
     char frameskip_value[16];
     snprintf(frameskip_value, sizeof(frameskip_value), "%d", mainMenu_frameskip);
@@ -2747,18 +2793,18 @@ void switch_view_display(SwitchInputState *input, int *selected_item)
     snprintf(cut_right_value, sizeof(cut_right_value), "%d px", mainMenu_cutRight);
 
     const char *item_titles[12] = {
-        "Hardware Vita Shader",
+        "Display Scaling / Filter",
         "Screen Refresh & Region",
         "Status Bar (Floppy LED/FPS)",
         "Horizontal Resolution",
         "Vertical Lines & Aspect",
+        "Auto Crop Borders",
+        "Game Screen Offset X",
+        "Game Screen Offset Y",
         "Frameskip",
         "Overscan Cut Left",
         "Overscan Cut Right",
-        "Vertical Position",
-        "Game Footer Height",
-        "Game Screen Offset Y",
-        "Game Screen Offset X"
+        "Vertical Position"
     };
     const char *item_values[12] = {
         switch_shader_label(mainMenu_shader),
@@ -2766,13 +2812,13 @@ void switch_view_display(SwitchInputState *input, int *selected_item)
         status_names[mainMenu_showStatus % 4],
         width_names[(presetModeId / 10) % 6],
         aspect_mode,
+        autocrop_names[mainMenu_autoCrop % 4],
+        screen_offset_x,
+        screen_offset_y,
         frameskip_value,
         cut_left_value,
         cut_right_value,
-        vertical_position,
-        footer_size,
-        screen_offset_y,
-        screen_offset_x
+        vertical_position
     };
 
     for (int i = 0; i < visible_items; i++) {
@@ -3013,7 +3059,7 @@ void switch_view_controls(SwitchInputState *input, int *selected_item)
         return;
     }
 
-    const int total_items = 14;
+    const int total_items = 15;
     if (*selected_item < 0) *selected_item = 0;
     if (*selected_item >= total_items) *selected_item = total_items - 1;
 
@@ -3040,41 +3086,45 @@ void switch_view_controls(SwitchInputState *input, int *selected_item)
                 mainMenu_joyPort = (mainMenu_joyPort == 1) ? 2 : 1;
                 break;
             case 1:
-                mainMenu_mouseEmulation = 1 - mainMenu_mouseEmulation;
+                mainMenu_singleJoycons = 1 - mainMenu_singleJoycons;
+                update_joycon_mode();
                 break;
             case 2:
-                mainMenu_leftStickMouse = 1 - mainMenu_leftStickMouse;
+                mainMenu_mouseEmulation = 1 - mainMenu_mouseEmulation;
                 break;
             case 3:
+                mainMenu_leftStickMouse = 1 - mainMenu_leftStickMouse;
+                break;
+            case 4:
                 mainMenu_mouseMultiplier += dir;
                 if (mainMenu_mouseMultiplier < 1) mainMenu_mouseMultiplier = 1;
                 if (mainMenu_mouseMultiplier > 10) mainMenu_mouseMultiplier = 10;
                 break;
-            case 4:
+            case 5:
                 mainMenu_touchControls = (mainMenu_touchControls + 3 + dir) % 3;
                 break;
-            case 5:
+            case 6:
                 mainMenu_vkbdLanguage = (mainMenu_vkbdLanguage + 4 + dir) % 4;
                 break;
-            case 6:
+            case 7:
                 mainMenu_vkbdStyle = (mainMenu_vkbdStyle + 4 + dir) % 4;
                 break;
-            case 7:
+            case 8:
                 mainMenu_vkbdTransparency = (mainMenu_vkbdTransparency + 4 + dir) % 4;
                 break;
-            case 8:
+            case 9:
                 mainMenu_vkbdPosition = (mainMenu_vkbdPosition + 3 + dir) % 3;
                 break;
-            case 9:
+            case 10:
                 mainMenu_autofire = (mainMenu_autofire + 4 + dir) % 4;
                 break;
-            case 10:
+            case 11:
                 mainMenu_autofireMode = 1 - mainMenu_autofireMode;
                 break;
-            case 11:
+            case 12:
                 mainMenu_autoEjectFloppy = 1 - mainMenu_autoEjectFloppy;
                 break;
-            case 12:
+            case 13:
                 mainMenu_deadZone += dir * 1000;
                 if (mainMenu_deadZone < 1000) mainMenu_deadZone = 1000;
                 if (mainMenu_deadZone > 25000) mainMenu_deadZone = 25000;
@@ -3088,36 +3138,40 @@ void switch_view_controls(SwitchInputState *input, int *selected_item)
                 mainMenu_joyPort = (mainMenu_joyPort == 1) ? 2 : 1;
                 break;
             case 1:
-                mainMenu_mouseEmulation = 1 - mainMenu_mouseEmulation;
+                mainMenu_singleJoycons = 1 - mainMenu_singleJoycons;
+                update_joycon_mode();
                 break;
             case 2:
+                mainMenu_mouseEmulation = 1 - mainMenu_mouseEmulation;
+                break;
+            case 3:
                 mainMenu_leftStickMouse = 1 - mainMenu_leftStickMouse;
                 break;
-            case 4:
+            case 5:
                 mainMenu_touchControls = (mainMenu_touchControls + 1) % 3;
                 break;
-            case 5:
+            case 6:
                 mainMenu_vkbdLanguage = (mainMenu_vkbdLanguage + 1) % 4;
                 break;
-            case 6:
+            case 7:
                 mainMenu_vkbdStyle = (mainMenu_vkbdStyle + 1) % 4;
                 break;
-            case 7:
+            case 8:
                 mainMenu_vkbdTransparency = (mainMenu_vkbdTransparency + 1) % 4;
                 break;
-            case 8:
+            case 9:
                 mainMenu_vkbdPosition = (mainMenu_vkbdPosition + 1) % 3;
                 break;
-            case 9:
+            case 10:
                 mainMenu_autofire = (mainMenu_autofire + 1) % 4;
                 break;
-            case 10:
+            case 11:
                 mainMenu_autofireMode = 1 - mainMenu_autofireMode;
                 break;
-            case 11:
+            case 12:
                 mainMenu_autoEjectFloppy = 1 - mainMenu_autoEjectFloppy;
                 break;
-            case 13:
+            case 14:
                 s_custom_controls_modal_open = true;
                 s_custom_modal_selected = 0;
                 break;
@@ -3147,42 +3201,45 @@ void switch_view_controls(SwitchInputState *input, int *selected_item)
                 switch_draw_selector_item(card_x, y, card_w, item_h, "Joystick Port", (mainMenu_joyPort == 1) ? "Amiga Port 0 (Mouse Port)" : "Amiga Port 1 (Joystick Port)", focused);
                 break;
             case 1:
-                switch_draw_switch_item(card_x, y, card_w, item_h, "Amiga Mouse Emulation", mainMenu_mouseEmulation == 1, focused);
+                switch_draw_switch_item(card_x, y, card_w, item_h, "Single Joy-Con Mode (2 Players)", mainMenu_singleJoycons == 1, focused);
                 break;
             case 2:
-                switch_draw_switch_item(card_x, y, card_w, item_h, "Left Analog Stick as Amiga Mouse", mainMenu_leftStickMouse == 1, focused);
+                switch_draw_switch_item(card_x, y, card_w, item_h, "Amiga Mouse Emulation", mainMenu_mouseEmulation == 1, focused);
                 break;
             case 3:
-                switch_draw_selector_item(card_x, y, card_w, item_h, "Mouse Speed / Sensitivity", mouse_speed_buf, focused);
+                switch_draw_switch_item(card_x, y, card_w, item_h, "Left Analog Stick as Amiga Mouse", mainMenu_leftStickMouse == 1, focused);
                 break;
             case 4:
-                switch_draw_selector_item(card_x, y, card_w, item_h, "Switch Touchscreen & Mouse Mode", touch_modes[mainMenu_touchControls % 3], focused);
+                switch_draw_selector_item(card_x, y, card_w, item_h, "Mouse Speed / Sensitivity", mouse_speed_buf, focused);
                 break;
             case 5:
-                switch_draw_selector_item(card_x, y, card_w, item_h, "Virtual Keyboard Language", vkbd_lang_names[mainMenu_vkbdLanguage % 4], focused);
+                switch_draw_selector_item(card_x, y, card_w, item_h, "Switch Touchscreen & Mouse Mode", touch_modes[mainMenu_touchControls % 3], focused);
                 break;
             case 6:
-                switch_draw_selector_item(card_x, y, card_w, item_h, "Virtual Keyboard Style", vkbd_style_names[mainMenu_vkbdStyle % 4], focused);
+                switch_draw_selector_item(card_x, y, card_w, item_h, "Virtual Keyboard Language", vkbd_lang_names[mainMenu_vkbdLanguage % 4], focused);
                 break;
             case 7:
-                switch_draw_selector_item(card_x, y, card_w, item_h, "Virtual Keyboard Transparency", vkbd_trans_names[mainMenu_vkbdTransparency % 4], focused);
+                switch_draw_selector_item(card_x, y, card_w, item_h, "Virtual Keyboard Style", vkbd_style_names[mainMenu_vkbdStyle % 4], focused);
                 break;
             case 8:
-                switch_draw_selector_item(card_x, y, card_w, item_h, "Virtual Keyboard Position", vkbd_pos_names[mainMenu_vkbdPosition % 3], focused);
+                switch_draw_selector_item(card_x, y, card_w, item_h, "Virtual Keyboard Transparency", vkbd_trans_names[mainMenu_vkbdTransparency % 4], focused);
                 break;
             case 9:
-                switch_draw_selector_item(card_x, y, card_w, item_h, "Autofire Rate", autofire_names[mainMenu_autofire % 4], focused);
+                switch_draw_selector_item(card_x, y, card_w, item_h, "Virtual Keyboard Position", vkbd_pos_names[mainMenu_vkbdPosition % 3], focused);
                 break;
             case 10:
-                switch_draw_selector_item(card_x, y, card_w, item_h, "Autofire Trigger", (mainMenu_autofireMode == 1) ? "Continuous (Automatic / Always-On)" : "Hold Fire Button (A)", focused);
+                switch_draw_selector_item(card_x, y, card_w, item_h, "Autofire Rate", autofire_names[mainMenu_autofire % 4], focused);
                 break;
             case 11:
-                switch_draw_switch_item(card_x, y, card_w, item_h, "WHDLoad Auto-Eject Floppy on Launch", mainMenu_autoEjectFloppy == 1, focused);
+                switch_draw_selector_item(card_x, y, card_w, item_h, "Autofire Trigger", (mainMenu_autofireMode == 1) ? "Continuous (Automatic / Always-On)" : "Hold Fire Button (A)", focused);
                 break;
             case 12:
-                switch_draw_selector_item(card_x, y, card_w, item_h, "Analog Stick Deadzone", deadzone_buf, focused);
+                switch_draw_switch_item(card_x, y, card_w, item_h, "WHDLoad Auto-Eject Floppy on Launch", mainMenu_autoEjectFloppy == 1, focused);
                 break;
             case 13:
+                switch_draw_selector_item(card_x, y, card_w, item_h, "Analog Stick Deadzone", deadzone_buf, focused);
+                break;
+            case 14:
                 switch_draw_button_item(card_x, y, card_w, item_h, "Custom Button Remapping...", "Configure individual actions for all 4 Switch gamepads", "REMAP", focused, false);
                 break;
         }

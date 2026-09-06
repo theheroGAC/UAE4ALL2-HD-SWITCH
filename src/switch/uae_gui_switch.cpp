@@ -29,6 +29,8 @@
 
 #include "uae_gui_switch.h"
 #include "switch_kbd.h"
+#include "m3u_manager.h"
+#include "sdl2_to_sdl1.h"
 #include <switch.h>
 
 
@@ -57,6 +59,10 @@ extern char uae4all_hard_dir[256];
 extern void setCpuSpeed(void);
 extern int displaying_menu;
 extern int kickstart_warning;
+extern int mainMenu_autoCrop;
+extern void switch_reset_autocrop(void);
+extern int mainMenu_singleJoycons;
+extern void update_joycon_mode(void);
 
 extern SDL_Surface *prSDLScreen;
 
@@ -1329,7 +1335,7 @@ void switch_show_about_box(void)
 {
     static const CreditLine credits[] = {
         { "UAE4ALL2 HD Switch", CR_TITLE },
-        { "Version 1.01 - Amiga Emulator for Nintendo Switch", CR_SUBTITLE },
+        { "Version 1.02 - Amiga Emulator for Nintendo Switch", CR_SUBTITLE },
         { "", CR_EMPTY },
         { "A high-definition port of the classic UAE4ALL Amiga emulator,", CR_TEXT },
         { "now with WHDLoad, HDF, IPF and CD32 support on Switch.", CR_TEXT },
@@ -1678,9 +1684,34 @@ int run_overlay_switch(void)
 
     SwitchInputState input;
     SwitchSystemInfo sysinfo;
-    const char *items[6] = { "Resume", "Save State", "Load State", "Eject DF0", "Eject CD32", "Screenshot" };
+    const char *crop_short_names[4] = {
+        "Auto Crop: Off",
+        "Auto Crop: Both (Full)",
+        "Auto Crop: Vertical",
+        "Auto Crop: Horizontal"
+    };
+    const char *stereo_names[5] = {
+        "0% (Mono)",
+        "25%",
+        "50% (Headphones)",
+        "75%",
+        "100% (Amiga)"
+    };
+    char item_save[64];
+    char item_load[64];
+    char item_turbo[64];
+    char item_stereo[64];
+    char item_m3u[96];
+    char item_joycon[64];
+    char item_crop[64];
+    const char *items[11];
+
     int selected = 0;
     int frame_count = 0;
+    static int overlay_slot = 1;
+    if (saveMenu_n_savestate >= 1 && saveMenu_n_savestate <= 5)
+        overlay_slot = saveMenu_n_savestate;
+
     memset(&input, 0, sizeof(input));
     memset(&sysinfo, 0, sizeof(sysinfo));
     buttonSelect[0] = 0;
@@ -1691,18 +1722,87 @@ int run_overlay_switch(void)
         switch_gui_update_system_info(&sysinfo);
         frame_count++;
 
+        snprintf(item_save, sizeof(item_save), "Save State (Slot %d)", overlay_slot);
+        snprintf(item_load, sizeof(item_load), "Load State (Slot %d)", overlay_slot);
+        snprintf(item_turbo, sizeof(item_turbo), "Turbo Mode: %s", (switch_fast_forward || switch_turbo_toggle) ? "ON" : "OFF");
+        snprintf(item_stereo, sizeof(item_stereo), "Stereo Separation: %s", stereo_names[mainMenu_soundStereoSep % 5]);
+        if (g_m3u.is_active) {
+            snprintf(item_m3u, sizeof(item_m3u), "M3U Swap: Disk %d/%d (%s)", g_m3u.current_disk + 1, g_m3u.disk_count, g_m3u.disk_names[g_m3u.current_disk]);
+        } else {
+            snprintf(item_m3u, sizeof(item_m3u), "M3U Swap: No Playlist Active");
+        }
+        snprintf(item_joycon, sizeof(item_joycon), "Single Joy-Con (2P): %s", mainMenu_singleJoycons ? "ON" : "OFF");
+        snprintf(item_crop, sizeof(item_crop), "%s", crop_short_names[mainMenu_autoCrop % 4]);
+
+        items[0] = "Resume";
+        items[1] = item_save;
+        items[2] = item_load;
+        items[3] = item_turbo;
+        items[4] = item_stereo;
+        items[5] = item_m3u;
+        items[6] = item_joycon;
+        items[7] = item_crop;
+        items[8] = "Eject DF0";
+        items[9] = "Eject CD32";
+        items[10] = "Screenshot";
+
         if (input.pressed & (SWITCH_BTN_B | SWITCH_BTN_PLUS)) {
             mainMenu_case = MAIN_MENU_CASE_RUN;
             break;
         }
         if (input.pressed & SWITCH_BTN_UP) {
             selected--;
-            if (selected < 0) selected = 5;
+            if (selected < 0) selected = 10;
         }
         if (input.pressed & SWITCH_BTN_DOWN) {
             selected++;
-            if (selected > 5) selected = 0;
+            if (selected > 10) selected = 0;
         }
+
+        if (input.pressed & SWITCH_BTN_LEFT) {
+            if (selected == 1 || selected == 2) {
+                overlay_slot--;
+                if (overlay_slot < 1) overlay_slot = 5;
+                saveMenu_n_savestate = overlay_slot;
+            } else if (selected == 3) {
+                switch_turbo_toggle = !switch_turbo_toggle;
+                switch_fast_forward = switch_turbo_toggle;
+            } else if (selected == 4) {
+                mainMenu_soundStereoSep = (mainMenu_soundStereoSep + 4) % 5;
+            } else if (selected == 5) {
+                if (g_m3u.is_active) m3u_prev_disk();
+            } else if (selected == 6) {
+                mainMenu_singleJoycons = 1 - mainMenu_singleJoycons;
+                update_joycon_mode();
+                switch_osd_show(mainMenu_singleJoycons ? "SINGLE JOY-CON (2P) ON" : "SINGLE JOY-CON (2P) OFF", 2000);
+            } else if (selected == 7) {
+                mainMenu_autoCrop = (mainMenu_autoCrop + 3) % 4;
+                switch_reset_autocrop();
+            }
+        }
+
+        if (input.pressed & SWITCH_BTN_RIGHT) {
+            if (selected == 1 || selected == 2) {
+                overlay_slot++;
+                if (overlay_slot > 5) overlay_slot = 1;
+                saveMenu_n_savestate = overlay_slot;
+            } else if (selected == 3) {
+                switch_turbo_toggle = !switch_turbo_toggle;
+                switch_fast_forward = switch_turbo_toggle;
+            } else if (selected == 4) {
+                mainMenu_soundStereoSep = (mainMenu_soundStereoSep + 1) % 5;
+            } else if (selected == 5) {
+                if (g_m3u.is_active) m3u_next_disk();
+            } else if (selected == 6) {
+                mainMenu_singleJoycons = 1 - mainMenu_singleJoycons;
+                update_joycon_mode();
+                switch_osd_show(mainMenu_singleJoycons ? "SINGLE JOY-CON (2P) ON" : "SINGLE JOY-CON (2P) OFF", 2000);
+            } else if (selected == 7) {
+                mainMenu_autoCrop = (mainMenu_autoCrop + 1) % 4;
+                switch_reset_autocrop();
+            }
+        }
+
         if (input.pressed & SWITCH_BTN_A) {
             extern char *savestate_filename;
             extern char *screenshot_filename;
@@ -1710,28 +1810,59 @@ int run_overlay_switch(void)
                 mainMenu_case = MAIN_MENU_CASE_RUN;
                 break;
             } else if (selected == 1) {
-                saveMenu_n_savestate = 1;
+                saveMenu_n_savestate = overlay_slot;
                 make_savestate_filenames(savestate_filename, screenshot_filename);
                 savestate_state = STATE_DOSAVE;
+                char msg[64];
+                snprintf(msg, sizeof(msg), "QUICK SAVE -> SLOT %d", overlay_slot);
+                switch_osd_show(msg, 2000);
                 mainMenu_case = MAIN_MENU_CASE_RUN;
                 break;
             } else if (selected == 2) {
-                saveMenu_n_savestate = 1;
+                saveMenu_n_savestate = overlay_slot;
                 make_savestate_filenames(savestate_filename, screenshot_filename);
                 FILE *state_file = fopen(savestate_filename, "rb");
                 if (state_file) {
                     fclose(state_file);
                     savestate_state = STATE_DORESTORE;
+                    char msg[64];
+                    snprintf(msg, sizeof(msg), "QUICK LOAD <- SLOT %d", overlay_slot);
+                    switch_osd_show(msg, 2000);
+                } else {
+                    char msg[64];
+                    snprintf(msg, sizeof(msg), "SLOT %d EMPTY", overlay_slot);
+                    switch_osd_show(msg, 2000);
                 }
                 mainMenu_case = MAIN_MENU_CASE_RUN;
                 break;
             } else if (selected == 3) {
+                switch_turbo_toggle = !switch_turbo_toggle;
+                switch_fast_forward = switch_turbo_toggle;
+            } else if (selected == 4) {
+                mainMenu_soundStereoSep = (mainMenu_soundStereoSep + 1) % 5;
+            } else if (selected == 5) {
+                if (g_m3u.is_active) {
+                    m3u_next_disk();
+                } else {
+                    switch_osd_show("NO M3U PLAYLIST ACTIVE", 1500);
+                }
+            } else if (selected == 6) {
+                mainMenu_singleJoycons = 1 - mainMenu_singleJoycons;
+                update_joycon_mode();
+                switch_osd_show(mainMenu_singleJoycons ? "SINGLE JOY-CON (2P) ON" : "SINGLE JOY-CON (2P) OFF", 2000);
+            } else if (selected == 7) {
+                mainMenu_autoCrop = (mainMenu_autoCrop + 1) % 4;
+                switch_reset_autocrop();
+            } else if (selected == 8) {
+                m3u_clear();
                 uae4all_image_file0[0] = '\0';
                 gui_update();
+                switch_osd_show("DF0: EJECTED", 1500);
                 mainMenu_case = MAIN_MENU_CASE_RUN;
                 break;
-            } else if (selected == 4) {
+            } else if (selected == 9) {
                 cdrom_close_image();
+                switch_osd_show("CD32: EJECTED", 1500);
                 mainMenu_case = MAIN_MENU_CASE_RUN;
                 break;
             } else {
@@ -1743,11 +1874,11 @@ int run_overlay_switch(void)
 
         SDL_FillRect(prSDLScreen, NULL, to_sdl_color(SWITCH_COLOR_OVERLAY_BG));
         switch_draw_header("Quick Menu", SWITCH_TAB_FLOPPY, &sysinfo);
-        for (int i = 0; i < 6; i++) {
-            float y = 82.0f + (float)i * 58.0f;
-            switch_draw_button_item(80.0f, y, SWITCH_SCREEN_W - 160.0f, 48.0f, items[i], NULL, NULL, selected == i, false);
+        for (int i = 0; i < 11; i++) {
+            float y = 56.0f + (float)i * 48.0f;
+            switch_draw_button_item(80.0f, y, SWITCH_SCREEN_W - 160.0f, 42.0f, items[i], NULL, NULL, selected == i, false);
         }
-        switch_draw_footer("A SELECT", "B / + RESUME");
+        switch_draw_footer("A SELECT / TOGGLE    LEFT / RIGHT ADJUST", "B / + RESUME");
         SDL_Flip(prSDLScreen);
         SDL_Delay(16);
     }
