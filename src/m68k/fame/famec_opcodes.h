@@ -3893,8 +3893,8 @@ OPCODE(0x0C7A)
    PC++;
    READ_WORD_F(adr, dst)
    res = dst - src;
-   flag_N = flag_C = res;
-   flag_V = (src ^ dst) & (res ^ dst);
+   flag_V = ((src ^ dst) & (res ^ dst)) >> 8;
+   flag_N = flag_C = res >> 8;
    flag_NotZ = res & 0xFFFF;
 	RET(13)
 }
@@ -3910,8 +3910,8 @@ OPCODE(0x0C7B)
    DECODE_EXT_WORD(&adr);
    READ_WORD_F(adr, dst)
    res = dst - src;
-   flag_N = flag_C = res;
-   flag_V = (src ^ dst) & (res ^ dst);
+   flag_V = ((src ^ dst) & (res ^ dst)) >> 8;
+   flag_N = flag_C = res >> 8;
    flag_NotZ = res & 0xFFFF;
 	RET(11)
 }
@@ -4142,9 +4142,10 @@ OPCODE(0x0CBA)
    PC++;
    READ_LONG_F(adr, dst)
    res = dst - src;
-   flag_N = flag_C = res;
-   flag_V = (src ^ dst) & (res ^ dst);
-   flag_NotZ = res /*& 0xFFFF*/;
+   flag_NotZ = res;
+   flag_C = ((src & res & 1) + (src >> 1) + (res >> 1)) >> 23;
+   flag_V = ((src ^ dst) & (res ^ dst)) >> 24;
+   flag_N = res >> 24;
 	RET(15)
 }
 
@@ -4159,9 +4160,10 @@ OPCODE(0x0CBB)
    DECODE_EXT_WORD(&adr);
    READ_LONG_F(adr, dst)
    res = dst - src;
-   flag_N = flag_C = res;
-   flag_V = (src ^ dst) & (res ^ dst);
-   flag_NotZ = res /*& 0xFFFF*/;
+   flag_NotZ = res;
+   flag_C = ((src & res & 1) + (src >> 1) + (res >> 1)) >> 23;
+   flag_V = ((src ^ dst) & (res ^ dst)) >> 24;
+   flag_N = res >> 24;
 	RET(13)
 }
 #endif
@@ -15644,10 +15646,11 @@ OPCODE(0x4080)
 	u32 src;
 
 	src = DREGu32((Opcode /*>> 0*/) & 7);
-	res = -src - ((flag_X >> 8) & 1);
+	u32 bin = (flag_X >> 8) & 1;
+	res = -src - bin;
 	flag_NotZ |= res;
 	flag_V = (res & src) >> 24;
-  flag_X = flag_C = (res?1:0)<<8;
+	flag_X = flag_C = (bin || (src != 0)) ? (1 << 8) : 0;
 	flag_N = res >> 24;
 	DREGu32((Opcode /*>> 0*/) & 7) = res;
 #ifdef OPCODES_M68000
@@ -15665,10 +15668,11 @@ OPCODE(0x4090)
 
 	adr = AREG((Opcode /*>> 0*/) & 7);
 	READ_LONG_F(adr, src)
-	res = -src - ((flag_X >> 8) & 1);
+	u32 bin = (flag_X >> 8) & 1;
+	res = -src - bin;
 	flag_NotZ |= res;
 	flag_V = (res & src) >> 24;
-  flag_X = flag_C = (res?1:0)<<8;
+	flag_X = flag_C = (bin || (src != 0)) ? (1 << 8) : 0;
 	flag_N = res >> 24;
 	WRITE_LONG_F(adr, res)
 #ifdef OPCODES_M68000
@@ -15687,10 +15691,11 @@ OPCODE(0x4098)
 	adr = AREG((Opcode /*>> 0*/) & 7);
 	AREG((Opcode /*>> 0*/) & 7) += 4;
 	READ_LONG_F(adr, src)
-	res = -src - ((flag_X >> 8) & 1);
+	u32 bin = (flag_X >> 8) & 1;
+	res = -src - bin;
 	flag_NotZ |= res;
 	flag_V = (res & src) >> 24;
-  flag_X = flag_C = (res?1:0)<<8;
+	flag_X = flag_C = (bin || (src != 0)) ? (1 << 8) : 0;
 	flag_N = res >> 24;
 	WRITE_LONG_F(adr, res)
 #ifdef OPCODES_M68000
@@ -15709,10 +15714,11 @@ OPCODE(0x40A0)
 	adr = AREG((Opcode /*>> 0*/) & 7) - 4;
 	AREG((Opcode /*>> 0*/) & 7) = adr;
 	READ_LONG_F(adr, src)
-	res = -src - ((flag_X >> 8) & 1);
+	u32 bin = (flag_X >> 8) & 1;
+	res = -src - bin;
 	flag_NotZ |= res;
 	flag_V = (res & src) >> 24;
-  flag_X = flag_C = (res?1:0)<<8;
+	flag_X = flag_C = (bin || (src != 0)) ? (1 << 8) : 0;
 	flag_N = res >> 24;
 	WRITE_LONG_F(adr, res)
 #ifdef OPCODES_M68000
@@ -15731,10 +15737,11 @@ OPCODE(0x40A8)
 	FETCH_SWORD(adr);
 	adr += AREG((Opcode /*>> 0*/) & 7);
 	READ_LONG_F(adr, src)
-	res = -src - ((flag_X >> 8) & 1);
+	u32 bin = (flag_X >> 8) & 1;
+	res = -src - bin;
 	flag_NotZ |= res;
 	flag_V = (res & src) >> 24;
-  flag_X = flag_C = (res?1:0)<<8;
+	flag_X = flag_C = (bin || (src != 0)) ? (1 << 8) : 0;
 	flag_N = res >> 24;
 	WRITE_LONG_F(adr, res)
 #ifdef OPCODES_M68000
@@ -15753,10 +15760,11 @@ OPCODE(0x40B0)
 	adr = AREG((Opcode /*>> 0*/) & 7);
 	DECODE_EXT_WORD(&adr);
 	READ_LONG_F(adr, src)
-	res = -src - ((flag_X >> 8) & 1);
+	u32 bin = (flag_X >> 8) & 1;
+	res = -src - bin;
 	flag_NotZ |= res;
 	flag_V = (res & src) >> 24;
-  flag_X = flag_C = (res?1:0)<<8;
+	flag_X = flag_C = (bin || (src != 0)) ? (1 << 8) : 0;
 	flag_N = res >> 24;
 	WRITE_LONG_F(adr, res)
 #ifdef OPCODES_M68000
@@ -15774,10 +15782,11 @@ OPCODE(0x40B8)
 
 	FETCH_SWORD(adr);
 	READ_LONG_F(adr, src)
-	res = -src - ((flag_X >> 8) & 1);
+	u32 bin = (flag_X >> 8) & 1;
+	res = -src - bin;
 	flag_NotZ |= res;
 	flag_V = (res & src) >> 24;
-  flag_X = flag_C = (res?1:0)<<8;
+	flag_X = flag_C = (bin || (src != 0)) ? (1 << 8) : 0;
 	flag_N = res >> 24;
 	WRITE_LONG_F(adr, res)
 #ifdef OPCODES_M68000
@@ -15795,10 +15804,11 @@ OPCODE(0x40B9)
 
 	FETCH_LONG(adr);
 	READ_LONG_F(adr, src)
-	res = -src - ((flag_X >> 8) & 1);
+	u32 bin = (flag_X >> 8) & 1;
+	res = -src - bin;
 	flag_NotZ |= res;
 	flag_V = (res & src) >> 24;
-  flag_X = flag_C = (res?1:0)<<8;
+	flag_X = flag_C = (bin || (src != 0)) ? (1 << 8) : 0;
 	flag_N = res >> 24;
 	WRITE_LONG_F(adr, res)
 #ifdef OPCODES_M68000
@@ -15817,10 +15827,11 @@ OPCODE(0x409F)
 	adr = AREG(7);
 	AREG(7) += 4;
 	READ_LONG_F(adr, src)
-	res = -src - ((flag_X >> 8) & 1);
+	u32 bin = (flag_X >> 8) & 1;
+	res = -src - bin;
 	flag_NotZ |= res;
 	flag_V = (res & src) >> 24;
-  flag_X = flag_C = (res?1:0)<<8;
+	flag_X = flag_C = (bin || (src != 0)) ? (1 << 8) : 0;
 	flag_N = res >> 24;
 	WRITE_LONG_F(adr, res)
 #ifdef OPCODES_M68000
@@ -15839,10 +15850,11 @@ OPCODE(0x40A7)
 	adr = AREG(7) - 4;
 	AREG(7) = adr;
 	READ_LONG_F(adr, src)
-	res = -src - ((flag_X >> 8) & 1);
+	u32 bin = (flag_X >> 8) & 1;
+	res = -src - bin;
 	flag_NotZ |= res;
 	flag_V = (res & src) >> 24;
-  flag_X = flag_C = (res?1:0)<<8;
+	flag_X = flag_C = (bin || (src != 0)) ? (1 << 8) : 0;
 	flag_N = res >> 24;
 	WRITE_LONG_F(adr, res)
 #ifdef OPCODES_M68000
@@ -34517,9 +34529,10 @@ OPCODE(0x9180)
 
 	src = DREGu32((Opcode /*>> 0*/) & 7);
 	dst = DREGu32((Opcode >> 9) & 7);
-	res = dst - src - ((flag_X >> 8) & 1);
+	u32 bin = (flag_X >> 8) & 1;
+	res = dst - src - bin;
 	flag_NotZ |= res;
-	flag_X = flag_C = ((src & res & 1) + (src >> 1) + (res >> 1)) >> 23;
+	flag_X = flag_C = ((bin ? (dst <= src) : (dst < src)) ? 1 : 0) << 8;
 	flag_V = ((src ^ dst) & (res ^ dst)) >> 24;
 	flag_N = res >> 24;
 	DREGu32((Opcode >> 9) & 7) = res;
@@ -34590,9 +34603,10 @@ OPCODE(0x9188)
 	adr = AREG((Opcode >> 9) & 7) - 4;
 	AREG((Opcode >> 9) & 7) = adr;
 	READ_LONG_F(adr, dst)
-	res = dst - src - ((flag_X >> 8) & 1);
+	u32 bin = (flag_X >> 8) & 1;
+	res = dst - src - bin;
 	flag_NotZ |= res;
-	flag_X = flag_C = ((src & res & 1) + (src >> 1) + (res >> 1)) >> 23;
+	flag_X = flag_C = ((bin ? (dst <= src) : (dst < src)) ? 1 : 0) << 8;
 	flag_V = ((src ^ dst) & (res ^ dst)) >> 24;
 	flag_N = res >> 24;
 	WRITE_LONG_F(adr, res)
@@ -34663,9 +34677,10 @@ OPCODE(0x918F)
 	adr = AREG((Opcode >> 9) & 7) - 4;
 	AREG((Opcode >> 9) & 7) = adr;
 	READ_LONG_F(adr, dst)
-	res = dst - src - ((flag_X >> 8) & 1);
+	u32 bin = (flag_X >> 8) & 1;
+	res = dst - src - bin;
 	flag_NotZ |= res;
-	flag_X = flag_C = ((src & res & 1) + (src >> 1) + (res >> 1)) >> 23;
+	flag_X = flag_C = ((bin ? (dst <= src) : (dst < src)) ? 1 : 0) << 8;
 	flag_V = ((src ^ dst) & (res ^ dst)) >> 24;
 	flag_N = res >> 24;
 	WRITE_LONG_F(adr, res)
@@ -34736,9 +34751,10 @@ OPCODE(0x9F88)
 	adr = AREG(7) - 4;
 	AREG(7) = adr;
 	READ_LONG_F(adr, dst)
-	res = dst - src - ((flag_X >> 8) & 1);
+	u32 bin = (flag_X >> 8) & 1;
+	res = dst - src - bin;
 	flag_NotZ |= res;
-	flag_X = flag_C = ((src & res & 1) + (src >> 1) + (res >> 1)) >> 23;
+	flag_X = flag_C = ((bin ? (dst <= src) : (dst < src)) ? 1 : 0) << 8;
 	flag_V = ((src ^ dst) & (res ^ dst)) >> 24;
 	flag_N = res >> 24;
 	WRITE_LONG_F(adr, res)
@@ -34809,9 +34825,10 @@ OPCODE(0x9F8F)
 	adr = AREG(7) - 4;
 	AREG(7) = adr;
 	READ_LONG_F(adr, dst)
-	res = dst - src - ((flag_X >> 8) & 1);
+	u32 bin = (flag_X >> 8) & 1;
+	res = dst - src - bin;
 	flag_NotZ |= res;
-	flag_X = flag_C = ((src & res & 1) + (src >> 1) + (res >> 1)) >> 23;
+	flag_X = flag_C = ((bin ? (dst <= src) : (dst < src)) ? 1 : 0) << 8;
 	flag_V = ((src ^ dst) & (res ^ dst)) >> 24;
 	flag_N = res >> 24;
 	WRITE_LONG_F(adr, res)
@@ -41551,9 +41568,10 @@ OPCODE(0xD180)
 
 	src = DREGu32((Opcode /*>> 0*/) & 7);
 	dst = DREGu32((Opcode >> 9) & 7);
-	res = dst + src + ((flag_X >> 8) & 1);
+	u32 cin = (flag_X >> 8) & 1;
+	res = dst + src + cin;
 	flag_NotZ |= res;
-	flag_X = flag_C = ((src & dst & 1) + (src >> 1) + (dst >> 1)) >> 23;
+	flag_X = flag_C = ((cin ? (res <= dst) : (res < dst)) ? 1 : 0) << 8;
 	flag_V = ((src ^ res) & (dst ^ res)) >> 24;
 	flag_N = res >> 24;
 	DREGu32((Opcode >> 9) & 7) = res;
@@ -41624,9 +41642,10 @@ OPCODE(0xD188)
 	adr = AREG((Opcode >> 9) & 7) - 4;
 	AREG((Opcode >> 9) & 7) = adr;
 	READ_LONG_F(adr, dst)
-	res = dst + src + ((flag_X >> 8) & 1);
+	u32 cin = (flag_X >> 8) & 1;
+	res = dst + src + cin;
 	flag_NotZ |= res;
-	flag_X = flag_C = ((src & dst & 1) + (src >> 1) + (dst >> 1)) >> 23;
+	flag_X = flag_C = ((cin ? (res <= dst) : (res < dst)) ? 1 : 0) << 8;
 	flag_V = ((src ^ res) & (dst ^ res)) >> 24;
 	flag_N = res >> 24;
 	WRITE_LONG_F(adr, res)
@@ -41697,9 +41716,10 @@ OPCODE(0xD18F)
 	adr = AREG((Opcode >> 9) & 7) - 4;
 	AREG((Opcode >> 9) & 7) = adr;
 	READ_LONG_F(adr, dst)
-	res = dst + src + ((flag_X >> 8) & 1);
+	u32 cin = (flag_X >> 8) & 1;
+	res = dst + src + cin;
 	flag_NotZ |= res;
-	flag_X = flag_C = ((src & dst & 1) + (src >> 1) + (dst >> 1)) >> 23;
+	flag_X = flag_C = ((cin ? (res <= dst) : (res < dst)) ? 1 : 0) << 8;
 	flag_V = ((src ^ res) & (dst ^ res)) >> 24;
 	flag_N = res >> 24;
 	WRITE_LONG_F(adr, res)
@@ -41770,9 +41790,10 @@ OPCODE(0xDF88)
 	adr = AREG(7) - 4;
 	AREG(7) = adr;
 	READ_LONG_F(adr, dst)
-	res = dst + src + ((flag_X >> 8) & 1);
+	u32 cin = (flag_X >> 8) & 1;
+	res = dst + src + cin;
 	flag_NotZ |= res;
-	flag_X = flag_C = ((src & dst & 1) + (src >> 1) + (dst >> 1)) >> 23;
+	flag_X = flag_C = ((cin ? (res <= dst) : (res < dst)) ? 1 : 0) << 8;
 	flag_V = ((src ^ res) & (dst ^ res)) >> 24;
 	flag_N = res >> 24;
 	WRITE_LONG_F(adr, res)
@@ -41843,9 +41864,10 @@ OPCODE(0xDF8F)
 	adr = AREG(7) - 4;
 	AREG(7) = adr;
 	READ_LONG_F(adr, dst)
-	res = dst + src + ((flag_X >> 8) & 1);
+	u32 cin = (flag_X >> 8) & 1;
+	res = dst + src + cin;
 	flag_NotZ |= res;
-	flag_X = flag_C = ((src & dst & 1) + (src >> 1) + (dst >> 1)) >> 23;
+	flag_X = flag_C = ((cin ? (res <= dst) : (res < dst)) ? 1 : 0) << 8;
 	flag_V = ((src ^ res) & (dst ^ res)) >> 24;
 	flag_N = res >> 24;
 	WRITE_LONG_F(adr, res)
@@ -42855,7 +42877,7 @@ OPCODE(0xE190)
 
 	sft = (((Opcode >> 9) - 1) & 7) + 1;
 	src = DREGu32((Opcode /*>> 0*/) & 7);
-	flag_C = src >> ((32 - M68K_SR_C_SFT) - sft);
+	flag_C = ((src >> (32 - sft)) & 1) << M68K_SR_C_SFT;
 	if (sft == 1) res = (src << 1) | ((flag_X & M68K_SR_X) >> ((M68K_SR_X_SFT + 1) - 1));
 	else res = (src << sft) | (src >> (33 - sft)) | ((flag_X & M68K_SR_X) >> ((M68K_SR_X_SFT + 1) - sft));
 	flag_X = flag_C;
@@ -43555,7 +43577,7 @@ OPCODE(0xE120)
 #endif
 		}
 
-		if (sft == 256) flag_C = src << M68K_SR_C_SFT;
+		if (sft == 8) flag_C = (src & 1) << M68K_SR_C_SFT;
 		else flag_C = 0;
 		flag_X = flag_C;
 		if (src) flag_V = M68K_SR_V;
@@ -43613,7 +43635,7 @@ OPCODE(0xE160)
 #endif
 		}
 
-		if (sft == 65536) flag_C = src << M68K_SR_C_SFT;
+		if (sft == 16) flag_C = (src & 1) << M68K_SR_C_SFT;
 		else flag_C = 0;
 		flag_X = flag_C;
 		if (src) flag_V = M68K_SR_V;
@@ -43671,7 +43693,7 @@ OPCODE(0xE1A0)
 #endif
 		}
 
-		if (sft == 0) flag_C = src << M68K_SR_C_SFT;
+		if (sft == 32) flag_C = (src & 1) << M68K_SR_C_SFT;
 		else flag_C = 0;
 		flag_X = flag_C;
 		if (src) flag_V = M68K_SR_V;
@@ -43811,7 +43833,7 @@ OPCODE(0xE1A8)
 	{
 		if (sft < 32)
 		{
-			flag_X = flag_C = (src >> (32 - sft)) << M68K_SR_C_SFT;
+			flag_X = flag_C = ((src >> (32 - sft)) & 1) << M68K_SR_C_SFT;
 			res = src << sft;
 			flag_V = 0;
 			flag_N = res >> 24;
@@ -43824,7 +43846,7 @@ OPCODE(0xE1A8)
 #endif
 		}
 
-		if (sft == 32) flag_C = src << M68K_SR_C_SFT;
+		if (sft == 32) flag_C = (src & 1) << M68K_SR_C_SFT;
 		else flag_C = 0;
 		flag_X = flag_C;
 		flag_N = 0;
@@ -43946,7 +43968,7 @@ OPCODE(0xE1B0)
 		{
 			if (sft == 1) res = (src << 1) | ((flag_X >> ((M68K_SR_X_SFT + 1) - 1)) & 1);
 			else res = (src << sft) | (src >> (33 - sft)) | (((flag_X >> ((M68K_SR_X_SFT + 1) - 1)) & 1) << (sft - 1));
-			flag_X = (src >> (32 - sft)) << M68K_SR_X_SFT;
+			flag_X = ((src >> (32 - sft)) & 1) << M68K_SR_X_SFT;
 		}
 		else res = src;
 		flag_C = flag_X;
@@ -47163,7 +47185,7 @@ OPCODE(0x0EFC)
       adr2 = DREG(res2 >> 12);              
    READ_LONG_F(adr2, tmp2);
    
-   CAS2_EXECUTE(24, WRITE_WORD_F(adr1, DREGs32((res1 >> 6) & 7)), WRITE_WORD_F(adr2, DREGs32((res2 >> 6) & 7)))
+   CAS2_EXECUTE(24, WRITE_LONG_F(adr1, DREGs32((res1 >> 6) & 7)), WRITE_LONG_F(adr2, DREGs32((res2 >> 6) & 7)))
 	RET(22)
 }
 

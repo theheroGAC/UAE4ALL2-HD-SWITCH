@@ -53,6 +53,48 @@ static __inline__ void unset_special (uae_u32 x)
 /* UAE redefine */
 #define m68k_dreg(r,num) (m68kcontext.dreg[num].D)
 #define m68k_areg(r,num) (m68kcontext.areg[num].D)
+#define m68k_reg(num) ((num) < 8 ? _68k_dreg(num) : _68k_areg((num) - 8))
+#define m68k_getpc() m68k_get_pc()
+#define m68k_setpc(mipc) _68k_setpc(mipc)
+
+#ifndef regs
+#define regs M68KCONTEXT
+#endif
+
+#define GET_CFLG() ((M68KCONTEXT.flag_c >> 8) & 1)
+#define GET_VFLG() ((M68KCONTEXT.flag_v >> 7) & 1)
+#define GET_ZFLG() (!M68KCONTEXT.flag_notz)
+#define GET_NFLG() ((M68KCONTEXT.flag_n >> 7) & 1)
+#define GET_XFLG() ((M68KCONTEXT.flag_x >> 8) & 1)
+
+#define SET_CFLG(y) (M68KCONTEXT.flag_c = ((y) ? 1 : 0) << 8)
+#define SET_VFLG(y) (M68KCONTEXT.flag_v = ((y) ? 1 : 0) << 7)
+#define SET_ZFLG(y) (M68KCONTEXT.flag_notz = !(y))
+#define SET_NFLG(y) (M68KCONTEXT.flag_n = ((y) ? 1 : 0) << 7)
+#define SET_XFLG(y) (M68KCONTEXT.flag_x = ((y) ? 1 : 0) << 8)
+
+static __inline__ int cctrue(int cc)
+{
+	switch (cc & 0xF) {
+		case 0:  return 1;
+		case 1:  return 0;
+		case 2:  return (!(M68KCONTEXT.flag_c & 0x100)) && M68KCONTEXT.flag_notz;
+		case 3:  return (M68KCONTEXT.flag_c & 0x100) || (!M68KCONTEXT.flag_notz);
+		case 4:  return !(M68KCONTEXT.flag_c & 0x100);
+		case 5:  return (M68KCONTEXT.flag_c & 0x100) != 0;
+		case 6:  return M68KCONTEXT.flag_notz != 0;
+		case 7:  return !M68KCONTEXT.flag_notz;
+		case 8:  return !(M68KCONTEXT.flag_v & 0x80);
+		case 9:  return (M68KCONTEXT.flag_v & 0x80) != 0;
+		case 10: return !(M68KCONTEXT.flag_n & 0x80);
+		case 11: return (M68KCONTEXT.flag_n & 0x80) != 0;
+		case 12: return !((M68KCONTEXT.flag_n ^ M68KCONTEXT.flag_v) & 0x80);
+		case 13: return ((M68KCONTEXT.flag_n ^ M68KCONTEXT.flag_v) & 0x80) != 0;
+		case 14: return M68KCONTEXT.flag_notz && (!((M68KCONTEXT.flag_n ^ M68KCONTEXT.flag_v) & 0x80));
+		case 15: return (!M68KCONTEXT.flag_notz) || (((M68KCONTEXT.flag_n ^ M68KCONTEXT.flag_v) & 0x80) != 0);
+	}
+	return 0;
+}
 
 /***************/
 

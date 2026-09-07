@@ -313,10 +313,10 @@ M68K_CONTEXT m68kcontext;
      ((flag_X >> (M68K_SR_X_SFT - 4)) & 0x10))
 
 #define GET_SR                  \
-    ((flag_S << 0)  |      \
-     (flag_I << 8)  |      \
-     (prefs_cpu_model >= M68020 ? (flag_M << 12) : 0) |      \
-     (flag_T ) | \
+    (((flag_T & 1) << 15) |     \
+     ((flag_S & 1) << 13) |     \
+     (prefs_cpu_model >= M68020 ? ((flag_M & 1) << 12) : 0) | \
+     ((flag_I & 7) << 8) |      \
      GET_CCR)
 
 #define SET_CCR(A)                              \
@@ -329,10 +329,80 @@ M68K_CONTEXT m68kcontext;
 
 #define SET_SR(A)                      \
     SET_CCR(A)                         \
-    flag_T = (A) & M68K_SR_T;          \
-    flag_S = (A) & M68K_SR_S;          \
+    flag_T = ((A) >> 15) & 1;          \
+    flag_S = ((A) >> 13) & 1;          \
     flag_I = ((A) >> 8) & 7;           \
-    flag_M = (prefs_cpu_model >= M68020 ? (A) & M68K_SR_M : 0);
+    flag_M = (prefs_cpu_model >= M68020 ? (((A) >> 12) & 1) : 0);
+
+extern "C" void MakeSR(void)
+{
+	m68kcontext.sr = GET_SR;
+}
+
+extern "C" void MakeFromSR(void)
+{
+	int olds = flag_S;
+	int oldm = flag_M;
+
+	SET_SR(m68kcontext.sr);
+
+	if (prefs_cpu_model >= M68020) {
+		if (olds != flag_S) {
+			if (olds) {
+				if (oldm)
+					MSP = AREG(7);
+				else
+					ISP = AREG(7);
+				AREG(7) = USP;
+			} else {
+				USP = AREG(7);
+				AREG(7) = flag_M ? MSP : ISP;
+			}
+		} else if ((olds && oldm) != flag_M) {
+			if (oldm) {
+				MSP = AREG(7);
+				AREG(7) = ISP;
+			} else {
+				ISP = AREG(7);
+				AREG(7) = MSP;
+			}
+		}
+	} else {
+		flag_M = 0;
+		if (olds != flag_S) {
+			if (olds) {
+				ISP = AREG(7);
+				AREG(7) = USP;
+			} else {
+				USP = AREG(7);
+				AREG(7) = ISP;
+			}
+		}
+	}
+}
+
+static inline int cctrue(int cc)
+{
+	switch (cc & 0xF) {
+		case 0:  return 1;
+		case 1:  return 0;
+		case 2:  return (!(flag_C & 0x100)) && flag_NotZ;
+		case 3:  return (flag_C & 0x100) || (!flag_NotZ);
+		case 4:  return !(flag_C & 0x100);
+		case 5:  return (flag_C & 0x100) != 0;
+		case 6:  return flag_NotZ != 0;
+		case 7:  return !flag_NotZ;
+		case 8:  return !(flag_V & 0x80);
+		case 9:  return (flag_V & 0x80) != 0;
+		case 10: return !(flag_N & 0x80);
+		case 11: return (flag_N & 0x80) != 0;
+		case 12: return !((flag_N ^ flag_V) & 0x80);
+		case 13: return ((flag_N ^ flag_V) & 0x80) != 0;
+		case 14: return flag_NotZ && (!((flag_N ^ flag_V) & 0x80));
+		case 15: return (!flag_NotZ) || (((flag_N ^ flag_V) & 0x80) != 0);
+	}
+	return 0;
+}
 
 #define CHECK_INT_TO_JUMP(CLK) m68kcontext.more_cycles_to_do=m68kcontext.io_cycle_counter; m68kcontext.io_cycle_counter=0;
 
@@ -667,8 +737,8 @@ u32 m68k_reset(void)
    flag_S = 1;
    flag_M = 0;
 
-	// Fijar registro de estado
 	m68kcontext.sr = 0x2700;
+	MakeFromSR();
 	
 	// Obtener puntero de pila inicial y PC
 	AREG(7) = Read_Long(/*0x00F8000*/0);
@@ -747,14 +817,8 @@ s32 m68k_set_register(m68k_register reg, u32 value)
 			break;
 
 		case M68K_REG_SR:
-        if (m68kcontext.execinfo & M68K_RUNNING)
-        {
-			SET_SR(value);
-		}
-		else
-		{
 			m68kcontext.sr = value & 0xFFFF;
-		}
+			MakeFromSR();
 			break;
 
 		default:
@@ -871,7 +935,7 @@ void process_exception(unsigned int vect)
       else
          AREG(7) = ISP;
       /* adjust SR */
-      flag_S = M68K_SR_S;
+      flag_S = 1;
    }
    
    if (prefs_cpu_model > M68000) {
@@ -982,7 +1046,7 @@ static INLINE void execute_exception_group_0(s32 vect, u16 inst_reg, s32 addr, u
 /* Performs the required actions to finish the emulate call */
 static INLINE void finish_emulate(const s32 cycles_to_add)
 {
-    m68kcontext.sr = GET_SR;
+    MakeSR();
     m68kcontext.pc = GET_PC;
 
     m68kcontext.execinfo &= ~M68K_RUNNING;
@@ -1002,31 +1066,7 @@ static INLINE void finish_emulate(const s32 cycles_to_add)
 
 static void TRAPCC_EXECUTE (u32 Opcode)
 {
-   u8 do_trap;
-   int c = (flag_C >> M68K_SR_C_SFT) & 1;
-   int z = (flag_NotZ == 0);
-   int n = (flag_N >> M68K_SR_N_SFT) & 1;
-   int v = (flag_V >> M68K_SR_V_SFT) & 1;
-   
-   switch((Opcode >> 8) & 0xF) {
-      case  0: do_trap =  1; break;
-      case  1: do_trap =  0; break;
-      case  2: do_trap = !c && !z; break;
-      case  3: do_trap =  c ||  z; break;
-      case  4: do_trap = !c; break;
-      case  5: do_trap =  c; break;
-      case  6: do_trap = !z; break;
-      case  7: do_trap =  z; break;
-      case  8: do_trap = !v; break;
-      case  9: do_trap =  v; break;
-      case 10: do_trap = !n; break;
-      case 11: do_trap =  n; break;
-      case 12: do_trap =  n &&  v || !n && !v; break;
-      case 13: do_trap =  n && !v || !n &&  v; break;
-      case 14: do_trap =  n &&  v && !z || !n && !v && !z; break;
-      case 15: do_trap =  z ||  n && !v || !n &&  v; break;
-   }
-   if (do_trap)
+   if (cctrue((Opcode >> 8) & 0xF))
       execute_exception(M68K_TRAPV_EX);
 }
 
@@ -1153,67 +1193,56 @@ static __inline__ void BF_MEM_PUT(u32 adr, u32 dst, u32 mask, u32 offset, u32 wi
 
 #define CAS_EXECUTE(SHIFT, WRITE_OP)             \
 {                                         \
-/*   s8 flgs, flgo, flgn;*/                   \
-                                          \
    src = DREG(res & 7);                   \
-                                          \
-/*   flgs = (src < 0);*/                      \
-/*   flgo = (tmp < 0);*/                      \
    dst = tmp - src;                       \
-/*   flgn = (dst < 0);*/                      \
-                                          \
-   flag_V = ((src ^ tmp) & (dst ^ tmp)) >> SHIFT; /*((flgs != flgo) && (flgn != flgo));*/ \
-   flag_C = dst; /*(src > tmp);*/                  \
-   flag_N = dst >> SHIFT; /*flgn << 7;*/                         \
+   flag_V = ((src ^ tmp) & (dst ^ tmp)) >> SHIFT; \
+   flag_C = (sizeof(src) == 1 ? ((u8)src > (u8)tmp) : (sizeof(src) == 2 ? ((u16)src > (u16)tmp) : ((u32)src > (u32)tmp))) ? M68K_SR_C : 0; \
+   flag_N = dst >> SHIFT;                 \
    flag_NotZ = (dst != 0);                \
-                                          \
-   if (flag_NotZ)                         \
-      DREGs32(res & 7) = tmp;             \
-   else {                                 \
+   if (flag_NotZ) {                       \
+      if (sizeof(src) == 1)               \
+         DREGs8(res & 7) = (s8)tmp;       \
+      else if (sizeof(src) == 2)          \
+         DREGs16(res & 7) = (s16)tmp;     \
+      else                                \
+         DREGs32(res & 7) = tmp;          \
+   } else {                               \
       WRITE_OP;                           \
    }                                      \
 }
 
 #define CAS2_EXECUTE(SHIFT, WRITE_OP1, WRITE_OP2) \
 {                                         \
-/*   s8 flgs, flgo, flgn;*/                   \
-                                          \
-   /* 1st compare */                      \
    src = DREG(res1 & 7);                  \
-/*   flgs = (src < 0);*/                      \
-/*   flgo = (tmp1 < 0);*/                     \
    dst = tmp1 - src;                      \
-/*   flgn = (dst < 0);*/                      \
-                                          \
    flag_NotZ = (dst != 0);                \
-                                          \
    if (flag_NotZ) {                       \
-      /* Difference */                    \
-      flag_V = ((src ^ tmp1) & (dst ^ tmp1)) >> SHIFT; /* ((flgs != flgo) && (flgn != flgo));*/ \
-      flag_C = dst; /*(src > tmp1);*/              \
-      flag_N = dst >> SHIFT; /*flgn;*/                      \
-      DREGs32(res1 & 7) = tmp1;           \
-      DREGs32(res2 & 7) = tmp2;           \
-   }                                      \
-   else {                                 \
-      /* 2nd compare */                   \
-      src = DREG(res2 & 7);               \
-/*      flgs = (src < 0);*/                   \
-/*      flgo = (tmp2 < 0);*/                  \
-      dst = tmp2 - src;                   \
-/*      flgn = (dst < 0);*/                   \
-                                          \
-      flag_V = ((src ^ tmp2) & (dst ^ tmp2)) >> SHIFT; /*((flgs != flgo) && (flgn != flgo));*/ \
-      flag_C = dst; /*(src > tmp2);*/              \
-      flag_N = dst >> SHIFT; /*flgn;*/                      \
-      flag_NotZ = (dst != 0);             \
-                                          \
-      if (flag_NotZ) {                    \
-         /* Difference */                 \
+      flag_V = ((src ^ tmp1) & (dst ^ tmp1)) >> SHIFT; \
+      flag_C = (sizeof(src) == 2 ? ((u16)src > (u16)tmp1) : ((u32)src > (u32)tmp1)) ? M68K_SR_C : 0; \
+      flag_N = dst >> SHIFT;              \
+      if (sizeof(src) == 2) {             \
+         DREGs16(res1 & 7) = (s16)tmp1;   \
+         DREGs16(res2 & 7) = (s16)tmp2;   \
+      } else {                            \
          DREGs32(res1 & 7) = tmp1;        \
          DREGs32(res2 & 7) = tmp2;        \
+      }                                   \
+   } else {                               \
+      src = DREG(res2 & 7);               \
+      dst = tmp2 - src;                   \
+      flag_V = ((src ^ tmp2) & (dst ^ tmp2)) >> SHIFT; \
+      flag_C = (sizeof(src) == 2 ? ((u16)src > (u16)tmp2) : ((u32)src > (u32)tmp2)) ? M68K_SR_C : 0; \
+      flag_N = dst >> SHIFT;              \
+      flag_NotZ = (dst != 0);             \
+      if (flag_NotZ) {                    \
+         if (sizeof(src) == 2) {          \
+            DREGs16(res1 & 7) = (s16)tmp1;\
+            DREGs16(res2 & 7) = (s16)tmp2;\
+         } else {                         \
+            DREGs32(res1 & 7) = tmp1;     \
+            DREGs32(res2 & 7) = tmp2;     \
+         }                                \
       } else {                            \
-         /* Both compares passed */       \
          WRITE_OP1;                       \
          WRITE_OP2;                       \
       }                                   \
@@ -1222,21 +1251,26 @@ static __inline__ void BF_MEM_PUT(u32 adr, u32 dst, u32 mask, u32 offset, u32 wi
 
 #define CMP2_CHK2_EXECUTE(SIZE, ROLLBACK) \
 {                                         \
-   READ_BYTE_F(adr, src1)                 \
-   READ_BYTE_F(adr + 1, src2)             \
-                                          \
+   if (sizeof(SIZE) == 1) {               \
+      READ_BYTE_F(adr, src1)              \
+      src1 = (s32)(s8)src1;               \
+      READ_BYTE_F(adr + 1, src2)          \
+      src2 = (s32)(s8)src2;               \
+   } else if (sizeof(SIZE) == 2) {        \
+      READ_WORD_F(adr, src1)              \
+      src1 = (s32)(s16)src1;              \
+      READ_WORD_F(adr + 2, src2)          \
+      src2 = (s32)(s16)src2;              \
+   } else {                               \
+      READ_LONG_F(adr, src1)              \
+      READ_LONG_F(adr + 4, src2)          \
+   }                                      \
    if (res & 0x8000)                      \
       dst = AREG((res >> 12) & 7);        \
    else                                   \
-      dst = (s32)(SIZE)DREG(res >> 12);   \
+      dst = (s32)(SIZE)DREG((res >> 12) & 7); \
    flag_NotZ = ((dst != src1) && (dst != src2)); \
-   if (src1 > src2) {                     \
-      s32 tmp;                            \
-      tmp = src1;                         \
-      src1 = src2;                        \
-      src2 = tmp;                         \
-   }                                      \
-   if ((dst < src1) || (dst > src2))      \
+   if (src1 <= src2 ? (dst < src1 || dst > src2) : (dst > src2 || dst < src1)) \
    {                                      \
       flag_C = M68K_SR_C;                 \
       if (res & 0x0800)                   \

@@ -163,8 +163,14 @@ typedef union
 /* M68K CPU CONTEXT */
 typedef struct
 {
-	famec_union32   dreg[8];
-	famec_union32   areg[8];
+	union {
+		struct {
+			famec_union32   dreg[8];
+			famec_union32   areg[8];
+		};
+		famec_union32   ccregs[16];
+		u32             regs[16];
+	};
 	hostptr *icust_handler;
 	u32 usp;
 	u32 pc;
@@ -178,15 +184,22 @@ typedef struct
 // We put everything what is needed for m68k_emulate and the opcodes in this 
 // struct, so there is only one base register in generated assembly code. 
 // This reduces the number of used and backed up register and we have better performance.
-  u32 flag_c;
-  u32 flag_v;
-  u32 flag_notz;
-  u32 flag_n;
-  u32 flag_x;
-  u32 flag_s;
-  u32 flag_i;
-  u32 flag_m;
-  u32 flag_t;
+  union {
+    struct {
+      u32 flag_c;
+      u32 flag_v;
+      u32 flag_notz;
+      u32 flag_n;
+      u32 flag_x;
+      u32 flag_s;
+      u32 flag_i;
+      u32 flag_m;
+      u32 flag_t;
+    };
+    struct {
+      u32 c, v, notz, n, x, s, i, m, t;
+    } ccflags;
+  };
   u16 *_pc;
   hostptr basepc;
   hostptr fetch[256];
@@ -217,6 +230,8 @@ int  m68k_set_register(m68k_register reg, unsigned value);
 
 /* Timing functions */
 void     m68k_release_timeslice(void);
+void MakeSR(void);
+void MakeFromSR(void);
 
 
 #ifdef __cplusplus

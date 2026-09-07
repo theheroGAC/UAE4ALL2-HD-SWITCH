@@ -200,8 +200,11 @@ uae_u8 *restore_cpu (uae_u8 *src)
     // in new FAME_C, mspreg is always 0, uspreg is now the important one...
     _68k_mspreg = 0;
     _68k_uspreg = restore_u32 ();
-    /* uae_regs.isp = */ restore_u32 ();
+    restore_u32 ();
     _68k_sreg = restore_u16 ();
+    M68KCONTEXT.flag_s = (_68k_sreg & 0x2000);
+    M68KCONTEXT.flag_m = (_68k_sreg & 0x1000);
+    MakeFromSR();
     l = restore_u32();
     if (l & CPUMODE_HALT) {
 	M68KCONTEXT.execinfo|=0x0080;
@@ -219,6 +222,7 @@ uae_u8 *save_cpu (int *len)
     uae_u8 *dstbak,*dst;
     int model,i;
 
+    MakeSR();
     dstbak = dst = (uae_u8 *)malloc(4+4+15*4+4+4+4+4+2+4+4+4+4+4+4+4);
     save_u32 (prefs_cpu_model);					/* MODEL */
     save_u32 (1); //currprefs.address_space_24 ? 1 : 0);	/* FLAGS */
