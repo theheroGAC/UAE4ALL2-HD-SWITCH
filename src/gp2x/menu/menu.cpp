@@ -84,6 +84,10 @@ int menu_screen_height = 480;
 static void obten_colores(void)
 {
 	FILE *f=fopen(DATA_PREFIX "colors.txt", "rt");
+#if defined(__SWITCH__)
+	if (!f)
+		f = fopen("romfs:/data/colors.txt", "rt");
+#endif
 	if (f)
 	{
 		Uint32 r,g,b;

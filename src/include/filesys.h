@@ -20,6 +20,9 @@ struct hardfiledata {
     int blocksize;
     uae_u32 dostype;
     FILE *fd;
+    void *chd_handle;
+    void *chd_cache;
+    int chd_cache_hunk;
 };
 #ifdef WIN32
 int truncate (const char *name, long int len);

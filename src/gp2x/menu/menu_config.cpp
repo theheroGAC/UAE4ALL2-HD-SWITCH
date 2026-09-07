@@ -89,6 +89,13 @@ int mainMenu_background = 0;
 int mainMenu_font = 0;
 int mainMenu_mouseMultiplier = DEFAULT_MOUSEMULTIPLIER;
 int mainMenu_mouseEmulation = 1;
+int mainMenu_mouseDevice = 0;
+int mainMenu_mouseAcceleration = 0;
+int mainMenu_mouseSlowFactor = 2;
+int mainMenu_mouseSlowButton = 1;
+int mainMenu_mouseFastFactor = 2;
+int mainMenu_mouseFastButton = 2;
+int mainMenu_mouseSwapButtons = 0;
 int mainMenu_stylusOffset = 0;
 int mainMenu_tapDelay = 10;
 int mainMenu_customControls = 0;
@@ -195,6 +202,7 @@ int gp2xClockSpeed = -1;
 int mainMenu_scanlines = 0;
 int mainMenu_enableScreenshots = DEFAULT_ENABLESCREENSHOTS;
 int mainMenu_enableScripts = DEFAULT_ENABLESCRIPTS;
+int mainMenu_quickSwitch = 0;
 
 #ifdef ANDROIDSDL
 int mainMenu_onScreen = 1;
@@ -225,7 +233,6 @@ int mainMenu_pos_x_button6 = 378;
 int mainMenu_pos_y_button6 = 142;
 float mainMenu_button_size = 1.0;
 int menuLoad_extfilter=1;
-int mainMenu_quickSwitch=0;
 int mainMenu_FloatingJoystick=0;
 #endif
 #if defined(ANDROIDSDL) || defined(AROS)
@@ -313,6 +320,13 @@ void SetDefaultMenuSettings(int general)
     mainMenu_font = 0;
     mainMenu_mouseMultiplier = DEFAULT_MOUSEMULTIPLIER;
     mainMenu_mouseEmulation = 1;
+    mainMenu_mouseDevice = 0;
+    mainMenu_mouseAcceleration = 0;
+    mainMenu_mouseSlowFactor = 2;
+    mainMenu_mouseSlowButton = 1;
+    mainMenu_mouseFastFactor = 2;
+    mainMenu_mouseFastButton = 2;
+    mainMenu_mouseSwapButtons = 0;
     mainMenu_stylusOffset = 0;
     mainMenu_tapDelay = 10;
     mainMenu_customControls = 0;
@@ -1697,6 +1711,20 @@ int saveconfig(int general)
     fputs(buffer,f);
     snprintf((char*)buffer, 255, "singleJoycons=%d\n",mainMenu_singleJoycons);
     fputs(buffer,f);
+    snprintf((char*)buffer, 255, "mouseDevice=%d\n",mainMenu_mouseDevice);
+    fputs(buffer,f);
+    snprintf((char*)buffer, 255, "mouseAcceleration=%d\n",mainMenu_mouseAcceleration);
+    fputs(buffer,f);
+    snprintf((char*)buffer, 255, "mouseSlowFactor=%d\n",mainMenu_mouseSlowFactor);
+    fputs(buffer,f);
+    snprintf((char*)buffer, 255, "mouseSlowButton=%d\n",mainMenu_mouseSlowButton);
+    fputs(buffer,f);
+    snprintf((char*)buffer, 255, "mouseFastFactor=%d\n",mainMenu_mouseFastFactor);
+    fputs(buffer,f);
+    snprintf((char*)buffer, 255, "mouseFastButton=%d\n",mainMenu_mouseFastButton);
+    fputs(buffer,f);
+    snprintf((char*)buffer, 255, "mouseSwapButtons=%d\n",mainMenu_mouseSwapButtons);
+    fputs(buffer,f);
 #endif
 #ifdef __PSP2__
     snprintf((char*)buffer, 255, "cdimage=%s\n", current_cd_image);
@@ -2165,6 +2193,13 @@ void loadconfig(int general)
 #ifdef __SWITCH__ 
         fscanf(f,"swapAB=%d\n",&mainMenu_swapAB);
         fscanf(f,"singleJoycons=%d\n",&mainMenu_singleJoycons);
+        if (fscanf(f,"mouseDevice=%d\n",&mainMenu_mouseDevice) != 1) mainMenu_mouseDevice = 0;
+        if (fscanf(f,"mouseAcceleration=%d\n",&mainMenu_mouseAcceleration) != 1) mainMenu_mouseAcceleration = 0;
+        if (fscanf(f,"mouseSlowFactor=%d\n",&mainMenu_mouseSlowFactor) != 1) mainMenu_mouseSlowFactor = 2;
+        if (fscanf(f,"mouseSlowButton=%d\n",&mainMenu_mouseSlowButton) != 1) mainMenu_mouseSlowButton = 1;
+        if (fscanf(f,"mouseFastFactor=%d\n",&mainMenu_mouseFastFactor) != 1) mainMenu_mouseFastFactor = 2;
+        if (fscanf(f,"mouseFastButton=%d\n",&mainMenu_mouseFastButton) != 1) mainMenu_mouseFastButton = 2;
+        if (fscanf(f,"mouseSwapButtons=%d\n",&mainMenu_mouseSwapButtons) != 1) mainMenu_mouseSwapButtons = 0;
 #endif
 #ifdef __PSP2__
         memset(filebuffer, 0, 256);
