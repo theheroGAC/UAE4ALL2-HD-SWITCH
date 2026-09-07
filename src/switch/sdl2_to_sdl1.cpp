@@ -418,6 +418,7 @@ static void switch_render_osd_overlays(SDL_Renderer *rend, int sw, int sh)
 		TTF_Init();
 		s_osd_font = TTF_OpenFont("./data/font.ttf", 20);
 		if (!s_osd_font) s_osd_font = TTF_OpenFont("./font.ttf", 20);
+		if (!s_osd_font) s_osd_font = TTF_OpenFont("romfs:/data/font.ttf", 20);
 	}
 
 	if (switch_fast_forward) {
@@ -537,5 +538,22 @@ void SDL_Flip(SDL_Surface *surface) {
 			SDL_RenderPresent(renderer);
 		}
 	}
+}
+
+SDL_Surface *switch_load_bmp(const char *file)
+{
+	if (!file) return NULL;
+	SDL_Surface *s = SDL_LoadBMP_RW(SDL_RWFromFile(file, "rb"), 1);
+	if (!s) {
+		char romfs_path[256];
+		if (strncmp(file, "./data/", 7) == 0) {
+			snprintf(romfs_path, sizeof(romfs_path), "romfs:/data/%s", file + 7);
+			s = SDL_LoadBMP_RW(SDL_RWFromFile(romfs_path, "rb"), 1);
+		} else if (strncmp(file, "data/", 5) == 0) {
+			snprintf(romfs_path, sizeof(romfs_path), "romfs:/data/%s", file + 5);
+			s = SDL_LoadBMP_RW(SDL_RWFromFile(romfs_path, "rb"), 1);
+		}
+	}
+	return s;
 }
 #endif

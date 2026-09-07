@@ -1378,6 +1378,14 @@ int switch_whdload_prepare_launch(const char *game_name)
     return ok;
 }
 
+static int compare_game_names(const void *a, const void *b)
+{
+    int res = strcasecmp((const char *)a, (const char *)b);
+    if (res != 0)
+        return res;
+    return strcmp((const char *)a, (const char *)b);
+}
+
 int switch_whdload_list(char names[][128], int max_names)
 {
     if (!names || max_names <= 0)
@@ -1414,6 +1422,9 @@ int switch_whdload_list(char names[][128], int max_names)
         count++;
     }
     closedir(dir);
+    if (count > 1) {
+        qsort(names, count, sizeof(names[0]), compare_game_names);
+    }
     return count;
 }
 

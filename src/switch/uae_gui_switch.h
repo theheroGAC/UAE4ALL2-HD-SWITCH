@@ -173,6 +173,14 @@ void switch_view_system(SwitchInputState *input, int *selected_item);
 
 int  switch_gui_run_browser(char *out_path, const char *start_dir, int disk_drive_idx);
 
+bool switch_gui_is_ftp_active(void);
+void switch_gui_stop_ftp(void);
+int  switch_ftp_start(void);
+void switch_ftp_stop(void);
+int  switch_ftp_is_running(void);
+void switch_ftp_get_ip(char *buf, size_t sz);
+int  switch_ftp_get_port(void);
+
 int  run_mainMenu_switch(void);
 int  run_overlay_switch(void);
 

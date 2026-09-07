@@ -41,6 +41,12 @@ void switch_reset_autocrop();
 void switch_osd_show(const char *text, int duration_ms);
 extern int switch_fast_forward;
 extern int switch_turbo_toggle;
+
+#ifdef SDL_LoadBMP
+#undef SDL_LoadBMP
+#endif
+SDL_Surface *switch_load_bmp(const char *file);
+#define SDL_LoadBMP(f) switch_load_bmp(f)
 #endif
 
 #endif

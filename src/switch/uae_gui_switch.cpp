@@ -243,6 +243,7 @@ int switch_gui_init(void)
 
 void switch_gui_shutdown(void)
 {
+    switch_gui_stop_ftp();
     if (prSDLScreen) {
         SDL_FillRect(prSDLScreen, NULL, 0);
         SDL_Flip(prSDLScreen);
@@ -255,7 +256,7 @@ void switch_gui_shutdown(void)
 
 void switch_gui_shutdown_final(void)
 {
-    
+    switch_gui_stop_ftp();
     ttf_shutdown_cleanup();
     s_gui_initialized = false;
     switch_gui_free_screen();
@@ -264,6 +265,7 @@ void switch_gui_shutdown_final(void)
 
 void switch_gui_prepare_exit(void)
 {
+    switch_gui_stop_ftp();
     if (prSDLScreen) {
         
         SDL_FreeSurface(prSDLScreen);
@@ -412,10 +414,11 @@ static int ttf_ensure_loaded(void)
         return 0;
     }
 
-    const char *paths[2];
+    const char *paths[3];
     paths[0] = "./data/font.ttf";
     paths[1] = "./font.ttf";
-    for (int i = 0; i < 2; i++) {
+    paths[2] = "romfs:/data/font.ttf";
+    for (int i = 0; i < 3; i++) {
         TTF_Font *probe = TTF_OpenFont(paths[i], 16);
         if (probe) {
             TTF_CloseFont(probe);
@@ -1335,7 +1338,8 @@ void switch_show_about_box(void)
 {
     static const CreditLine credits[] = {
         { "UAE4ALL2 HD Switch", CR_TITLE },
-        { "Version 1.02 - Amiga Emulator for Nintendo Switch", CR_SUBTITLE },
+        { "Version 1.03 by theheroGAC", CR_SUBTITLE },
+        { "Amiga Emulator for Nintendo Switch", CR_DIM },
         { "", CR_EMPTY },
         { "A high-definition port of the classic UAE4ALL Amiga emulator,", CR_TEXT },
         { "now with WHDLoad, HDF, IPF and CD32 support on Switch.", CR_TEXT },
@@ -1436,7 +1440,7 @@ void switch_show_about_box(void)
         rot_y += 0.065f;
         switch_draw_boing_ball_3d(dx + 46.0f, dy + 40.0f, 24.0f, rot_x, rot_y);
         switch_draw_text(dx + 92.0f, dy + 20.0f, SWITCH_COLOR_AMIGA_RED, 1.15f, "UAE4ALL2 HD Switch");
-        switch_draw_text(dx + 92.0f, dy + 44.0f, SWITCH_COLOR_AMIGA_ORANGE, 0.85f, "About & Credits - WHDLoad Edition");
+        switch_draw_text(dx + 92.0f, dy + 44.0f, SWITCH_COLOR_AMIGA_ORANGE, 0.85f, "About & Credits - by theheroGAC");
 
         switch_draw_rounded_rect_outline(dx + 16.0f, dy + 76.0f, dw - 32.0f, 1.0f, 0.0f, 1.0f, SWITCH_COLOR_CARD_BORDER);
 
@@ -1587,7 +1591,7 @@ bool switch_show_confirm_box(const char *title, const char *message, const char 
         frame_count++;
 
         if (frame_count > 6) {
-            if (input.pressed & (SWITCH_BTN_LEFT | SWITCH_BTN_RIGHT)) {
+            if (input.pressed & (SWITCH_BTN_LEFT | SWITCH_BTN_RIGHT | SWITCH_BTN_UP | SWITCH_BTN_DOWN)) {
                 choice = 1 - choice;
             }
             if (input.pressed & SWITCH_BTN_A) {
@@ -1608,9 +1612,9 @@ bool switch_show_confirm_box(const char *title, const char *message, const char 
         switch_draw_text_centered(dx + (dw * 0.5f), dy + 22.0f, SWITCH_COLOR_AMIGA_RED, 1.10f, title ? title : "Confirm");
         switch_draw_text_wrapped(dx + 30.0f, dy + 70.0f, dw - 60.0f, SWITCH_COLOR_TEXT_WHITE, 0.90f, message ? message : "");
 
-        float bw = 160.0f, bh = 38.0f;
-        float b1_x = dx + 110.0f;
-        float b2_x = dx + dw - 110.0f - bw;
+        float bw = 180.0f, bh = 38.0f;
+        float b1_x = dx + 90.0f;
+        float b2_x = dx + dw - 90.0f - bw;
         float by = dy + dh - 54.0f;
 
         switch_draw_rounded_rect(b1_x, by, bw, bh, 6.0f, choice == 0 ? SWITCH_COLOR_AMIGA_RED : SWITCH_COLOR_CARD);
@@ -1934,60 +1938,62 @@ int run_mainMenu_switch(void)
             write_log("[SWITCH] menu: frame %d input done buttons=0x%08x\n", menu_frame, input.pressed);
         switch_gui_update_system_info(&sysinfo);
 
-        if (input.pressed & SWITCH_BTN_ZL) {
-            s_active_tab = (SwitchGuiTab)((s_active_tab + SWITCH_TAB_COUNT - 1) % SWITCH_TAB_COUNT);
-        }
-        if (input.pressed & SWITCH_BTN_ZR) {
-            s_active_tab = (SwitchGuiTab)((s_active_tab + 1) % SWITCH_TAB_COUNT);
-        }
-
-        if (input.touch_tap && input.touch_y >= 48 && input.touch_y <= 84) {
-            float tab_w = (float)SWITCH_SCREEN_W / (float)SWITCH_TAB_COUNT;
-            int touched_tab = (int)(input.touch_x / tab_w);
-            if (touched_tab >= 0 && touched_tab < SWITCH_TAB_COUNT) {
-                s_active_tab = (SwitchGuiTab)touched_tab;
+        if (!switch_gui_is_ftp_active()) {
+            if (input.pressed & SWITCH_BTN_ZL) {
+                s_active_tab = (SwitchGuiTab)((s_active_tab + SWITCH_TAB_COUNT - 1) % SWITCH_TAB_COUNT);
             }
-        }
-        if (input.pressed & SWITCH_BTN_PLUS) {
-            if (emulating) {
-                mainMenu_case = MAIN_MENU_CASE_RUN;
-                break;
+            if (input.pressed & SWITCH_BTN_ZR) {
+                s_active_tab = (SwitchGuiTab)((s_active_tab + 1) % SWITCH_TAB_COUNT);
             }
 
-            int automatic_media = -1;
-            if (mainMenu_whdload_game[0] != '\0')
-                automatic_media = 2;
-            else if (current_cd_image[0] != '\0')
-                automatic_media = 3;
-            else if (uae4all_image_file0[0] != '\0' && mainMenu_bootHD == 0)
-                automatic_media = 0;
-            else if (mainMenu_bootHD == 2 && (uae4all_hard_file0[0] != '\0' || uae4all_hard_file1[0] != '\0' ||
-                     uae4all_hard_file2[0] != '\0' || uae4all_hard_file3[0] != '\0'))
-                automatic_media = 1;
-            else if (mainMenu_bootHD == 1 && uae4all_hard_dir[0] != '\0')
-                automatic_media = 2;
-            else if (uae4all_image_file0[0] != '\0' || uae4all_image_file1[0] != '\0' ||
-                     uae4all_image_file2[0] != '\0' || uae4all_image_file3[0] != '\0')
-                automatic_media = 0;
-            else if (uae4all_hard_file0[0] != '\0' || uae4all_hard_file1[0] != '\0' ||
-                     uae4all_hard_file2[0] != '\0' || uae4all_hard_file3[0] != '\0')
-                automatic_media = 1;
-            else if (uae4all_hard_dir[0] != '\0')
-                automatic_media = 2;
-
-            if ((automatic_media == 1 || automatic_media == 2) && !switch_confirm_eject_for_hard_disk_launch())
-                continue;
-            if (automatic_media >= 0 && !emulating) {
-                ApplyAutomaticGamePreset(automatic_media);
-                switch_set_kickstart(kickstart, 0);
+            if (input.touch_tap && input.touch_y >= 48 && input.touch_y <= 84) {
+                float tab_w = (float)SWITCH_SCREEN_W / (float)SWITCH_TAB_COUNT;
+                int touched_tab = (int)(input.touch_x / tab_w);
+                if (touched_tab >= 0 && touched_tab < SWITCH_TAB_COUNT) {
+                    s_active_tab = (SwitchGuiTab)touched_tab;
+                }
             }
-            write_log("[SWITCH] menu: Start pressed (kickstart_warning=%d)\n", kickstart_warning);
-            if (kickstart_warning) {
-                write_log("[SWITCH] run_mainMenu_switch: Start blocked, Kickstart missing\n");
-                switch_show_message_box("Kickstart Missing", "Copy kick13.rom and kick31.rom for normal Amiga use, or kick40060.CD32 and kick40060.CD32.ext for CD32, to ./kickstarts/ or ./data/.", "OK (A)");
-            } else {
-                mainMenu_case = MAIN_MENU_CASE_RUN;
-                break;
+            if (input.pressed & SWITCH_BTN_PLUS) {
+                if (emulating) {
+                    mainMenu_case = MAIN_MENU_CASE_RUN;
+                    break;
+                }
+
+                int automatic_media = -1;
+                if (mainMenu_whdload_game[0] != '\0')
+                    automatic_media = 2;
+                else if (current_cd_image[0] != '\0')
+                    automatic_media = 3;
+                else if (uae4all_image_file0[0] != '\0' && mainMenu_bootHD == 0)
+                    automatic_media = 0;
+                else if (mainMenu_bootHD == 2 && (uae4all_hard_file0[0] != '\0' || uae4all_hard_file1[0] != '\0' ||
+                         uae4all_hard_file2[0] != '\0' || uae4all_hard_file3[0] != '\0'))
+                    automatic_media = 1;
+                else if (mainMenu_bootHD == 1 && uae4all_hard_dir[0] != '\0')
+                    automatic_media = 2;
+                else if (uae4all_image_file0[0] != '\0' || uae4all_image_file1[0] != '\0' ||
+                         uae4all_image_file2[0] != '\0' || uae4all_image_file3[0] != '\0')
+                    automatic_media = 0;
+                else if (uae4all_hard_file0[0] != '\0' || uae4all_hard_file1[0] != '\0' ||
+                         uae4all_hard_file2[0] != '\0' || uae4all_hard_file3[0] != '\0')
+                    automatic_media = 1;
+                else if (uae4all_hard_dir[0] != '\0')
+                    automatic_media = 2;
+
+                if ((automatic_media == 1 || automatic_media == 2) && !switch_confirm_eject_for_hard_disk_launch())
+                    continue;
+                if (automatic_media >= 0 && !emulating) {
+                    ApplyAutomaticGamePreset(automatic_media);
+                    switch_set_kickstart(kickstart, 0);
+                }
+                write_log("[SWITCH] menu: Start pressed (kickstart_warning=%d)\n", kickstart_warning);
+                if (kickstart_warning) {
+                    write_log("[SWITCH] run_mainMenu_switch: Start blocked, Kickstart missing\n");
+                    switch_show_message_box("Kickstart Missing", "Copy kick13.rom and kick31.rom for normal Amiga use, or kick40060.CD32 and kick40060.CD32.ext for CD32, to ./kickstarts/ or ./data/.", "OK (A)");
+                } else {
+                    mainMenu_case = MAIN_MENU_CASE_RUN;
+                    break;
+                }
             }
         }
 
@@ -2031,7 +2037,9 @@ int run_mainMenu_switch(void)
                 break;
         }
 
-        switch_draw_footer(NULL, NULL);
+        if (!switch_gui_is_ftp_active()) {
+            switch_draw_footer(NULL, NULL);
+        }
 
         SDL_Flip(prSDLScreen);
         if (menu_frame <= 3)

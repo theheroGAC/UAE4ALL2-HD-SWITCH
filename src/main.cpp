@@ -51,6 +51,7 @@ extern "C" int main( int argc, char *argv[] );
 #include "gp2xutil.h"
 #ifdef __SWITCH__
 #include "switch/whdload_manager_switch.h"
+#include "switch/uae_gui_switch.h"
 #endif
 /* PocketUAE */
 #include "native2amiga.h"
@@ -288,7 +289,9 @@ void do_leave_program (void)
 #endif
     memory_cleanup ();
 #ifdef __SWITCH__
+    switch_gui_stop_ftp();
     socketExit();
+    romfsExit();
 #endif
 }
 
@@ -323,6 +326,7 @@ void real_main (int argc, char **argv)
 #endif
 
 #if defined(__SWITCH__)
+    romfsInit();
     socketInitializeDefault();
 #endif
 
@@ -395,6 +399,7 @@ void real_main (int argc, char **argv)
     mkdir("ux0:/data/uae4all/tmp", 0777);
 	strcpy(launchDir, "ux0:/data/uae4all");
 #elif defined(__SWITCH__)
+	mkdir("./data", 0777);
 	mkdir("./roms", 0777);
 	mkdir("./saves", 0777);
 	mkdir("./conf", 0777);

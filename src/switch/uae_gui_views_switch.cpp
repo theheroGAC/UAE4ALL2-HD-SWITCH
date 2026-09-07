@@ -86,6 +86,32 @@ static void switch_ftp_unregister_client(int fd) {
     pthread_mutex_unlock(&s_switch_clients_mutex);
 }
 
+static int switch_ftp_get_client_count(void) {
+    int count = 0;
+    pthread_mutex_lock(&s_switch_clients_mutex);
+    for (int i = 0; i < MAX_FTP_CLIENTS; i++) {
+        if (s_switch_client_fds[i] >= 0) count++;
+    }
+    pthread_mutex_unlock(&s_switch_clients_mutex);
+    return count;
+}
+
+static void switch_ftp_refresh_ip(void) {
+    Result rc = nifmInitialize(NifmServiceType_User);
+    if (R_SUCCEEDED(rc)) {
+        u32 ip_val = 0;
+        if (R_SUCCEEDED(nifmGetCurrentIpAddress(&ip_val)) && ip_val != 0) {
+            struct in_addr in;
+            in.s_addr = ip_val;
+            char *ip_str = inet_ntoa(in);
+            if (ip_str && strcmp(ip_str, "0.0.0.0") != 0 && strcmp(ip_str, "127.0.0.1") != 0) {
+                snprintf(s_switch_ftp_ip, sizeof(s_switch_ftp_ip), "%s", ip_str);
+            }
+        }
+        nifmExit();
+    }
+}
+
 /*
  * The FTP root is the Switch SD card.  Older versions exposed the process
  * working directory as "/" and added a fake "sdmc" entry to LIST output.
@@ -187,7 +213,7 @@ static int ftp_accept_data(int *pasv_fd_ptr) {
     struct sockaddr_in d_addr;
     socklen_t d_len = sizeof(d_addr);
     struct timeval tv;
-    tv.tv_sec = 5;
+    tv.tv_sec = 15;
     tv.tv_usec = 0;
     fd_set rfds;
     FD_ZERO(&rfds);
@@ -201,6 +227,13 @@ static int ftp_accept_data(int *pasv_fd_ptr) {
     int data_client = accept(*pasv_fd_ptr, (struct sockaddr*)&d_addr, &d_len);
     close(*pasv_fd_ptr);
     *pasv_fd_ptr = -1;
+    if (data_client >= 0) {
+        struct timeval dtv;
+        dtv.tv_sec = 15;
+        dtv.tv_usec = 0;
+        setsockopt(data_client, SOL_SOCKET, SO_RCVTIMEO, &dtv, sizeof(dtv));
+        setsockopt(data_client, SOL_SOCKET, SO_SNDTIMEO, &dtv, sizeof(dtv));
+    }
     return data_client;
 }
 
@@ -214,8 +247,19 @@ static void* switch_ftp_client_session(void *arg) {
     free(ctx);
     switch_ftp_register_client(client_fd);
 
+    struct sockaddr_in client_loc;
+    socklen_t loc_len = sizeof(client_loc);
+    if (getsockname(client_fd, (struct sockaddr*)&client_loc, &loc_len) == 0 && client_loc.sin_addr.s_addr != 0) {
+        if (client_loc.sin_addr.s_addr != htonl(INADDR_LOOPBACK)) {
+            char *conn_ip = inet_ntoa(client_loc.sin_addr);
+            if (conn_ip && strcmp(conn_ip, "0.0.0.0") != 0 && strcmp(conn_ip, "127.0.0.1") != 0) {
+                snprintf(s_switch_ftp_ip, sizeof(s_switch_ftp_ip), "%s", conn_ip);
+            }
+        }
+    }
+
     struct timeval ctv;
-    ctv.tv_sec = 2;
+    ctv.tv_sec = 60;
     ctv.tv_usec = 0;
     setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &ctv, sizeof(ctv));
 
@@ -248,8 +292,12 @@ static void* switch_ftp_client_session(void *arg) {
                 continue;
             }
             int len = recv(client_fd, pending + pending_len, sizeof(pending) - pending_len - 1, 0);
-            if (len <= 0) {
-                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            if (len == 0) {
+                disconnected = true;
+                break;
+            }
+            if (len < 0) {
+                if (s_switch_ftp_running && (errno == EAGAIN || errno == EWOULDBLOCK || errno == ETIMEDOUT)) {
                     continue;
                 }
                 pending_len = 0;
@@ -339,7 +387,17 @@ static void* switch_ftp_client_session(void *arg) {
             int assigned_port = ntohs(p_addr.sin_port);
 
             unsigned int ip1 = 127, ip2 = 0, ip3 = 0, ip4 = 1;
-            sscanf(s_switch_ftp_ip, "%u.%u.%u.%u", &ip1, &ip2, &ip3, &ip4);
+            struct sockaddr_in cl_loc;
+            socklen_t cl_len = sizeof(cl_loc);
+            if (getsockname(client_fd, (struct sockaddr*)&cl_loc, &cl_len) == 0 && cl_loc.sin_addr.s_addr != 0) {
+                unsigned char *ip_bytes = (unsigned char*)&cl_loc.sin_addr.s_addr;
+                ip1 = ip_bytes[0];
+                ip2 = ip_bytes[1];
+                ip3 = ip_bytes[2];
+                ip4 = ip_bytes[3];
+            } else {
+                sscanf(s_switch_ftp_ip, "%u.%u.%u.%u", &ip1, &ip2, &ip3, &ip4);
+            }
             char pasv_res[128];
             snprintf(pasv_res, sizeof(pasv_res), "227 Entering Passive Mode (%u,%u,%u,%u,%d,%d)\r\n",
                      ip1, ip2, ip3, ip4, assigned_port >> 8, assigned_port & 0xFF);
@@ -628,7 +686,7 @@ static void* switch_ftp_thread_func(void *arg) {
     return NULL;
 }
 
-static inline int vita_ftp_start(void) {
+int switch_ftp_start(void) {
     if (s_switch_ftp_running) return 0;
     mkdir("./screenshots", 0777);
     mkdir("./saves", 0777);
@@ -637,16 +695,7 @@ static inline int vita_ftp_start(void) {
     mkdir("./thumbs", 0777);
     mkdir("./kickstarts", 0777);
     mkdir("./tmp", 0777);
-    Result rc = nifmInitialize(NifmServiceType_User);
-    if (R_SUCCEEDED(rc)) {
-        u32 ip_val = 0;
-        if (R_SUCCEEDED(nifmGetCurrentIpAddress(&ip_val))) {
-            struct in_addr in;
-            in.s_addr = ip_val;
-            snprintf(s_switch_ftp_ip, sizeof(s_switch_ftp_ip), "%s", inet_ntoa(in));
-        }
-        nifmExit();
-    }
+    switch_ftp_refresh_ip();
     s_switch_server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (s_switch_server_fd < 0) return -1;
     int opt = 1;
@@ -667,7 +716,7 @@ static inline int vita_ftp_start(void) {
     return 0;
 }
 
-static inline void vita_ftp_stop(void) {
+void switch_ftp_stop(void) {
     if (!s_switch_ftp_running) return;
     s_switch_ftp_running = 0;
     if (s_switch_server_fd >= 0) {
@@ -688,9 +737,15 @@ static inline void vita_ftp_stop(void) {
     SDL_Delay(50);
 }
 
-static inline int vita_ftp_is_running(void) { return s_switch_ftp_running; }
-static inline void vita_ftp_get_ip(char *buf, size_t sz) { if (buf && sz) snprintf(buf, sz, "%s", s_switch_ftp_ip); }
-static inline int vita_ftp_get_port(void) { return s_switch_ftp_port; }
+int switch_ftp_is_running(void) { return s_switch_ftp_running; }
+void switch_ftp_get_ip(char *buf, size_t sz) { if (buf && sz) snprintf(buf, sz, "%s", s_switch_ftp_ip); }
+int switch_ftp_get_port(void) { return s_switch_ftp_port; }
+
+static inline int vita_ftp_start(void) { return switch_ftp_start(); }
+static inline void vita_ftp_stop(void) { switch_ftp_stop(); }
+static inline int vita_ftp_is_running(void) { return switch_ftp_is_running(); }
+static inline void vita_ftp_get_ip(char *buf, size_t sz) { switch_ftp_get_ip(buf, sz); }
+static inline int vita_ftp_get_port(void) { return switch_ftp_get_port(); }
 static inline int vita_cover_download(const char *n, char *o, size_t s) { (void)n; (void)o; (void)s; return -1; }
 #include <dirent.h>
 #include <sys/stat.h>
@@ -803,6 +858,13 @@ extern int mainMenu_customPreset_Y[MAX_NUM_CUSTOM_PRESETS][MAX_NUM_CONTROLLERS];
 extern int mainMenu_customPreset_L[MAX_NUM_CUSTOM_PRESETS][MAX_NUM_CONTROLLERS];
 extern int mainMenu_customPreset_R[MAX_NUM_CUSTOM_PRESETS][MAX_NUM_CONTROLLERS];
 extern int mainMenu_mouseMultiplier;
+extern int mainMenu_mouseDevice;
+extern int mainMenu_mouseAcceleration;
+extern int mainMenu_mouseSlowFactor;
+extern int mainMenu_mouseSlowButton;
+extern int mainMenu_mouseFastFactor;
+extern int mainMenu_mouseFastButton;
+extern int mainMenu_mouseSwapButtons;
 extern int mainMenu_vkbdLanguage;
 extern int mainMenu_vkbdStyle;
 extern int mainMenu_vkbdTransparency;
@@ -1715,15 +1777,16 @@ static void whdload_cover_load(const char *game_name)
         strncpy(s_whdload_cover_game, game_name, sizeof(s_whdload_cover_game) - 1);
 }
 
-static void whdload_install_flow(void);
+static void whdload_install_flow(int *selected_item);
 
 #define WHDLOAD_FAVORITES_FILE "./data/favorites.txt"
 #define WHDLOAD_RECENT_FILE    "./data/recent.txt"
+#define MAX_WHDLOAD_GAMES      4096
 
 static int s_whdload_filter = 0;
 static char s_whdload_last_game[128] = "";
 
-static char s_favs[256][128];
+static char s_favs[MAX_WHDLOAD_GAMES][128];
 static int s_fav_count = 0;
 static char s_recents[20][128];
 static int s_recent_count = 0;
@@ -1746,7 +1809,7 @@ static void whdload_read_name_list(const char *path, char names[][128], int max_
 
 static void whdload_refresh_meta(void)
 {
-    whdload_read_name_list(WHDLOAD_FAVORITES_FILE, s_favs, 256, &s_fav_count);
+    whdload_read_name_list(WHDLOAD_FAVORITES_FILE, s_favs, MAX_WHDLOAD_GAMES, &s_fav_count);
     whdload_read_name_list(WHDLOAD_RECENT_FILE, s_recents, 20, &s_recent_count);
 }
 
@@ -1768,13 +1831,13 @@ static bool whdload_is_recent(const char *game)
 
 static void whdload_toggle_favorite(const char *game)
 {
-    char lines[256][128];
+    static char lines[MAX_WHDLOAD_GAMES][128];
     int count = 0;
     bool was_favorite = false;
     FILE *f = fopen(WHDLOAD_FAVORITES_FILE, "rb");
     if (f) {
         char line[160];
-        while (count < 256 && fgets(line, sizeof(line), f)) {
+        while (count < MAX_WHDLOAD_GAMES && fgets(line, sizeof(line), f)) {
             line[strcspn(line, "\r\n")] = '\0';
             if (line[0] == '\0') continue;
             if (strcmp(line, game) == 0) {
@@ -1787,7 +1850,7 @@ static void whdload_toggle_favorite(const char *game)
         }
         fclose(f);
     }
-    if (!was_favorite && count < 256) {
+    if (!was_favorite && count < MAX_WHDLOAD_GAMES) {
         strncpy(lines[count], game, 127);
         lines[count][127] = '\0';
         count++;
@@ -1944,7 +2007,7 @@ static int whdload_find_next_letter_index(char games[][128], const int *vis_inde
     }
 }
 
-static void whdload_install_flow(void)
+static void whdload_install_flow(int *selected_item)
 {
     char archive_path[512];
     char installed_path[512];
@@ -1956,30 +2019,51 @@ static void whdload_install_flow(void)
             const char *folder = strrchr(installed_path, '/');
             folder = folder ? folder + 1 : installed_path;
             if (folder && folder[0]) {
-                if (switch_whdload_can_launch(folder)) {
-                    if (vita_confirm_eject_for_whdload_launch()) {
-                        filesys_prepare_reset();
-                        filesys_reset();
+                whdload_ensure_game_dir(folder);
+                strncpy(s_whdload_last_game, folder, sizeof(s_whdload_last_game) - 1);
+                s_whdload_last_game[sizeof(s_whdload_last_game) - 1] = '\0';
+                whdload_cover_load(folder);
+                s_whdload_filter = 0;
 
-                        strncpy(mainMenu_whdload_game, folder, sizeof(mainMenu_whdload_game) - 1);
-                        mainMenu_whdload_game[sizeof(mainMenu_whdload_game) - 1] = '\0';
-                        whdload_ensure_game_dir(folder);
-                        whdload_mark_recent(folder);
-
-                        strncpy(uae4all_hard_dir, switch_whdload_root(), 255);
-                        uae4all_hard_dir[255] = '\0';
-                        ApplyAutomaticGamePreset(2);
-                        switch_set_kickstart(kickstart, 0);
-
-                        switch_whdload_prepare_launch(folder);
-
-                        gui_update();
-                        mainMenu_case = MAIN_MENU_CASE_RESET;
-                        return;
+                if (selected_item) {
+                    static char games[MAX_WHDLOAD_GAMES][128];
+                    int game_count = switch_whdload_list(games, MAX_WHDLOAD_GAMES);
+                    for (int i = 0; i < game_count; i++) {
+                        if (strcmp(games[i], folder) == 0) {
+                            *selected_item = 5 + i;
+                            break;
+                        }
                     }
                 }
+
+                if (switch_whdload_can_launch(folder)) {
+                    char msg[384];
+                    snprintf(msg, sizeof(msg), "\"%s\" has been installed successfully.\n\nDo you want to launch the game now or return to the WHDLoad menu?", folder);
+                    if (switch_show_confirm_box("Installation Complete", msg, "Launch Game", "WHDLoad Menu")) {
+                        if (vita_confirm_eject_for_whdload_launch()) {
+                            filesys_prepare_reset();
+                            filesys_reset();
+
+                            strncpy(mainMenu_whdload_game, folder, sizeof(mainMenu_whdload_game) - 1);
+                            mainMenu_whdload_game[sizeof(mainMenu_whdload_game) - 1] = '\0';
+                            whdload_mark_recent(folder);
+
+                            strncpy(uae4all_hard_dir, switch_whdload_root(), 255);
+                            uae4all_hard_dir[255] = '\0';
+                            ApplyAutomaticGamePreset(2);
+                            switch_set_kickstart(kickstart, 0);
+
+                            switch_whdload_prepare_launch(folder);
+
+                            gui_update();
+                            mainMenu_case = MAIN_MENU_CASE_RESET;
+                            return;
+                        }
+                    }
+                    return;
+                }
             }
-            switch_show_message_box("WHDLoad Installed", "The LHA archive was extracted to the WHDLoad library.", "OK (A)");
+            switch_show_message_box("Installation Complete", "The LHA archive was extracted to the WHDLoad library.", "OK (A)");
         } else {
             char err_buf[300];
             snprintf(err_buf, sizeof(err_buf), "The LHA archive could not be extracted.\n%s", switch_whdload_get_last_error());
@@ -1990,12 +2074,12 @@ static void whdload_install_flow(void)
 
 void switch_view_whdload(SwitchInputState *input, int *selected_item)
 {
-    static char games[256][128];
-    int game_count = switch_whdload_list(games, 256);
+    static char games[MAX_WHDLOAD_GAMES][128];
+    int game_count = switch_whdload_list(games, MAX_WHDLOAD_GAMES);
 
     whdload_refresh_meta();
 
-    static int vis_index[256];
+    static int vis_index[MAX_WHDLOAD_GAMES];
     int vis_count = 0;
     for (int k = 0; k < game_count; k++) {
         bool keep;
@@ -2065,7 +2149,7 @@ void switch_view_whdload(SwitchInputState *input, int *selected_item)
                 }
             }
         } else if (*selected_item == 1) {
-            whdload_install_flow();
+            whdload_install_flow(selected_item);
         } else if (*selected_item == 2) {
             char *args = kbdswitch_get_str((char*)"WHDLoad Arguments:", mainMenu_whdload_args, 200, 0);
             if (args) {
@@ -2116,7 +2200,7 @@ void switch_view_whdload(SwitchInputState *input, int *selected_item)
     }
 
     if (input->pressed & SWITCH_BTN_X) {
-        whdload_install_flow();
+        whdload_install_flow(selected_item);
     }
 
     if (input->pressed & SWITCH_BTN_Y) {
@@ -2833,6 +2917,8 @@ void switch_view_display(SwitchInputState *input, int *selected_item)
 
 static bool s_custom_controls_modal_open = false;
 static int s_custom_modal_selected = 0;
+static bool s_mouse_modal_open = false;
+static int s_mouse_modal_selected = 0;
 
 void switch_view_controls(SwitchInputState *input, int *selected_item)
 {
@@ -2893,7 +2979,7 @@ void switch_view_controls(SwitchInputState *input, int *selected_item)
                     mainMenu_customControls = 1 - mainMenu_customControls;
                     break;
                 case 1:
-                    mainMenu_custom_currentlyEditingControllerNr = (mainMenu_custom_currentlyEditingControllerNr + dir + 4) % 4;
+                    mainMenu_custom_currentlyEditingControllerNr = (mainMenu_custom_currentlyEditingControllerNr + dir + MAX_NUM_CONTROLLERS) % MAX_NUM_CONTROLLERS;
                     break;
                 case 2:
                     mainMenu_custom_controlSet = (mainMenu_custom_controlSet + dir + 6) % 6;
@@ -2975,14 +3061,23 @@ void switch_view_controls(SwitchInputState *input, int *selected_item)
         c = mainMenu_custom_currentlyEditingControllerNr;
         if (c < 0 || c >= MAX_NUM_CONTROLLERS) c = 0;
 
-        const char *controller_names[4] = { "Controller 1 (Joy-Con / Pro Controller)", "Controller 2 (External Controller)", "Controller 3", "Controller 4" };
+        const char *controller_names[MAX_NUM_CONTROLLERS] = {
+            "Controller 1 (P1)",
+            "Controller 2 (P2)",
+            "Controller 3 (P3)",
+            "Controller 4 (P4)",
+            "Controller 5 (P5)",
+            "Controller 6 (P6)",
+            "Controller 7 (P7)",
+            "Controller 8 (P8)"
+        };
         const char *profile_names[6] = { "Profile 1", "Profile 2", "Profile 3", "Profile 4", "Profile 5", "Profile 6" };
 
         switch_draw_rounded_rect(20.0f, 20.0f, SWITCH_SCREEN_W - 40.0f, SWITCH_SCREEN_H - 40.0f, 12.0f, RGBA8(14, 18, 26, 250));
         switch_draw_card_custom(20.0f, 20.0f, SWITCH_SCREEN_W - 40.0f, SWITCH_SCREEN_H - 40.0f, RGBA8(14, 18, 26, 250), SWITCH_COLOR_FOCUS_BORDER);
 
         switch_draw_badge(40.0f, 32.0f, "CONTROLLERS", SWITCH_COLOR_AMIGA_RED, SWITCH_COLOR_TEXT_WHITE);
-        switch_draw_text_centered(SWITCH_SCREEN_W * 0.5f, 35.0f, SWITCH_COLOR_TEXT_WHITE, 1.15f, "CUSTOM CONTROLS REMAPPING (4 PAD)");
+        switch_draw_text_centered(SWITCH_SCREEN_W * 0.5f, 35.0f, SWITCH_COLOR_TEXT_WHITE, 1.15f, "CUSTOM CONTROLS REMAPPING (UP TO 8 PADS)");
         switch_draw_text_centered(SWITCH_SCREEN_W * 0.5f, 62.0f, SWITCH_COLOR_TEXT_MUTED, 0.72f, "Press B to Close and Save  |  D-PAD Left/Right to Cycle Actions");
 
         float m_card_x = 40.0f;
@@ -3059,7 +3154,123 @@ void switch_view_controls(SwitchInputState *input, int *selected_item)
         return;
     }
 
-    const int total_items = 15;
+    if (s_mouse_modal_open) {
+        const int m_total_items = 8;
+        if (s_mouse_modal_selected < 0) s_mouse_modal_selected = 0;
+        if (s_mouse_modal_selected >= m_total_items) s_mouse_modal_selected = m_total_items - 1;
+
+        if (input->pressed & SWITCH_BTN_UP) {
+            s_mouse_modal_selected--;
+            if (s_mouse_modal_selected < 0) s_mouse_modal_selected = m_total_items - 1;
+        }
+        if (input->pressed & SWITCH_BTN_DOWN) {
+            s_mouse_modal_selected++;
+            if (s_mouse_modal_selected >= m_total_items) s_mouse_modal_selected = 0;
+        }
+
+        if (input->pressed & SWITCH_BTN_B) {
+            s_mouse_modal_open = false;
+            return;
+        }
+
+        int dir = 0;
+        if (input->pressed & (SWITCH_BTN_RIGHT | SWITCH_BTN_A)) dir = 1;
+        if (input->pressed & SWITCH_BTN_LEFT) dir = -1;
+
+        if (dir != 0) {
+            switch (s_mouse_modal_selected) {
+                case 0:
+                    mainMenu_mouseDevice = (mainMenu_mouseDevice + dir + 4) % 4;
+                    mainMenu_leftStickMouse = (mainMenu_mouseDevice == 1) ? 1 : 0;
+                    mainMenu_mouseEmulation = (mainMenu_mouseDevice != 2) ? 1 : 0;
+                    break;
+                case 1:
+                    mainMenu_mouseMultiplier += dir;
+                    if (mainMenu_mouseMultiplier < 1) mainMenu_mouseMultiplier = 1;
+                    if (mainMenu_mouseMultiplier > 10) mainMenu_mouseMultiplier = 10;
+                    break;
+                case 2:
+                    mainMenu_mouseAcceleration = (mainMenu_mouseAcceleration + dir + 4) % 4;
+                    break;
+                case 3:
+                    mainMenu_mouseSlowFactor = (mainMenu_mouseSlowFactor + dir + 4) % 4;
+                    break;
+                case 4:
+                    mainMenu_mouseSlowButton = (mainMenu_mouseSlowButton + dir + 9) % 9;
+                    break;
+                case 5:
+                    mainMenu_mouseFastFactor = (mainMenu_mouseFastFactor + dir + 5) % 5;
+                    break;
+                case 6:
+                    mainMenu_mouseFastButton = (mainMenu_mouseFastButton + dir + 9) % 9;
+                    break;
+                case 7:
+                    mainMenu_mouseSwapButtons = 1 - mainMenu_mouseSwapButtons;
+                    break;
+            }
+        }
+
+        static const char *device_names[4] = { "Right Analog Stick", "Left Analog Stick", "Touchscreen Only", "D-Pad" };
+        static const char *accel_names[4] = { "Disabled (Linear)", "Low Curve", "Medium Curve", "High Curve" };
+        static const char *slow_factor_names[4] = { "0.50x (Half Speed)", "0.25x (Quarter Speed)", "0.125x (1/8 Speed - Default)", "0.0625x (1/16 Speed)" };
+        static const char *fast_factor_names[5] = { "1.5x Speed", "2.0x Speed", "3.0x Speed (Default)", "4.0x Speed", "5.0x Speed" };
+        static const char *button_trigger_names[9] = { "Disabled / None", "ZR Trigger", "ZL Trigger", "R Button", "L Button", "R3 (Right Stick Click)", "L3 (Left Stick Click)", "Y Button", "X Button" };
+
+        char speed_buf[32];
+        snprintf(speed_buf, sizeof(speed_buf), "%dx Speed", mainMenu_mouseMultiplier);
+
+        switch_draw_rounded_rect(20.0f, 20.0f, SWITCH_SCREEN_W - 40.0f, SWITCH_SCREEN_H - 40.0f, 12.0f, RGBA8(14, 18, 26, 250));
+        switch_draw_card_custom(20.0f, 20.0f, SWITCH_SCREEN_W - 40.0f, SWITCH_SCREEN_H - 40.0f, RGBA8(14, 18, 26, 250), SWITCH_COLOR_FOCUS_BORDER);
+
+        switch_draw_badge(40.0f, 32.0f, "MOUSE", SWITCH_COLOR_AMIGA_BLUE, SWITCH_COLOR_TEXT_WHITE);
+        switch_draw_text_centered(SWITCH_SCREEN_W * 0.5f, 35.0f, SWITCH_COLOR_TEXT_WHITE, 1.15f, "AMIGA MOUSE CONFIGURATION");
+        switch_draw_text_centered(SWITCH_SCREEN_W * 0.5f, 62.0f, SWITCH_COLOR_TEXT_MUTED, 0.72f, "Press B to Close  |  D-PAD Left/Right or A to Change Settings");
+
+        float m_card_x = 40.0f;
+        float m_card_w = SWITCH_SCREEN_W - 80.0f;
+        const float m_start_y = 88.0f;
+        const float m_item_h = 40.0f;
+        const float m_item_gap = 4.0f;
+        const int m_visible = 8;
+        int m_first = s_mouse_modal_selected >= m_visible ? s_mouse_modal_selected - m_visible + 1 : 0;
+
+        for (int i = 0; i < m_visible; i++) {
+            int item = m_first + i;
+            if (item >= m_total_items) break;
+            float y = m_start_y + (float)i * (m_item_h + m_item_gap);
+            bool focused = (s_mouse_modal_selected == item);
+            switch (item) {
+                case 0:
+                    switch_draw_selector_item(m_card_x, y, m_card_w, m_item_h, "Device", device_names[mainMenu_mouseDevice % 4], focused);
+                    break;
+                case 1:
+                    switch_draw_selector_item(m_card_x, y, m_card_w, m_item_h, "Sensitivity", speed_buf, focused);
+                    break;
+                case 2:
+                    switch_draw_selector_item(m_card_x, y, m_card_w, m_item_h, "Acceleration", accel_names[mainMenu_mouseAcceleration % 4], focused);
+                    break;
+                case 3:
+                    switch_draw_selector_item(m_card_x, y, m_card_w, m_item_h, "Slow Mouse Speed", slow_factor_names[mainMenu_mouseSlowFactor % 4], focused);
+                    break;
+                case 4:
+                    switch_draw_selector_item(m_card_x, y, m_card_w, m_item_h, "Slow Mouse Trigger", button_trigger_names[mainMenu_mouseSlowButton % 9], focused);
+                    break;
+                case 5:
+                    switch_draw_selector_item(m_card_x, y, m_card_w, m_item_h, "Fast Mouse Speed", fast_factor_names[mainMenu_mouseFastFactor % 5], focused);
+                    break;
+                case 6:
+                    switch_draw_selector_item(m_card_x, y, m_card_w, m_item_h, "Fast Mouse Trigger", button_trigger_names[mainMenu_mouseFastButton % 9], focused);
+                    break;
+                case 7:
+                    switch_draw_switch_item(m_card_x, y, m_card_w, m_item_h, "Swap Buttons (Left / Right)", mainMenu_mouseSwapButtons == 1, focused);
+                    break;
+            }
+        }
+        switch_draw_list_page_indicator(s_mouse_modal_selected, m_total_items, m_visible);
+        return;
+    }
+
+    const int total_items = 13;
     if (*selected_item < 0) *selected_item = 0;
     if (*selected_item >= total_items) *selected_item = total_items - 1;
 
@@ -3089,42 +3300,31 @@ void switch_view_controls(SwitchInputState *input, int *selected_item)
                 mainMenu_singleJoycons = 1 - mainMenu_singleJoycons;
                 update_joycon_mode();
                 break;
-            case 2:
-                mainMenu_mouseEmulation = 1 - mainMenu_mouseEmulation;
-                break;
             case 3:
-                mainMenu_leftStickMouse = 1 - mainMenu_leftStickMouse;
-                break;
-            case 4:
-                mainMenu_mouseMultiplier += dir;
-                if (mainMenu_mouseMultiplier < 1) mainMenu_mouseMultiplier = 1;
-                if (mainMenu_mouseMultiplier > 10) mainMenu_mouseMultiplier = 10;
-                break;
-            case 5:
                 mainMenu_touchControls = (mainMenu_touchControls + 3 + dir) % 3;
                 break;
-            case 6:
+            case 4:
                 mainMenu_vkbdLanguage = (mainMenu_vkbdLanguage + 4 + dir) % 4;
                 break;
-            case 7:
+            case 5:
                 mainMenu_vkbdStyle = (mainMenu_vkbdStyle + 4 + dir) % 4;
                 break;
-            case 8:
+            case 6:
                 mainMenu_vkbdTransparency = (mainMenu_vkbdTransparency + 4 + dir) % 4;
                 break;
-            case 9:
+            case 7:
                 mainMenu_vkbdPosition = (mainMenu_vkbdPosition + 3 + dir) % 3;
                 break;
-            case 10:
+            case 8:
                 mainMenu_autofire = (mainMenu_autofire + 4 + dir) % 4;
                 break;
-            case 11:
+            case 9:
                 mainMenu_autofireMode = 1 - mainMenu_autofireMode;
                 break;
-            case 12:
+            case 10:
                 mainMenu_autoEjectFloppy = 1 - mainMenu_autoEjectFloppy;
                 break;
-            case 13:
+            case 11:
                 mainMenu_deadZone += dir * 1000;
                 if (mainMenu_deadZone < 1000) mainMenu_deadZone = 1000;
                 if (mainMenu_deadZone > 25000) mainMenu_deadZone = 25000;
@@ -3142,36 +3342,34 @@ void switch_view_controls(SwitchInputState *input, int *selected_item)
                 update_joycon_mode();
                 break;
             case 2:
-                mainMenu_mouseEmulation = 1 - mainMenu_mouseEmulation;
+                s_mouse_modal_open = true;
+                s_mouse_modal_selected = 0;
                 break;
             case 3:
-                mainMenu_leftStickMouse = 1 - mainMenu_leftStickMouse;
-                break;
-            case 5:
                 mainMenu_touchControls = (mainMenu_touchControls + 1) % 3;
                 break;
-            case 6:
+            case 4:
                 mainMenu_vkbdLanguage = (mainMenu_vkbdLanguage + 1) % 4;
                 break;
-            case 7:
+            case 5:
                 mainMenu_vkbdStyle = (mainMenu_vkbdStyle + 1) % 4;
                 break;
-            case 8:
+            case 6:
                 mainMenu_vkbdTransparency = (mainMenu_vkbdTransparency + 1) % 4;
                 break;
-            case 9:
+            case 7:
                 mainMenu_vkbdPosition = (mainMenu_vkbdPosition + 1) % 3;
                 break;
-            case 10:
+            case 8:
                 mainMenu_autofire = (mainMenu_autofire + 1) % 4;
                 break;
-            case 11:
+            case 9:
                 mainMenu_autofireMode = 1 - mainMenu_autofireMode;
                 break;
-            case 12:
+            case 10:
                 mainMenu_autoEjectFloppy = 1 - mainMenu_autoEjectFloppy;
                 break;
-            case 14:
+            case 12:
                 s_custom_controls_modal_open = true;
                 s_custom_modal_selected = 0;
                 break;
@@ -3186,8 +3384,6 @@ void switch_view_controls(SwitchInputState *input, int *selected_item)
     const int visible_items = switch_list_visible_rows(start_y, item_h, item_gap);
     int first_item = *selected_item >= visible_items ? *selected_item - visible_items + 1 : 0;
 
-    char mouse_speed_buf[32];
-    snprintf(mouse_speed_buf, sizeof(mouse_speed_buf), "%dx Speed", mainMenu_mouseMultiplier);
     char deadzone_buf[32];
     snprintf(deadzone_buf, sizeof(deadzone_buf), "%d%% Threshold", (int)((float)mainMenu_deadZone / 32768.0f * 100.0f));
 
@@ -3204,43 +3400,37 @@ void switch_view_controls(SwitchInputState *input, int *selected_item)
                 switch_draw_switch_item(card_x, y, card_w, item_h, "Single Joy-Con Mode (2 Players)", mainMenu_singleJoycons == 1, focused);
                 break;
             case 2:
-                switch_draw_switch_item(card_x, y, card_w, item_h, "Amiga Mouse Emulation", mainMenu_mouseEmulation == 1, focused);
+                switch_draw_button_item(card_x, y, card_w, item_h, "Mouse Configuration...", "Device, Sensitivity, Acceleration, Slow/Fast Mouse, Swap Buttons", "CONFIGURE", focused, false);
                 break;
             case 3:
-                switch_draw_switch_item(card_x, y, card_w, item_h, "Left Analog Stick as Amiga Mouse", mainMenu_leftStickMouse == 1, focused);
-                break;
-            case 4:
-                switch_draw_selector_item(card_x, y, card_w, item_h, "Mouse Speed / Sensitivity", mouse_speed_buf, focused);
-                break;
-            case 5:
                 switch_draw_selector_item(card_x, y, card_w, item_h, "Switch Touchscreen & Mouse Mode", touch_modes[mainMenu_touchControls % 3], focused);
                 break;
-            case 6:
+            case 4:
                 switch_draw_selector_item(card_x, y, card_w, item_h, "Virtual Keyboard Language", vkbd_lang_names[mainMenu_vkbdLanguage % 4], focused);
                 break;
-            case 7:
+            case 5:
                 switch_draw_selector_item(card_x, y, card_w, item_h, "Virtual Keyboard Style", vkbd_style_names[mainMenu_vkbdStyle % 4], focused);
                 break;
-            case 8:
+            case 6:
                 switch_draw_selector_item(card_x, y, card_w, item_h, "Virtual Keyboard Transparency", vkbd_trans_names[mainMenu_vkbdTransparency % 4], focused);
                 break;
-            case 9:
+            case 7:
                 switch_draw_selector_item(card_x, y, card_w, item_h, "Virtual Keyboard Position", vkbd_pos_names[mainMenu_vkbdPosition % 3], focused);
                 break;
-            case 10:
+            case 8:
                 switch_draw_selector_item(card_x, y, card_w, item_h, "Autofire Rate", autofire_names[mainMenu_autofire % 4], focused);
                 break;
-            case 11:
+            case 9:
                 switch_draw_selector_item(card_x, y, card_w, item_h, "Autofire Trigger", (mainMenu_autofireMode == 1) ? "Continuous (Automatic / Always-On)" : "Hold Fire Button (A)", focused);
                 break;
-            case 12:
+            case 10:
                 switch_draw_switch_item(card_x, y, card_w, item_h, "WHDLoad Auto-Eject Floppy on Launch", mainMenu_autoEjectFloppy == 1, focused);
                 break;
-            case 13:
+            case 11:
                 switch_draw_selector_item(card_x, y, card_w, item_h, "Analog Stick Deadzone", deadzone_buf, focused);
                 break;
-            case 14:
-                switch_draw_button_item(card_x, y, card_w, item_h, "Custom Button Remapping...", "Configure individual actions for all 4 Switch gamepads", "REMAP", focused, false);
+            case 12:
+                switch_draw_button_item(card_x, y, card_w, item_h, "Custom Button Remapping...", "Configure individual actions for up to 8 Switch controllers", "REMAP", focused, false);
                 break;
         }
     }
@@ -3566,39 +3756,81 @@ void switch_view_savestates(SwitchInputState *input, int *selected_item)
 }
 
 static bool s_ftp_modal_active = false;
+static int s_ftp_modal_frames = 0;
+
+bool switch_gui_is_ftp_active(void)
+{
+    return s_ftp_modal_active;
+}
+
+void switch_gui_stop_ftp(void)
+{
+    if (s_ftp_modal_active || switch_ftp_is_running()) {
+        switch_ftp_stop();
+        s_ftp_modal_active = false;
+        s_ftp_modal_frames = 0;
+    }
+}
 
 void switch_view_ftp(SwitchInputState *input, int *selected_item)
 {
     (void)selected_item;
-    char ip[32];
-    char endpoint[96];
+    s_ftp_modal_frames++;
 
-    if (!vita_ftp_is_running() && vita_ftp_start() != 0) {
+    if (!switch_ftp_is_running() && switch_ftp_start() != 0) {
         switch_show_message_box("FTP Server", "Unable to start FTP service. Check Wi-Fi connection.", "OK (A)");
         s_ftp_modal_active = false;
+        s_ftp_modal_frames = 0;
         input->pressed = 0;
         return;
     }
 
-    vita_ftp_get_ip(ip, sizeof(ip));
-    snprintf(endpoint, sizeof(endpoint), "ftp://%s:%d", ip, vita_ftp_get_port());
+    if (strcmp(s_switch_ftp_ip, "127.0.0.1") == 0 || strcmp(s_switch_ftp_ip, "0.0.0.0") == 0) {
+        if ((s_ftp_modal_frames % 30) == 1) {
+            switch_ftp_refresh_ip();
+        }
+    }
 
-    if ((input->pressed & (SWITCH_BTN_B | SWITCH_BTN_A | SWITCH_BTN_PLUS)) || input->touch_tap) {
-        vita_ftp_stop();
+    char ip[32];
+    char endpoint[96];
+    switch_ftp_get_ip(ip, sizeof(ip));
+    snprintf(endpoint, sizeof(endpoint), "ftp://%s:%d", ip, switch_ftp_get_port());
+
+    if (s_ftp_modal_frames > 10 && (input->pressed & (SWITCH_BTN_B | SWITCH_BTN_PLUS))) {
+        switch_ftp_stop();
         s_ftp_modal_active = false;
+        s_ftp_modal_frames = 0;
         input->pressed = 0;
         input->held = 0;
         SDL_Delay(100);
         return;
     }
 
-    switch_draw_card_custom(100.0f, 115.0f, 760.0f, 260.0f, SWITCH_COLOR_CARD, SWITCH_COLOR_FOCUS_BORDER);
-    switch_draw_text_centered(480.0f, 145.0f, SWITCH_COLOR_TEXT_WHITE, 1.25f, "FTP FILE TRANSFER");
-    switch_draw_text_centered(480.0f, 190.0f, SWITCH_COLOR_SUCCESS, 1.10f, "FTP SERVER ACTIVE");
-    switch_draw_text_centered(480.0f, 235.0f, SWITCH_COLOR_TEXT_WHITE, 1.00f, endpoint);
-    switch_draw_text_centered(480.0f, 280.0f, SWITCH_COLOR_TEXT_MUTED, 0.85f, "Use FileZilla, WinSCP or any FTP client on port 5000");
-    switch_draw_text_centered(480.0f, 310.0f, SWITCH_COLOR_TEXT_MUTED, 0.85f, "Press B or A to stop FTP and return to System");
-    switch_draw_footer("FTP ACTIVE", "B / A STOP & RETURN");
+    int client_count = switch_ftp_get_client_count();
+
+    switch_draw_card_custom(100.0f, 105.0f, 760.0f, 290.0f, SWITCH_COLOR_CARD, SWITCH_COLOR_FOCUS_BORDER);
+    switch_draw_text_centered(480.0f, 130.0f, SWITCH_COLOR_TEXT_WHITE, 1.25f, "FTP FILE TRANSFER");
+
+    bool has_valid_ip = (strcmp(ip, "127.0.0.1") != 0 && strcmp(ip, "0.0.0.0") != 0 && strlen(ip) > 0);
+    if (!has_valid_ip) {
+        switch_draw_text_centered(480.0f, 175.0f, SWITCH_COLOR_AMIGA_ORANGE, 1.10f, "WAITING FOR WI-FI...");
+        switch_draw_text_centered(480.0f, 215.0f, SWITCH_COLOR_TEXT_MUTED, 0.95f, "Connect to Wi-Fi in Switch System Settings");
+    } else {
+        switch_draw_text_centered(480.0f, 175.0f, SWITCH_COLOR_SUCCESS, 1.10f, "FTP SERVER ACTIVE");
+        switch_draw_text_centered(480.0f, 215.0f, SWITCH_COLOR_TEXT_WHITE, 1.05f, endpoint);
+    }
+
+    if (client_count > 0) {
+        char cbuf[64];
+        snprintf(cbuf, sizeof(cbuf), "Connected Clients: %d", client_count);
+        switch_draw_text_centered(480.0f, 255.0f, SWITCH_COLOR_SUCCESS, 0.85f, cbuf);
+    } else {
+        switch_draw_text_centered(480.0f, 255.0f, SWITCH_COLOR_TEXT_MUTED, 0.85f, "Port: 5000  (Anonymous or any user/pass)");
+    }
+
+    switch_draw_text_centered(480.0f, 290.0f, SWITCH_COLOR_TEXT_MUTED, 0.80f, "FileZilla / WinSCP / Cyberduck supported");
+    switch_draw_text_centered(480.0f, 325.0f, SWITCH_COLOR_TEXT_MUTED, 0.85f, "Press B to stop FTP server and return to System");
+    switch_draw_footer("FTP ACTIVE", "B STOP & RETURN");
 }
 
 void switch_view_system(SwitchInputState *input, int *selected_item)
@@ -3713,6 +3945,9 @@ void switch_view_system(SwitchInputState *input, int *selected_item)
                 break;
             case 9:
                 s_ftp_modal_active = true;
+                s_ftp_modal_frames = 0;
+                input->pressed = 0;
+                input->held = 0;
                 break;
             case 10:
                 if (switch_show_confirm_box("About", "Open UAE4All2 and credits?", "Yes", "No")) {

@@ -69,6 +69,13 @@ extern int lAnalogY;
 extern int mainMenu_leftStickMouse;
 extern int mainMenu_touchControls;
 extern int mainMenu_deadZone;
+extern int mainMenu_mouseDevice;
+extern int mainMenu_mouseAcceleration;
+extern int mainMenu_mouseSlowFactor;
+extern int mainMenu_mouseSlowButton;
+extern int mainMenu_mouseFastFactor;
+extern int mainMenu_mouseFastButton;
+extern int mainMenu_mouseSwapButtons;
 int delay2[] = {0, 0, 0}; // for 2nd, 3rd and 4th player non-custom autofire
 bool slow_mouse = false;
 bool fast_mouse = false;
@@ -329,11 +336,24 @@ void read_joystick(int nr, unsigned int *dir, int *button)
 			}
 		}
 #ifdef __SWITCH__
-		// or if custom controls are OFF but ZR is held on Switch, then also use slow-mouse
-		else {
+		if (!slow_mouse && mainMenu_mouseSlowButton > 0)
+		{
 			for (int i=0; i<nr_joysticks; i++)
 			{
-				if (triggerR2[i])
+				bool pressed = false;
+				switch (mainMenu_mouseSlowButton)
+				{
+					case 1: pressed = (triggerR2[i] != 0); break;
+					case 2: pressed = (triggerL2[i] != 0); break;
+					case 3: pressed = (triggerR[i] != 0); break;
+					case 4: pressed = (triggerL[i] != 0); break;
+					case 5: pressed = (triggerR3[i] != 0); break;
+					case 6: pressed = (triggerL3[i] != 0); break;
+					case 7: pressed = (buttonY[i] != 0); break;
+					case 8: pressed = (buttonX[i] != 0); break;
+					default: break;
+				}
+				if (pressed)
 				{
 					slow_mouse=true;
 					break;
@@ -341,7 +361,6 @@ void read_joystick(int nr, unsigned int *dir, int *button)
 			}
 		}
 #endif
-		//speed up mouse motion if custom "fast mouse" button is held
 		if(mainMenu_customControls)
 		{
 			for (int i=0; i<nr_joysticks; i++)
@@ -379,11 +398,24 @@ void read_joystick(int nr, unsigned int *dir, int *button)
 			}
 		}
 #ifdef __SWITCH__
-		// or if custom controls are OFF but ZL is held on Switch, then also use fast-mouse
-		else {
+		if (!fast_mouse && mainMenu_mouseFastButton > 0)
+		{
 			for (int i=0; i<nr_joysticks; i++)
 			{
-				if (triggerL2[i])
+				bool pressed = false;
+				switch (mainMenu_mouseFastButton)
+				{
+					case 1: pressed = (triggerR2[i] != 0); break;
+					case 2: pressed = (triggerL2[i] != 0); break;
+					case 3: pressed = (triggerR[i] != 0); break;
+					case 4: pressed = (triggerL[i] != 0); break;
+					case 5: pressed = (triggerR3[i] != 0); break;
+					case 6: pressed = (triggerL3[i] != 0); break;
+					case 7: pressed = (buttonY[i] != 0); break;
+					case 8: pressed = (buttonX[i] != 0); break;
+					default: break;
+				}
+				if (pressed)
 				{
 					fast_mouse=true;
 					break;
@@ -391,81 +423,137 @@ void read_joystick(int nr, unsigned int *dir, int *button)
 			}
 		}
 #endif
-		if (fast_mouse) mouseScale*=3;
-		if (slow_mouse) mouseScale/=8;
-
-		//VITA: always use an analog stick (default: right stick) for mouse pointer movements
-		//here we are using a small deadzone
-		//This can be disabled in the menu because it interferes with Joystick Port 0
-		if (mainMenu_mouseEmulation)
+		if (fast_mouse)
 		{
-			float analogX=0.0f;
-			float analogY=0.0f;
-			float deadZone=(float) mainMenu_deadZone;
-			float scalingFactor=1.0f;
-			float magnitude=0.0f;
-
-			if ((mainMenu_leftStickMouse)
-#ifdef __SWITCH__
-			&& (!singleJoycons)
-#endif
-			)
+			switch (mainMenu_mouseFastFactor)
 			{
-				analogX=(float) lAnalogX;
-				analogY=(float) lAnalogY;
+				case 0: mouseScale = (mouseScale * 3) / 2; break;
+				case 1: mouseScale *= 2; break;
+				case 2: mouseScale *= 3; break;
+				case 3: mouseScale *= 4; break;
+				case 4: mouseScale *= 5; break;
+				default: mouseScale *= 3; break;
+			}
+		}
+		if (slow_mouse)
+		{
+			switch (mainMenu_mouseSlowFactor)
+			{
+				case 0: mouseScale /= 2; break;
+				case 1: mouseScale /= 4; break;
+				case 2: mouseScale /= 8; break;
+				case 3: mouseScale /= 16; break;
+				default: mouseScale /= 8; break;
+			}
+			if (mouseScale < 1) mouseScale = 1;
+		}
+
+		if (mainMenu_mouseEmulation && mainMenu_mouseDevice != 2)
+		{
+			if (mainMenu_mouseDevice == 3)
+			{
+				if (dpadLeft[0])
+				{
+					lastmx -= mouseScale;
+					newmousecounters = 1;
+				}
+				if (dpadRight[0])
+				{
+					lastmx += mouseScale;
+					newmousecounters = 1;
+				}
+				if (dpadUp[0])
+				{
+					lastmy -= mouseScale;
+					newmousecounters = 1;
+				}
+				if (dpadDown[0])
+				{
+					lastmy += mouseScale;
+					newmousecounters = 1;
+				}
 			}
 			else
 			{
-				analogX=(float) rAnalogX;
-				analogY=(float) rAnalogY;
-			}
-			//radial and scaled deadzone
-			//http://www.third-helix.com/2013/04/12/doing-thumbstick-dead-zones-right.html
-			//max movement is mouseScale.
-			//that way, when in one of the other mouse modes,
-			//the Y button to change scale still works
-			const float maxAxis = 32767.0f;
-			magnitude=sqrt(analogX*analogX+analogY*analogY);
-			if (magnitude > deadZone && deadZone < maxAxis)
-			{
-				//adjust maximum magnitude
-				float absAnalogX = fabs(analogX);
-				float absAnalogY = fabs(analogY);
-				float maxX;
-				float maxY;
-				if (absAnalogX > absAnalogY){
-					maxX = maxAxis;
-					maxY = (maxAxis * analogY) / absAnalogX;
-				}else{
-					maxX = (maxAxis * analogX) / absAnalogY;
-					maxY = maxAxis;
+				float analogX=0.0f;
+				float analogY=0.0f;
+				float deadZone=(float) mainMenu_deadZone;
+				float magnitude=0.0f;
+
+				if (mainMenu_mouseDevice == 1 || (mainMenu_leftStickMouse
+#ifdef __SWITCH__
+				&& (!singleJoycons)
+#endif
+				))
+				{
+					analogX=(float) lAnalogX;
+					analogY=(float) lAnalogY;
 				}
-				float maximum = sqrt(maxX * maxX + maxY * maxY);
-				if (maximum > 1.25f * maxAxis) maximum = 1.25f * maxAxis;
-				if (maximum < magnitude) maximum = magnitude;
-
-				// find scaled axis values with magnitudes between zero and maximum
-				float scalingFactor = maximum / magnitude * (magnitude - deadZone) / (maximum - deadZone);
-				analogX = (analogX * scalingFactor);
-				analogY = (analogY * scalingFactor);
-
-				// clamp to ensure results will always lie between 0 and 1.0f
-				float clampingFactor = 1.0f / maxAxis;
-				absAnalogX = fabs(analogX);
-				absAnalogY = fabs(analogY);
-				if (absAnalogX > maxAxis || absAnalogY > maxAxis){
-					if (absAnalogX > absAnalogY)
-						clampingFactor = 1.0f / absAnalogX;
-					else
-						clampingFactor = 1.0f / absAnalogY;
+				else
+				{
+					analogX=(float) rAnalogX;
+					analogY=(float) rAnalogY;
 				}
+				const float maxAxis = 32767.0f;
+				magnitude=sqrt(analogX*analogX+analogY*analogY);
+				if (magnitude > deadZone && deadZone < maxAxis)
+				{
+					float absAnalogX = fabs(analogX);
+					float absAnalogY = fabs(analogY);
+					float maxX;
+					float maxY;
+					if (absAnalogX > absAnalogY){
+						maxX = maxAxis;
+						maxY = (maxAxis * analogY) / absAnalogX;
+					}else{
+						maxX = (maxAxis * analogX) / absAnalogY;
+						maxY = maxAxis;
+					}
+					float maximum = sqrt(maxX * maxX + maxY * maxY);
+					if (maximum > 1.25f * maxAxis) maximum = 1.25f * maxAxis;
+					if (maximum < magnitude) maximum = magnitude;
 
-				analogX *= clampingFactor;
-				analogY *= clampingFactor;
+					float normMag = (magnitude - deadZone) / (maximum - deadZone);
+					if (normMag < 0.0f) normMag = 0.0f;
+					if (normMag > 1.0f) normMag = 1.0f;
+					float curveMag = normMag;
+					switch (mainMenu_mouseAcceleration)
+					{
+						case 1:
+							curveMag = normMag * (0.6f + 0.4f * normMag);
+							break;
+						case 2:
+							curveMag = normMag * normMag;
+							break;
+						case 3:
+							curveMag = normMag * normMag * normMag;
+							break;
+						default:
+							curveMag = normMag;
+							break;
+					}
 
-				lastmx += (int) (analogX * mouseScale);
-				lastmy += (int) (analogY * mouseScale);
-				newmousecounters=1;
+					float scalingFactor = (maximum / magnitude) * curveMag;
+					analogX = (analogX * scalingFactor);
+					analogY = (analogY * scalingFactor);
+
+					float clampingFactor = 1.0f / maxAxis;
+					absAnalogX = fabs(analogX);
+					absAnalogY = fabs(analogY);
+					if (absAnalogX > maxAxis || absAnalogY > maxAxis){
+						if (absAnalogX > absAnalogY)
+							clampingFactor = 1.0f / absAnalogX;
+						else
+							clampingFactor = 1.0f / absAnalogY;
+					}
+
+					analogX *= clampingFactor;
+					analogY *= clampingFactor;
+
+					lastmx += (int) (analogX * mouseScale);
+					lastmy += (int) (analogY * mouseScale);
+					newmousecounters=1;
+				}
 			}
 		}
 		else
@@ -858,6 +946,15 @@ void read_joystick(int nr, unsigned int *dir, int *button)
 		}
 		*dir = bot | (right << 1) | (top << 8) | (left << 9);
 	}
+
+#ifdef __SWITCH__
+	if (mainMenu_mouseSwapButtons && nr == 0)
+	{
+		int b0 = *button & 1;
+		int b1 = (*button >> 1) & 1;
+		*button = (*button & ~3) | (b0 << 1) | b1;
+	}
+#endif
 
 #if !defined(__PSP2__) && !defined(__SWITCH__)
 //If not on Vita, zero the "other" joystick

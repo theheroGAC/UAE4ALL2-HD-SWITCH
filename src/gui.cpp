@@ -56,6 +56,8 @@ extern int bReloadKickstart;
 #ifdef __SWITCH__
 #include <switch.h>
 #include "m3u_manager.h"
+extern int mainMenu_mouseSwapButtons;
+extern int mainMenu_quickSwitch;
 #endif
 
 #ifdef USE_SDL2
@@ -1064,7 +1066,6 @@ void gui_handle_events (void)
 #ifdef ANDROIDSDL
 
 #ifdef USE_UAE4ALL_VKBD
-	//textUI virtual keyboard via F15 
 	if(keystate[SDLK_F15])
 	{
 		if(!justLK)
@@ -1076,7 +1077,6 @@ void gui_handle_events (void)
 	}
 	else if(justLK)
 		justLK=0;
-	//Quick Switch - textUI virtual keyboard via buttonB+buttonY
 	if((mainMenu_quickSwitch!=0) && buttonB[0] && buttonY[0])
 	{
 		if(!justLK)
@@ -1089,7 +1089,6 @@ void gui_handle_events (void)
 	else if(justLK)
 		justLK=0;
 #endif
-	// Quick Switch - screen lowres/hires
 	if (((mainMenu_quickSwitch==1) && buttonB[0] && dpadUp[0]) || ((mainMenu_quickSwitch==2) && buttonY[0] && dpadUp[0]))
 	{
 	  if (visibleAreaWidth==320) {
@@ -1104,7 +1103,6 @@ void gui_handle_events (void)
 		check_all_prefs();
 		update_display();
 	}
-	// Quick Switch - screen height
 	if (((mainMenu_quickSwitch==1) && buttonB[0] && dpadDown[0]) || ((mainMenu_quickSwitch==2) && buttonY[0] && dpadDown[0]))
 	{
 	  if (mainMenu_displayedLines==200)
@@ -1123,13 +1121,11 @@ void gui_handle_events (void)
 		check_all_prefs();
 		update_display();
 	}
-	// Quick Switch - save state
 	if (((mainMenu_quickSwitch==1) && buttonB[0] && dpadLeft[0]) || ((mainMenu_quickSwitch==2) && buttonY[0] && dpadLeft[0]))
 	{	
 	  keystate[SDLK_s]=0;
 	  savestate_state = STATE_DOSAVE;
 	}
-	// Quick Switch - restore state
 	if (((mainMenu_quickSwitch==1) && buttonB[0] && dpadRight[0]) || ((mainMenu_quickSwitch==2) && buttonY[0] && dpadRight[0]))
 	{
 		extern char *savestate_filename;
@@ -1195,12 +1191,9 @@ if(!vkbd_mode)
 			moveVertical(-1);
 			moved_y -= 2;
 		}
-		//left
 		else if(dpadLeft[0])
 		{
 #if defined(__PSP2__) || defined(__SWITCH__)
-// Change zoom:
-// quickSwitch resolution presets
 			if (can_change_quickSwitchModeID)
 			{			
 				if (quickSwitchModeID==sizeof(quickSwitchModes)/sizeof(quickSwitchModes[0])-1)
@@ -1219,6 +1212,11 @@ if(!vkbd_mode)
 				check_all_prefs();
 				update_display();
 				can_change_quickSwitchModeID=0;
+#if defined(__SWITCH__)
+				char res_msg[64];
+				snprintf(res_msg, sizeof(res_msg), "RESOLUTION: %dx%d", visibleAreaWidth, mainMenu_displayedLines);
+				switch_osd_show(res_msg, 2000);
+#endif
 			}
 #else
 			screenWidth -=10;
@@ -1227,7 +1225,6 @@ if(!vkbd_mode)
 			update_display();
 #endif
 		}
-		//right
 		else if(dpadRight[0])
 		{
 #if defined(__PSP2__) || defined(__SWITCH__)
@@ -1249,6 +1246,11 @@ if(!vkbd_mode)
 				check_all_prefs();
 				update_display();
 				can_change_quickSwitchModeID = 0;
+#if defined(__SWITCH__)
+				char res_msg[64];
+				snprintf(res_msg, sizeof(res_msg), "RESOLUTION: %dx%d", visibleAreaWidth, mainMenu_displayedLines);
+				switch_osd_show(res_msg, 2000);
+#endif
 			}
 #else
 			screenWidth +=10;
@@ -1257,6 +1259,31 @@ if(!vkbd_mode)
 			update_display();
 #endif
 		}
+#if defined(__SWITCH__)
+		else if (buttonX[0] || buttonY[0])
+		{
+			if (can_change_quickSwitchModeID)
+			{
+				if (visibleAreaWidth == 320)
+				{
+					visibleAreaWidth = 640;
+					mainMenu_displayHires = 1;
+				}
+				else
+				{
+					visibleAreaWidth = 320;
+					mainMenu_displayHires = 0;
+				}
+				getChanges();
+				check_all_prefs();
+				update_display();
+				char res_msg[64];
+				snprintf(res_msg, sizeof(res_msg), "RESOLUTION: %dx%d", visibleAreaWidth, mainMenu_displayedLines);
+				switch_osd_show(res_msg, 2000);
+				can_change_quickSwitchModeID = 0;
+			}
+		}
+#endif
 		else if (!can_change_quickSwitchModeID)
 		{
 			can_change_quickSwitchModeID = 1;
@@ -1596,8 +1623,13 @@ if(!vkbd_mode)
 						if (!(*justPressed))
 						{
 							
+#ifdef __SWITCH__
+							if (*mainMenu_custom == -1) buttonstate[mainMenu_mouseSwapButtons ? 2 : 0]=1;
+							else if (*mainMenu_custom == -2) buttonstate[mainMenu_mouseSwapButtons ? 0 : 2]=1;
+#else
 							if (*mainMenu_custom == -1) buttonstate[0]=1;
 							else if (*mainMenu_custom == -2) buttonstate[2]=1;
+#endif
 							else if (*mainMenu_custom == -27) quickSave=1;
 							else if (*mainMenu_custom == -28) quickLoad=1;
 							else if (*mainMenu_custom > 0)
@@ -1611,8 +1643,13 @@ if(!vkbd_mode)
 					}
 					else if (*justPressed)
 					{
+#ifdef __SWITCH__
+						if (*mainMenu_custom == -1) buttonstate[mainMenu_mouseSwapButtons ? 2 : 0]=0;
+						else if (*mainMenu_custom == -2) buttonstate[mainMenu_mouseSwapButtons ? 0 : 2]=0;
+#else
 						if (*mainMenu_custom == -1) buttonstate[0]=0;
 						else if (*mainMenu_custom == -2) buttonstate[2]=0;
+#endif
 						else if (*mainMenu_custom > 0)
 						{		
 							getMapping(*mainMenu_custom);
@@ -2148,38 +2185,61 @@ if(!vkbd_mode)
 	//because analog stick = mouse movement is always on for Vita
 	if(!mainMenu_customControls)
 	{
-		//(R) button
+#ifdef __SWITCH__
 		if(triggerR[0])
 		{
 			if(!justPressedR[0])
 			{
-				//left mouse-button down
+				buttonstate[mainMenu_mouseSwapButtons ? 2 : 0] = 1;
+				justPressedR[0]=1;
+			}
+		}
+		else if(justPressedR[0])
+		{
+			buttonstate[mainMenu_mouseSwapButtons ? 2 : 0] = 0;
+			justPressedR[0]=0;
+		}
+		if(triggerL[0])
+		{
+			if(!justPressedL[0])
+			{
+				buttonstate[mainMenu_mouseSwapButtons ? 0 : 2] = 1;
+				justPressedL[0]=1;
+			}
+		}
+		else if(justPressedL[0])
+		{
+			buttonstate[mainMenu_mouseSwapButtons ? 0 : 2] = 0;
+			justPressedL[0]=0;
+		}
+#else
+		if(triggerR[0])
+		{
+			if(!justPressedR[0])
+			{
 				buttonstate[0] = 1;
 				justPressedR[0]=1;
 			}
 		}
 		else if(justPressedR[0])
 		{
-			//left mouse-button up
 			buttonstate[0] = 0;
 			justPressedR[0]=0;
 		}
-		//(L) button
 		if(triggerL[0])
 		{
 			if(!justPressedL[0])
 			{
-				//right mouse-button down
 				buttonstate[2] = 1;
 				justPressedL[0]=1;
 			}
 		}
 		else if(justPressedL[0])
 		{
-			//right mouse-button up
 			buttonstate[2] = 0;
 			justPressedL[0]=0;
 		}
+#endif
 	}
 #endif // __PSP2__
 
@@ -2239,6 +2299,8 @@ if(!vkbd_mode)
 		static int just_zl_down = 0;
 		static int just_zl_right = 0;
 		static int just_zl_left = 0;
+		static int just_zl_x = 0;
+		static int just_zl_y = 0;
 		static int switch_quick_slot = 1;
 
 		if (triggerL2[0])
@@ -2369,6 +2431,66 @@ if(!vkbd_mode)
 			{
 				just_zl_left = 0;
 			}
+
+			if (buttonX[0])
+			{
+				if (!just_zl_x)
+				{
+					just_zl_x = 1;
+					if (mainMenu_displayedLines == 200)
+						mainMenu_displayedLines = 216;
+					else if (mainMenu_displayedLines == 216)
+						mainMenu_displayedLines = 240;
+					else if (mainMenu_displayedLines == 240)
+						mainMenu_displayedLines = 256;
+					else if (mainMenu_displayedLines == 256)
+						mainMenu_displayedLines = 262;
+					else if (mainMenu_displayedLines == 262)
+						mainMenu_displayedLines = 270;
+					else
+						mainMenu_displayedLines = 200;
+					getChanges();
+					check_all_prefs();
+					update_display();
+					char msg[64];
+					snprintf(msg, sizeof(msg), "RESOLUTION: %dx%d", visibleAreaWidth, mainMenu_displayedLines);
+					switch_osd_show(msg, 2000);
+				}
+				buttonX[0] = 0;
+			}
+			else
+			{
+				just_zl_x = 0;
+			}
+
+			if (buttonY[0])
+			{
+				if (!just_zl_y)
+				{
+					just_zl_y = 1;
+					if (visibleAreaWidth == 320)
+					{
+						visibleAreaWidth = 640;
+						mainMenu_displayHires = 1;
+					}
+					else
+					{
+						visibleAreaWidth = 320;
+						mainMenu_displayHires = 0;
+					}
+					getChanges();
+					check_all_prefs();
+					update_display();
+					char msg[64];
+					snprintf(msg, sizeof(msg), "RESOLUTION: %dx%d", visibleAreaWidth, mainMenu_displayedLines);
+					switch_osd_show(msg, 2000);
+				}
+				buttonY[0] = 0;
+			}
+			else
+			{
+				just_zl_y = 0;
+			}
 		}
 		else
 		{
@@ -2378,6 +2500,8 @@ if(!vkbd_mode)
 			just_zl_down = 0;
 			just_zl_right = 0;
 			just_zl_left = 0;
+			just_zl_x = 0;
+			just_zl_y = 0;
 		}
 	}
 #endif

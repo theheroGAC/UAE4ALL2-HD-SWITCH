@@ -69,6 +69,11 @@ bool mouse_state = true;
 #if defined(__PSP2__) || defined(__SWITCH__)
 extern bool slow_mouse;
 extern bool fast_mouse;
+#ifdef __SWITCH__
+extern int mainMenu_mouseSlowFactor;
+extern int mainMenu_mouseFastFactor;
+extern int mainMenu_mouseSwapButtons;
+#endif
 #else
 bool slow_mouse = false;
 #endif
@@ -641,18 +646,65 @@ void handle_events (void)
 			}
 			break;
 		case SDL_MOUSEBUTTONDOWN:
-			buttonstate[(rEvent.button.button-1)%3] = 1;
+			{
+				int btn = (rEvent.button.button - 1) % 3;
+#ifdef __SWITCH__
+				if (mainMenu_mouseSwapButtons)
+				{
+					if (btn == 0) btn = 2;
+					else if (btn == 2) btn = 0;
+				}
+#endif
+				buttonstate[btn] = 1;
+			}
 			break;
 		case SDL_MOUSEBUTTONUP:
-			buttonstate[(rEvent.button.button-1)%3] = 0;
+			{
+				int btn = (rEvent.button.button - 1) % 3;
+#ifdef __SWITCH__
+				if (mainMenu_mouseSwapButtons)
+				{
+					if (btn == 0) btn = 2;
+					else if (btn == 2) btn = 0;
+				}
+#endif
+				buttonstate[btn] = 0;
+			}
 			break;
 		case SDL_MOUSEMOTION:
 			mouse_state = true;
 			int mouseScale = mainMenu_mouseMultiplier * 16;
 			mouseScale /= 100;
 
+#ifdef __SWITCH__
+			if (fast_mouse)
+			{
+				switch (mainMenu_mouseFastFactor)
+				{
+					case 0: mouseScale = (mouseScale * 3) / 2; break;
+					case 1: mouseScale *= 2; break;
+					case 2: mouseScale *= 3; break;
+					case 3: mouseScale *= 4; break;
+					case 4: mouseScale *= 5; break;
+					default: mouseScale *= 3; break;
+				}
+			}
+			if (slow_mouse)
+			{
+				switch (mainMenu_mouseSlowFactor)
+				{
+					case 0: mouseScale /= 2; break;
+					case 1: mouseScale /= 4; break;
+					case 2: mouseScale /= 8; break;
+					case 3: mouseScale /= 16; break;
+					default: mouseScale /= 8; break;
+				}
+				if (mouseScale < 1) mouseScale = 1;
+			}
+#else
 			if (fast_mouse) mouseScale *= 3;
 			if (slow_mouse) mouseScale /= 8;
+#endif
 
 			lastmx += rEvent.motion.xrel * mouseScale;
 			lastmy += rEvent.motion.yrel * mouseScale;
