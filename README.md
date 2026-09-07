@@ -1,4 +1,4 @@
-# UAE4ALL2 HD — Nintendo Switch Edition v1.02
+# UAE4ALL2 HD — Nintendo Switch Edition v1.03
 
 A modern, high-performance Nintendo Switch release of **UAE4ALL2 HD**, the Amiga emulator for OCS, ECS, and AGA chipsets.
 
@@ -18,18 +18,19 @@ This repository contains the complete Nintendo Switch source tree and ready-to-r
 ## Features in this Nintendo Switch Release
 
 - **Full Amiga Emulation**: Amiga 500, 500+, 600, 1200 and CD32 hardware emulation (OCS, ECS, and AGA).
-- **High-Performance CPU Cores**: Optimized 68000 and 68020 processor emulation.
+- **High-Performance CPU Cores**: Optimized Motorola 68000 and 68020 processor emulation with advanced condition code accuracy, normalized status register flags, corrected shift/rotate limits, and full 32-bit arithmetic.
 - **Floppy Disk Support**: ADF, ADZ, DMS, IPF, FDI, and ZIP floppy disk images across DF0-DF3.
 - **CAPS / IPF Support**: Built-in CAPS decoder for original commercial Amiga floppy dumps with copy-protection support.
 - **Hard Disk Support (HDF & Folders)**: 4 HDF image slots and Amiga directory mounting (`DH0:`).
 - **Integrated HDF Manager**: Create, format, and backup Fast File System (FFS) hard disks (from 50 MB to 4000 MB) directly within the GUI.
 - **Dedicated WHDLoad Library & Launcher**:
   - 1-click game execution with automatic Amiga 1200 AGA hardware preset configuration.
-  - Native high-performance LHA decompressor (`-lh5-`, `-lh4-`, `-lh0-`) with real-time extraction progress indicator.
+  - Native high-performance LHA decompressor (`-lh5-`, `-lh4-`, `-lh0-`) with real-time extraction progress indicator and post-install launch confirmation dialog.
+  - Automatic case-insensitive alphabetical sorting (**A to Z**) with support for up to **4,096 games** simultaneously.
   - Pre-bundled official WHDLoad binaries (`C:WHDLoad`, `C:WHDLoadCD32`, `C:DIC`, `C:Patcher`, `C:RawDIC`, `C:WArc`, `S:WHDLoad.prefs`).
   - Automatic Kickstart mapping and aliasing for WHDLoad slaves.
   - Custom WHDLoad Arguments editor with native on-screen keyboard.
-  - Fast alphabetical jumping (**L / R** shoulders) across installed games.
+  - Fast alphabetical jumping (**L / R** shoulders and D-Pad Left/Right) across installed games.
 - **Authentic Mechanical Disk Audio Engine**:
   - Built-in Ogg Vorbis sound decoder (`stb_vorbis`) for genuine, high-fidelity floppy and hard drive sound samples (`floppy_drive.ogg`, `hard_drive.ogg`).
   - Realistic motor spin, track stepping, seek, and read/write acoustic simulation.
@@ -42,6 +43,7 @@ This repository contains the complete Nintendo Switch source tree and ready-to-r
   - 3-fingers drag = Right mouse drag & drop
 - **Controls & Input**:
   - Direct 1:1 Nintendo Switch Joy-Con and Pro Controller physical button mapping.
+  - Dedicated **Amiga Mouse Configuration** modal: map mouse to Right/Left Stick, D-Pad, or Touchscreen, adjust sensitivity (1x-10x) and acceleration curves, configure hold-to-slow (0.5x to 0.0625x) and hold-to-fast (1.5x to 5x) button modifiers, swap Left/Right buttons, and toggle Direct Touchscreen vs Trackpad modes.
   - Configurable Autofire rates (Slow, Medium, Turbo) and trigger modes.
   - In-game Virtual Keyboard (`vkbd`) toggled with **+ (Plus)** with deadzone filtering and full Joy-Con navigation.
 - **High-Definition Switch GUI**:

@@ -378,8 +378,8 @@ if(BUILD_NX)
   target_link_libraries(${PROJECT_NAME}.elf PRIVATE ${LIBS})
   add_custom_target(${PROJECT_NAME}.nro
     DEPENDS ${PROJECT_NAME}.elf
-    COMMAND ${DEVKITPRO}/tools/bin/nacptool --create "UAE4All2 HD" "theheroGAC" "v1.02" ${PROJECT_NAME}.nacp
-    COMMAND ${DEVKITPRO}/tools/bin/elf2nro ${PROJECT_NAME}.elf uae4all2hd.nro --icon=${CMAKE_SOURCE_DIR}/switchdata/icon0.jpg --nacp=${PROJECT_NAME}.nacp
+    COMMAND ${DEVKITPRO}/tools/bin/nacptool --create "UAE4All2 HD" "theheroGAC" "v1.03" ${PROJECT_NAME}.nacp
+    COMMAND ${DEVKITPRO}/tools/bin/elf2nro ${PROJECT_NAME}.elf uae4all2hd.nro --icon=${CMAKE_SOURCE_DIR}/switchdata/icon0.jpg --nacp=${PROJECT_NAME}.nacp --romfsdir=${CMAKE_SOURCE_DIR}/switchdata
   )
   add_custom_target(${PROJECT_NAME}_switch.zip
     DEPENDS ${PROJECT_NAME}.nro
