@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
 #include "sysconfig.h"
 #include "sysdeps.h"
@@ -31,6 +32,9 @@
 #include "uae_gui_switch.h"
 #include "whdload_manager_switch.h"
 #include "m3u_manager.h"
+#include "sdl2_to_sdl1.h"
+#include "cover_manager_switch.h"
+#include "game_metadata_switch.h"
 static const char *switch_shader_label(int s) {
     switch (s) {
         case 0: return "None";
@@ -57,6 +61,8 @@ static int switch_shader_cycle(int s, int dir) {
 static char s_switch_ftp_ip[64] = "127.0.0.1";
 static int s_switch_ftp_port = 5000;
 static volatile int s_switch_ftp_running = 0;
+
+void switch_library_mark_dirty(void);
 static int s_switch_server_fd = -1;
 static pthread_t s_switch_ftp_thread;
 
@@ -586,6 +592,10 @@ static void* switch_ftp_client_session(void *arg) {
                     send(client_fd, err, strlen(err), 0);
                 }
                 fclose(f);
+                if (data_client >= 0) {
+                    switch_library_mark_dirty();
+                    write_log("[SWITCH] FTP: library refresh requested after STOR '%s'\\n", fullp);
+                }
             } else {
                 const char *err = "550 Failed to open file for writing.\r\n";
                 send(client_fd, err, strlen(err), 0);
@@ -746,7 +756,7 @@ static inline void vita_ftp_stop(void) { switch_ftp_stop(); }
 static inline int vita_ftp_is_running(void) { return switch_ftp_is_running(); }
 static inline void vita_ftp_get_ip(char *buf, size_t sz) { switch_ftp_get_ip(buf, sz); }
 static inline int vita_ftp_get_port(void) { return switch_ftp_get_port(); }
-static inline int vita_cover_download(const char *n, char *o, size_t s) { (void)n; (void)o; (void)s; return -1; }
+static inline int vita_cover_download(const char *n, char *o, size_t s) { (void)o; (void)s; return cover_mgr_download(n); }
 #include <dirent.h>
 #include <sys/stat.h>
 
@@ -763,6 +773,7 @@ extern int uae4all_hard_file_ro[4];
 extern int mainMenu_bootHD;
 extern char currentDir[300];
 extern char launchDir[300];
+extern int saveAdfDir(void);
 extern int mainMenu_drives;
 extern int mainMenu_floppyspeed;
 extern int mainMenu_CPU_model;
@@ -802,6 +813,7 @@ extern int mainMenu_floppyWriteProtect[4];
 extern int mainMenu_cycleExact;
 extern int mainMenu_joyPort;
 extern int mainMenu_singleJoycons;
+extern int mainMenu_numPlayers;
 extern void update_joycon_mode(void);
 extern int mainMenu_mouseEmulation;
 extern int mainMenu_deadZone;
@@ -1096,6 +1108,66 @@ static const char *get_filename_only(const char *path)
     return path;
 }
 
+char s_lib_rom_dir[512] = "";
+
+void lib_load_rom_dir(void)
+{
+    if (s_lib_rom_dir[0] != '\0')
+        return;
+    char conf_path[512];
+    if (launchDir[0] != '\0' && strcmp(launchDir, ".") != 0) {
+        snprintf(conf_path, sizeof(conf_path), "%s/conf/romdir.conf", launchDir);
+    } else {
+        snprintf(conf_path, sizeof(conf_path), "./conf/romdir.conf");
+    }
+    FILE *f = fopen(conf_path, "rt");
+    if (!f) {
+        f = fopen("./conf/romdir.conf", "rt");
+    }
+    if (f) {
+        if (fgets(s_lib_rom_dir, sizeof(s_lib_rom_dir), f)) {
+            char *p = s_lib_rom_dir + strlen(s_lib_rom_dir) - 1;
+            while (p >= s_lib_rom_dir && (*p == '\r' || *p == '\n' || *p == ' ' || *p == '\t' || *p == '/')) {
+                *p = '\0';
+                p--;
+            }
+        }
+        fclose(f);
+    }
+    if (s_lib_rom_dir[0] == '\0') {
+        strncpy(s_lib_rom_dir, "./roms", sizeof(s_lib_rom_dir) - 1);
+        s_lib_rom_dir[sizeof(s_lib_rom_dir) - 1] = '\0';
+    }
+}
+
+void switch_load_rom_dir_if_needed(void)
+{
+    lib_load_rom_dir();
+}
+
+void lib_save_rom_dir(void)
+{
+    char conf_path[512];
+    if (launchDir[0] != '\0' && strcmp(launchDir, ".") != 0) {
+        char dir_buf[512];
+        snprintf(dir_buf, sizeof(dir_buf), "%s/conf", launchDir);
+        ftp_ensure_dir(dir_buf);
+        snprintf(conf_path, sizeof(conf_path), "%s/conf/romdir.conf", launchDir);
+    } else {
+        snprintf(conf_path, sizeof(conf_path), "./conf/romdir.conf");
+    }
+    mkdir("./conf", 0777);
+    FILE *f = fopen(conf_path, "wt");
+    if (!f) {
+        f = fopen("./conf/romdir.conf", "wt");
+    }
+    if (f) {
+        fputs(s_lib_rom_dir, f);
+        fputc('\n', f);
+        fclose(f);
+    }
+}
+
 static int vita_load_kickstart(const char *path)
 {
     if (uae4all_init_rom(path) == -1) {
@@ -1135,29 +1207,86 @@ int switch_set_kickstart(int index, int load_rom)
     if (index < 0 || index >= KICKSTART_ROM_COUNT)
         return 0;
 
+    lib_load_rom_dir();
+    char custom_k1[512];
+    char custom_k2[512];
+    char launch_k1[512];
+    char launch_k2[512];
+    snprintf(custom_k1, sizeof(custom_k1), "%s/kickstarts", s_lib_rom_dir);
+    snprintf(custom_k2, sizeof(custom_k2), "%s", s_lib_rom_dir);
+    snprintf(launch_k1, sizeof(launch_k1), "%s/kickstarts", launchDir);
+    snprintf(launch_k2, sizeof(launch_k2), "%s", launchDir);
+    const char *kdirs[] = {
+        custom_k1,
+        custom_k2,
+        launch_k1,
+        launch_k2,
+        "./kickstarts",
+        "./roms/kickstarts",
+        "./roms",
+        "./data/kickstarts",
+        "./data",
+        "kickstarts",
+        "roms/kickstarts",
+        "romfs:/kickstarts",
+        "romfs:",
+        NULL
+    };
+
     int found = 0;
     romfile[0] = '\0';
     for (int i = 0; i < 8 && vita_kickstart_aliases[index][i]; i++) {
-        char candidate[256];
-        snprintf(candidate, sizeof(candidate), "%s/kickstarts/%s", launchDir, vita_kickstart_aliases[index][i]);
-        FILE *file = fopen(candidate, "rb");
-        if (file) {
-            fclose(file);
-            strncpy(romfile, candidate, sizeof(romfile) - 1);
-            romfile[sizeof(romfile) - 1] = '\0';
-            found = 1;
-            break;
+        for (int d = 0; kdirs[d]; d++) {
+            char candidate[512];
+            snprintf(candidate, sizeof(candidate), "%s/%s", kdirs[d], vita_kickstart_aliases[index][i]);
+            FILE *file = fopen(candidate, "rb");
+            if (file) {
+                fclose(file);
+                strncpy(romfile, candidate, sizeof(romfile) - 1);
+                romfile[sizeof(romfile) - 1] = '\0';
+                found = 1;
+                break;
+            }
+        }
+        if (found) break;
+    }
+    if (!found && kickstarts_rom_names[index] && kickstarts_rom_names[index][0]) {
+        for (int d = 0; kdirs[d]; d++) {
+            char candidate[512];
+            snprintf(candidate, sizeof(candidate), "%s/%s", kdirs[d], kickstarts_rom_names[index]);
+            FILE *file = fopen(candidate, "rb");
+            if (file) {
+                fclose(file);
+                strncpy(romfile, candidate, sizeof(romfile) - 1);
+                romfile[sizeof(romfile) - 1] = '\0';
+                found = 1;
+                break;
+            }
         }
     }
-    if (!found)
-        snprintf(romfile, sizeof(romfile), "%s/kickstarts/%s", launchDir, kickstarts_rom_names[index]);
 
-    if (extended_rom_names[index][0] != '\0')
-        snprintf(extfile, sizeof(extfile), "%s/kickstarts/%s", launchDir, extended_rom_names[index]);
-    else
-        extfile[0] = '\0';
+    extfile[0] = '\0';
+    if (extended_rom_names[index][0] != '\0') {
+        int ext_found = 0;
+        for (int d = 0; kdirs[d]; d++) {
+            char candidate[512];
+            snprintf(candidate, sizeof(candidate), "%s/%s", kdirs[d], extended_rom_names[index]);
+            FILE *file = fopen(candidate, "rb");
+            if (file) {
+                fclose(file);
+                strncpy(extfile, candidate, sizeof(extfile) - 1);
+                extfile[sizeof(extfile) - 1] = '\0';
+                ext_found = 1;
+                break;
+            }
+        }
+        if (!ext_found) {
+            snprintf(extfile, sizeof(extfile), "%s/kickstarts/%s", launchDir, extended_rom_names[index]);
+        }
+    }
 
     if (!found) {
+        snprintf(romfile, sizeof(romfile), "%s/kickstarts/%s", launchDir, kickstarts_rom_names[index]);
         kickstart_warning = 1;
         write_log("[VITA] Kickstart unavailable: %s\n", romfile);
         return 0;
@@ -1734,48 +1863,22 @@ void switch_view_hard_disk(SwitchInputState *input, int *selected_item)
         *selected_item == 5, false);
 }
 
-static SDL_Surface *s_whdload_cover = NULL;
-static char s_whdload_cover_game[128] = "";
 static float s_whdload_cover_angle = 0.0f;
 
 static void whdload_cover_unload(void)
 {
-    if (s_whdload_cover) {
-        SDL_FreeSurface(s_whdload_cover);
-        s_whdload_cover = NULL;
-    }
-    s_whdload_cover_game[0] = '\0';
+    cover_mgr_unload();
 }
 
 static void whdload_cover_load(const char *game_name)
 {
     if (!game_name || game_name[0] == '\0') {
-        whdload_cover_unload();
+        cover_mgr_unload();
         return;
     }
-    if (s_whdload_cover && strcmp(s_whdload_cover_game, game_name) == 0)
-        return;
-
-    whdload_cover_unload();
-
-    char path[512];
-    snprintf(path, sizeof(path), "./data/covers/%s.png", game_name);
-    FILE *test = fopen(path, "rb");
-    if (test) {
-        fclose(test);
-        s_whdload_cover = IMG_Load(path);
-    }
-    if (!s_whdload_cover) {
-        snprintf(path, sizeof(path), "./data/covers/%s.jpg", game_name);
-        test = fopen(path, "rb");
-        if (test) {
-            fclose(test);
-            s_whdload_cover = IMG_Load(path);
-        }
-    }
-    if (s_whdload_cover)
-        strncpy(s_whdload_cover_game, game_name, sizeof(s_whdload_cover_game) - 1);
+    cover_mgr_load(game_name, NULL);
 }
+
 
 static void whdload_install_flow(int *selected_item);
 
@@ -2024,6 +2127,7 @@ static void whdload_install_flow(int *selected_item)
                 s_whdload_last_game[sizeof(s_whdload_last_game) - 1] = '\0';
                 whdload_cover_load(folder);
                 s_whdload_filter = 0;
+                switch_library_mark_dirty();
 
                 if (selected_item) {
                     static char games[MAX_WHDLOAD_GAMES][128];
@@ -2289,13 +2393,14 @@ void switch_view_whdload(SwitchInputState *input, int *selected_item)
         is_game ? "WHDLOAD GAME" : "WHDLOAD LIBRARY",
         is_game ? SWITCH_COLOR_AMIGA_RED : RGBA8(40, 50, 70, 255), SWITCH_COLOR_TEXT_WHITE);
     float art_x = preview_x + 16.0f;
-    float art_y = preview_y + 46.0f;
+    float art_y = preview_y + 42.0f;
     float art_w = preview_w - 32.0f;
-    float art_h = 230.0f;
+    float art_h = 210.0f;
 
-    if (s_whdload_cover) {
-        float surf_w = (float)s_whdload_cover->w;
-        float surf_h = (float)s_whdload_cover->h;
+    SDL_Surface *wh_cover_surf = cover_mgr_get();
+    if (wh_cover_surf) {
+        float surf_w = (float)wh_cover_surf->w;
+        float surf_h = (float)wh_cover_surf->h;
         float scale_x = art_w / surf_w;
         float scale_y = art_h / surf_h;
         float final_scale = (scale_x < scale_y) ? scale_x : scale_y;
@@ -2309,7 +2414,7 @@ void switch_view_whdload(SwitchInputState *input, int *selected_item)
 
         switch_draw_rounded_rect(art_x - 3.0f, art_y - 3.0f, art_w + 6.0f, art_h + 6.0f, 6.0f, RGBA8(10, 13, 20, 255));
         SDL_Rect dst_r = { (Sint16)draw_x, (Sint16)draw_y, (Uint16)draw_w, (Uint16)draw_h };
-        SDL_SoftStretch(s_whdload_cover, NULL, prSDLScreen, &dst_r);
+        SDL_SoftStretch(wh_cover_surf, NULL, prSDLScreen, &dst_r);
     } else {
         s_whdload_cover_angle += 0.08f;
         switch_draw_rounded_rect(art_x, art_y, art_w, art_h, 6.0f, RGBA8(18, 22, 32, 255));
@@ -2319,27 +2424,1544 @@ void switch_view_whdload(SwitchInputState *input, int *selected_item)
             is_game ? "No cover found" : "Cover: <GameName>.png");
     }
 
-    switch_draw_text(preview_x + 16.0f, preview_y + 290.0f, SWITCH_COLOR_TEXT_DIM, 0.75f, "GAME TITLE");
+    switch_draw_text(preview_x + 16.0f, preview_y + 262.0f, SWITCH_COLOR_TEXT_DIM, 0.72f, "GAME TITLE");
     char title_buf[128];
     float title_max_w = preview_w - 32.0f - (preview_fav ? 78.0f : 0.0f);
-    switch_truncate_text(preview_title, title_max_w, 0.95f, title_buf, sizeof(title_buf));
-    switch_draw_text(preview_x + 16.0f, preview_y + 310.0f, SWITCH_COLOR_TEXT_WHITE, 0.95f, title_buf);
+    switch_truncate_text(preview_title, title_max_w, 0.90f, title_buf, sizeof(title_buf));
+    switch_draw_text(preview_x + 16.0f, preview_y + 278.0f, SWITCH_COLOR_TEXT_WHITE, 0.90f, title_buf);
     if (preview_fav) {
-        switch_draw_badge(preview_x + preview_w - 86.0f, preview_y + 306.0f, "* FAV", SWITCH_COLOR_AMIGA_RED, SWITCH_COLOR_TEXT_WHITE);
+        switch_draw_badge(preview_x + preview_w - 86.0f, preview_y + 274.0f, "* FAV", SWITCH_COLOR_AMIGA_RED, SWITCH_COLOR_TEXT_WHITE);
     }
 
-    switch_draw_text(preview_x + 16.0f, preview_y + 336.0f, SWITCH_COLOR_TEXT_DIM, 0.75f, "RECOMMENDED HARDWARE");
     if (is_game) {
-        switch_draw_badge(preview_x + 16.0f, preview_y + 352.0f, "A1200 AGA", SWITCH_COLOR_AMIGA_ORANGE, RGBA8(20, 24, 34, 255));
-        switch_draw_hint_item(preview_x + preview_w - 150.0f, preview_y + 352.0f, SWITCH_GLYPH_A, "LAUNCH");
+        char wh_mk[256];
+        cover_mgr_normalize(preview_title, wh_mk, sizeof(wh_mk));
+        struct GameMetadata wh_gm;
+        bool has_meta = meta_db_lookup(wh_mk, &wh_gm);
+
+        char wh_info[128];
+        if (has_meta && strcmp(wh_gm.year, "N/A") != 0) {
+            snprintf(wh_info, sizeof(wh_info), "Year: %s  |  %s", wh_gm.year, wh_gm.genre);
+        } else {
+            snprintf(wh_info, sizeof(wh_info), "Year: ----  |  Amiga Game");
+        }
+        switch_truncate_text(wh_info, preview_w - 32.0f, 0.72f, wh_info, sizeof(wh_info));
+        switch_draw_text(preview_x + 16.0f, preview_y + 300.0f, SWITCH_COLOR_AMIGA_ORANGE, 0.72f, wh_info);
+
+        char wh_dev[128];
+        if (has_meta && strcmp(wh_gm.developer, "N/A") != 0) {
+            snprintf(wh_dev, sizeof(wh_dev), "Dev: %s  |  Players: %s", wh_gm.developer, wh_gm.players);
+        } else {
+            snprintf(wh_dev, sizeof(wh_dev), "Dev: Unknown");
+        }
+        switch_truncate_text(wh_dev, preview_w - 32.0f, 0.70f, wh_dev, sizeof(wh_dev));
+        switch_draw_text(preview_x + 16.0f, preview_y + 316.0f, SWITCH_COLOR_TEXT_MUTED, 0.70f, wh_dev);
+    }
+
+    switch_draw_text(preview_x + 16.0f, preview_y + 338.0f, SWITCH_COLOR_TEXT_DIM, 0.72f, "RECOMMENDED HARDWARE");
+    if (is_game) {
+        switch_draw_badge(preview_x + 16.0f, preview_y + 356.0f, "A1200 AGA", SWITCH_COLOR_AMIGA_ORANGE, RGBA8(20, 24, 34, 255));
+        switch_draw_hint_item(preview_x + preview_w - 150.0f, preview_y + 356.0f, SWITCH_GLYPH_A, "LAUNCH");
         char hw_buf[128];
-        switch_truncate_text("68020 14MHz | Kickstart 3.1 | 2MB Chip + 4MB Fast", preview_w - 32.0f, 0.78f, hw_buf, sizeof(hw_buf));
-        switch_draw_text(preview_x + 16.0f, preview_y + 378.0f, SWITCH_COLOR_TEXT_MUTED, 0.78f, hw_buf);
+        switch_truncate_text("68020 14MHz | Kickstart 3.1 | 2MB Chip + 4MB Fast", preview_w - 32.0f, 0.76f, hw_buf, sizeof(hw_buf));
+        switch_draw_text(preview_x + 16.0f, preview_y + 384.0f, SWITCH_COLOR_TEXT_MUTED, 0.76f, hw_buf);
     } else {
         char hw_buf[128];
         switch_truncate_text("WHDLoad slave games run best on an A1200 AGA setup", preview_w - 190.0f, 0.80f, hw_buf, sizeof(hw_buf));
-        switch_draw_text(preview_x + 16.0f, preview_y + 354.0f, SWITCH_COLOR_TEXT_MUTED, 0.80f, hw_buf);
-        switch_draw_hint_item(preview_x + preview_w - 150.0f, preview_y + 352.0f, SWITCH_GLYPH_A, "SELECT");
+        switch_draw_text(preview_x + 16.0f, preview_y + 360.0f, SWITCH_COLOR_TEXT_MUTED, 0.80f, hw_buf);
+        switch_draw_hint_item(preview_x + preview_w - 150.0f, preview_y + 356.0f, SWITCH_GLYPH_A, "SELECT");
+    }
+}
+
+enum SwitchLibGameType {
+    SWITCH_LIB_WHDLOAD = 0,
+    SWITCH_LIB_FLOPPY,
+    SWITCH_LIB_M3U,
+    SWITCH_LIB_LHA,
+    SWITCH_LIB_ZIP,
+    SWITCH_LIB_CD32,
+    SWITCH_LIB_HDF
+};
+
+struct SwitchLibGame {
+    char title[128];
+    char path[512];
+    SwitchLibGameType type;
+    int model;
+};
+
+static bool str_contains_token(const char *str, const char *tok)
+{
+    if (!str || !tok || !*tok) return false;
+    size_t tok_len = strlen(tok);
+    const char *p = str;
+    while (*p) {
+        if (strncasecmp(p, tok, tok_len) == 0) {
+            bool pre_ok = (p == str || !isalnum((unsigned char)*(p - 1)));
+            bool post_ok = (*(p + tok_len) == '\0' || !isalnum((unsigned char)*(p + tok_len)));
+            if (pre_ok && post_ok) return true;
+        }
+        p++;
+    }
+    return false;
+}
+
+static int switch_detect_floppy_profile(const char *path, const char *title)
+{
+    if (str_contains_token(title, "AGA") || str_contains_token(path, "AGA") ||
+        str_contains_token(title, "A1200") || str_contains_token(path, "A1200") ||
+        str_contains_token(title, "A4000") || str_contains_token(path, "A4000") ||
+        str_contains_token(title, "68020") || str_contains_token(path, "68020")) {
+        return 2;
+    }
+
+    if (str_contains_token(title, "ECS") || str_contains_token(path, "ECS") ||
+        str_contains_token(title, "A600") || str_contains_token(path, "A600") ||
+        str_contains_token(title, "Kick20") || str_contains_token(path, "Kick20") ||
+        str_contains_token(title, "2.04") || str_contains_token(path, "2.04") ||
+        str_contains_token(title, "2.05") || str_contains_token(path, "2.05")) {
+        return 1;
+    }
+
+    if (path) {
+        const char *dot = strrchr(path, '.');
+        if (dot && strcasecmp(dot, ".adf") == 0) {
+            FILE *f = fopen(path, "rb");
+            if (f) {
+                char buf[1024];
+                size_t n = fread(buf, 1, sizeof(buf), f);
+                fclose(f);
+                if (n >= 64) {
+                    for (size_t i = 0; i + 3 <= n; i++) {
+                        if (memcmp(buf + i, "AGA", 3) == 0 ||
+                            memcmp(buf + i, "aga", 3) == 0) {
+                            return 2;
+                        }
+                        if (i + 5 <= n && (memcmp(buf + i, "A1200", 5) == 0 ||
+                                           memcmp(buf + i, "68020", 5) == 0)) {
+                            return 2;
+                        }
+                        if (i + 4 <= n && (memcmp(buf + i, "A600", 4) == 0 ||
+                                           memcmp(buf + i, "a600", 4) == 0)) {
+                            return 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return 0;
+}
+
+static void switch_apply_floppy_model(int model)
+{
+    if (model == 2) {
+        kickstart = 3;
+        if (!switch_set_kickstart(kickstart, 0)) {
+            kickstart = 1;
+            switch_set_kickstart(kickstart, 0);
+        }
+        extfile[0] = '\0';
+        mainMenu_CPU_model = 1;
+        mainMenu_chipset = 2;
+        mainMenu_chipMemory = 2;
+        mainMenu_slowMemory = 0;
+        mainMenu_fastMemory = 3;
+        UpdateCPUModelSettings();
+        UpdateMemorySettings();
+        UpdateChipsetSettings();
+        bReloadKickstart = 1;
+    } else if (model == 1) {
+        kickstart = 11;
+        if (!switch_set_kickstart(kickstart, 0)) {
+            kickstart = 2;
+            if (!switch_set_kickstart(kickstart, 0)) {
+                kickstart = 3;
+                if (!switch_set_kickstart(kickstart, 0)) {
+                    kickstart = 1;
+                    switch_set_kickstart(kickstart, 0);
+                }
+            }
+        }
+        extfile[0] = '\0';
+        mainMenu_CPU_model = 0;
+        mainMenu_chipset = 1;
+        mainMenu_chipMemory = 1;
+        mainMenu_slowMemory = 0;
+        mainMenu_fastMemory = 1;
+        UpdateCPUModelSettings();
+        UpdateMemorySettings();
+        UpdateChipsetSettings();
+        bReloadKickstart = 1;
+    } else {
+        kickstart = 1;
+        if (!switch_set_kickstart(kickstart, 0)) {
+            kickstart = 3;
+            switch_set_kickstart(kickstart, 0);
+        }
+        extfile[0] = '\0';
+        mainMenu_CPU_model = 0;
+        mainMenu_chipset = 0;
+        mainMenu_chipMemory = 0;
+        mainMenu_slowMemory = 1;
+        mainMenu_fastMemory = 0;
+        UpdateCPUModelSettings();
+        UpdateMemorySettings();
+        UpdateChipsetSettings();
+        bReloadKickstart = 1;
+    }
+}
+
+static SwitchLibGame s_lib_games[4096];
+static int s_lib_game_count = 0;
+static bool s_lib_scanned = false;
+static int s_lib_filter = 0;
+
+struct SwitchLibCacheEntry {
+    char path[512];
+    char title[128];
+    int32_t type;
+    int32_t model;
+    int64_t mtime;
+    int64_t size;
+};
+
+static SwitchLibCacheEntry s_lib_cache[4096];
+static int s_lib_cache_count = 0;
+static bool s_lib_cache_modified = false;
+static volatile int s_lib_refresh_requested = 0;
+
+static void get_cache_path(char *out, size_t sz)
+{
+    if (launchDir[0] != '\0' && strcmp(launchDir, ".") != 0) {
+        snprintf(out, sz, "%s/conf/game_library.cache", launchDir);
+    } else {
+        snprintf(out, sz, "./conf/game_library.cache");
+    }
+}
+
+static void lib_cache_load(void)
+{
+    s_lib_cache_count = 0;
+    s_lib_cache_modified = false;
+    char cpath[512];
+    get_cache_path(cpath, sizeof(cpath));
+    FILE *f = fopen(cpath, "rb");
+    if (!f) {
+        f = fopen("./conf/game_library.cache", "rb");
+    }
+    if (!f) return;
+    char magic[4];
+    if (fread(magic, 1, 4, f) != 4 || memcmp(magic, "U4LC", 4) != 0) {
+        fclose(f);
+        return;
+    }
+    uint32_t ver = 0;
+    if (fread(&ver, sizeof(ver), 1, f) != 1 || ver != 1) {
+        fclose(f);
+        return;
+    }
+    uint32_t cnt = 0;
+    if (fread(&cnt, sizeof(cnt), 1, f) != 1 || cnt > 4096) {
+        fclose(f);
+        return;
+    }
+    size_t r = fread(s_lib_cache, sizeof(SwitchLibCacheEntry), cnt, f);
+    s_lib_cache_count = (int)r;
+    fclose(f);
+}
+
+static void lib_cache_save(void)
+{
+    char conf_dir[512];
+    char cpath[512];
+    get_cache_path(cpath, sizeof(cpath));
+    if (launchDir[0] != '\0' && strcmp(launchDir, ".") != 0) {
+        snprintf(conf_dir, sizeof(conf_dir), "%s/conf", launchDir);
+        ftp_ensure_dir(conf_dir);
+    }
+    mkdir("./conf", 0777);
+    FILE *f = fopen(cpath, "wb");
+    if (!f) {
+        f = fopen("./conf/game_library.cache", "wb");
+    }
+    if (!f) return;
+    fwrite("U4LC", 1, 4, f);
+    uint32_t ver = 1;
+    fwrite(&ver, sizeof(ver), 1, f);
+    uint32_t cnt = (uint32_t)s_lib_cache_count;
+    fwrite(&cnt, sizeof(cnt), 1, f);
+    if (cnt > 0) {
+        fwrite(s_lib_cache, sizeof(SwitchLibCacheEntry), cnt, f);
+    }
+    fclose(f);
+    s_lib_cache_modified = false;
+}
+
+static int lib_cache_find(const char *path)
+{
+    if (!path) return -1;
+    for (int i = 0; i < s_lib_cache_count; i++) {
+        if (strcmp(s_lib_cache[i].path, path) == 0)
+            return i;
+    }
+    return -1;
+}
+
+void switch_library_mark_dirty(void)
+{
+    s_lib_refresh_requested = 1;
+}
+
+static int compare_lib_games(const void *a, const void *b)
+{
+    const SwitchLibGame *ga = (const SwitchLibGame *)a;
+    const SwitchLibGame *gb = (const SwitchLibGame *)b;
+    return strcasecmp(ga->title, gb->title);
+}
+
+static int count_dir_entries(const char *dir_path, int depth)
+{
+    if (!dir_path || dir_path[0] == '\0' || depth > 2)
+        return 0;
+    DIR *d = opendir(dir_path);
+    if (!d)
+        return 0;
+    int count = 0;
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL) {
+        if (ent->d_name[0] == '.')
+            continue;
+        char full[512];
+        snprintf(full, sizeof(full), "%s/%s", dir_path, ent->d_name);
+        struct stat st;
+        if (stat(full, &st) != 0)
+            continue;
+        if (S_ISDIR(st.st_mode)) {
+            if (depth < 2) {
+                if (strcasecmp(ent->d_name, "covers") != 0 &&
+                    strcasecmp(ent->d_name, "save") != 0 &&
+                    strcasecmp(ent->d_name, "saves") != 0 &&
+                    strcasecmp(ent->d_name, "kickstarts") != 0 &&
+                    strcasecmp(ent->d_name, "data") != 0 &&
+                    strcasecmp(ent->d_name, "conf") != 0 &&
+                    strcasecmp(ent->d_name, "C") != 0 &&
+                    strcasecmp(ent->d_name, "S") != 0 &&
+                    strcasecmp(ent->d_name, "Devs") != 0 &&
+                    strcasecmp(ent->d_name, "Libs") != 0) {
+                    count += count_dir_entries(full, depth + 1);
+                }
+            }
+        } else {
+            count++;
+        }
+    }
+    closedir(d);
+    return count;
+}
+
+static float s_splash_ball_angle = 0.0f;
+static float s_splash_bounce_frame = 0.0f;
+
+static void report_scan_progress(bool is_splash, float fraction, const char *status, const char *item_name)
+{
+    if (fraction < 0.0f) fraction = 0.0f;
+    if (fraction > 1.0f) fraction = 1.0f;
+    if (is_splash) {
+        s_splash_bounce_frame += 1.0f;
+        float bounce = fabsf(sinf(s_splash_bounce_frame * 0.12f));
+        s_splash_ball_angle += 0.08f;
+        switch_gui_draw_splash_progress(fraction, status, s_splash_ball_angle, bounce);
+    } else {
+        switch_gui_draw_progress("Scanning Game Library...", status, fraction, item_name);
+    }
+}
+
+static void lib_scan_directory(const char *dir_path, int depth, int *processed, int total, bool is_splash)
+{
+    if (!dir_path || s_lib_game_count >= 4096)
+        return;
+    DIR *d = opendir(dir_path);
+    if (!d)
+        return;
+    struct dirent *ent;
+    while (s_lib_game_count < 4096 && (ent = readdir(d)) != NULL) {
+        if (ent->d_name[0] == '.')
+            continue;
+        char full[512];
+        snprintf(full, sizeof(full), "%s/%s", dir_path, ent->d_name);
+        struct stat st;
+        if (stat(full, &st) != 0)
+            continue;
+        if (S_ISDIR(st.st_mode)) {
+            if (depth < 2) {
+                if (strcasecmp(ent->d_name, "covers") != 0 &&
+                    strcasecmp(ent->d_name, "save") != 0 &&
+                    strcasecmp(ent->d_name, "saves") != 0 &&
+                    strcasecmp(ent->d_name, "kickstarts") != 0 &&
+                    strcasecmp(ent->d_name, "data") != 0 &&
+                    strcasecmp(ent->d_name, "conf") != 0 &&
+                    strcasecmp(ent->d_name, "C") != 0 &&
+                    strcasecmp(ent->d_name, "S") != 0 &&
+                    strcasecmp(ent->d_name, "Devs") != 0 &&
+                    strcasecmp(ent->d_name, "Libs") != 0) {
+                    lib_scan_directory(full, depth + 1, processed, total, is_splash);
+                }
+            }
+            continue;
+        }
+
+        if (processed && total > 0) {
+            (*processed)++;
+            int step = (total > 100) ? (total / 40) : 4;
+            if (step < 2) step = 2;
+            if (((*processed) % step) == 0 || (*processed) == total) {
+                float frac = (float)(*processed) / (float)total;
+                if (is_splash) {
+                    frac = 0.20f + frac * 0.75f;
+                }
+                if (frac > 0.98f) frac = 0.98f;
+                char sub[128];
+                snprintf(sub, sizeof(sub), "Scanning games: %d / %d (%d%%)", *processed, total, (int)(frac * 100.0f));
+                report_scan_progress(is_splash, frac, sub, ent->d_name);
+            }
+        }
+
+        const char *dot = strrchr(ent->d_name, '.');
+        if (!dot)
+            continue;
+        SwitchLibGameType gtype;
+        if (strcasecmp(dot, ".adf") == 0 ||
+            strcasecmp(dot, ".adz") == 0 ||
+            strcasecmp(dot, ".ipf") == 0 ||
+            strcasecmp(dot, ".dms") == 0) {
+            gtype = SWITCH_LIB_FLOPPY;
+        } else if (strcasecmp(dot, ".m3u") == 0) {
+            gtype = SWITCH_LIB_M3U;
+        } else if (strcasecmp(dot, ".lha") == 0 ||
+                   strcasecmp(dot, ".lzh") == 0) {
+            gtype = SWITCH_LIB_LHA;
+        } else if (strcasecmp(dot, ".zip") == 0 ||
+                   strcasecmp(dot, ".7z") == 0) {
+            gtype = SWITCH_LIB_ZIP;
+        } else if (strcasecmp(dot, ".chd") == 0 ||
+                   strcasecmp(dot, ".iso") == 0 ||
+                   strcasecmp(dot, ".cue") == 0) {
+            gtype = SWITCH_LIB_CD32;
+        } else if (strcasecmp(dot, ".hdf") == 0) {
+            gtype = SWITCH_LIB_HDF;
+        } else {
+            continue;
+        }
+
+        bool duplicate = false;
+        for (int ex = 0; ex < s_lib_game_count; ex++) {
+            if (strcmp(s_lib_games[ex].path, full) == 0) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (duplicate) continue;
+
+        SwitchLibGame *g = &s_lib_games[s_lib_game_count];
+        strncpy(g->path, full, sizeof(g->path) - 1);
+        g->path[sizeof(g->path) - 1] = '\0';
+
+        int c_idx = lib_cache_find(full);
+        if (c_idx >= 0 &&
+            s_lib_cache[c_idx].mtime == (int64_t)st.st_mtime &&
+            s_lib_cache[c_idx].size == (int64_t)st.st_size) {
+            g->type = (SwitchLibGameType)s_lib_cache[c_idx].type;
+            g->model = s_lib_cache[c_idx].model;
+            strncpy(g->title, s_lib_cache[c_idx].title, sizeof(g->title) - 1);
+            g->title[sizeof(g->title) - 1] = '\0';
+        } else {
+            g->type = gtype;
+            size_t title_len = (size_t)(dot - ent->d_name);
+            if (title_len >= sizeof(g->title))
+                title_len = sizeof(g->title) - 1;
+            strncpy(g->title, ent->d_name, title_len);
+            g->title[title_len] = '\0';
+            if (gtype == SWITCH_LIB_FLOPPY || gtype == SWITCH_LIB_M3U || gtype == SWITCH_LIB_ZIP) {
+                g->model = switch_detect_floppy_profile(full, g->title);
+            } else if (gtype == SWITCH_LIB_CD32) {
+                g->model = 3;
+            } else {
+                g->model = 2;
+            }
+            if (c_idx >= 0) {
+                strncpy(s_lib_cache[c_idx].title, g->title, sizeof(s_lib_cache[c_idx].title) - 1);
+                s_lib_cache[c_idx].title[sizeof(s_lib_cache[c_idx].title) - 1] = '\0';
+                s_lib_cache[c_idx].type = (int32_t)g->type;
+                s_lib_cache[c_idx].model = g->model;
+                s_lib_cache[c_idx].mtime = (int64_t)st.st_mtime;
+                s_lib_cache[c_idx].size = (int64_t)st.st_size;
+                s_lib_cache_modified = true;
+            } else if (s_lib_cache_count < 4096) {
+                strncpy(s_lib_cache[s_lib_cache_count].path, full, sizeof(s_lib_cache[s_lib_cache_count].path) - 1);
+                s_lib_cache[s_lib_cache_count].path[sizeof(s_lib_cache[s_lib_cache_count].path) - 1] = '\0';
+                strncpy(s_lib_cache[s_lib_cache_count].title, g->title, sizeof(s_lib_cache[s_lib_cache_count].title) - 1);
+                s_lib_cache[s_lib_cache_count].title[sizeof(s_lib_cache[s_lib_cache_count].title) - 1] = '\0';
+                s_lib_cache[s_lib_cache_count].type = (int32_t)g->type;
+                s_lib_cache[s_lib_cache_count].model = g->model;
+                s_lib_cache[s_lib_cache_count].mtime = (int64_t)st.st_mtime;
+                s_lib_cache[s_lib_cache_count].size = (int64_t)st.st_size;
+                s_lib_cache_count++;
+                s_lib_cache_modified = true;
+            }
+        }
+        s_lib_game_count++;
+    }
+    closedir(d);
+}
+
+static void lib_rescan_internal(bool is_splash)
+{
+    report_scan_progress(is_splash, 0.05f, "Loading ROM configuration...", "");
+    lib_load_rom_dir();
+    lib_cache_load();
+    s_lib_game_count = 0;
+
+    report_scan_progress(is_splash, 0.10f, "Scanning WHDLoad titles...", "");
+    static char whd_names[4096][128];
+    int whd_count = switch_whdload_list(whd_names, 4096);
+    const char *whd_root = switch_whdload_root();
+
+    report_scan_progress(is_splash, 0.15f, "Counting files in ROM directory...", "");
+    int rom_entries = count_dir_entries(s_lib_rom_dir, 0);
+    if (strcmp(s_lib_rom_dir, "./roms") != 0 && strcmp(s_lib_rom_dir, "./roms/") != 0) {
+        rom_entries += count_dir_entries("./roms", 0);
+    }
+    if (currentDir[0] != '\0' && strcmp(currentDir, s_lib_rom_dir) != 0 &&
+        strcmp(currentDir, "./roms") != 0 && strcmp(currentDir, "./roms/") != 0) {
+        rom_entries += count_dir_entries(currentDir, 0);
+    }
+
+    int total_items = whd_count + rom_entries;
+    if (total_items < 1) total_items = 1;
+    int processed = 0;
+
+    for (int i = 0; i < whd_count && s_lib_game_count < 4096; i++) {
+        SwitchLibGame *g = &s_lib_games[s_lib_game_count];
+        g->type = SWITCH_LIB_WHDLOAD;
+        g->model = 2;
+        strncpy(g->title, whd_names[i], sizeof(g->title) - 1);
+        g->title[sizeof(g->title) - 1] = '\0';
+        snprintf(g->path, sizeof(g->path), "%s/%s", whd_root, whd_names[i]);
+        s_lib_game_count++;
+        processed++;
+
+        int whd_step = (whd_count > 100) ? (whd_count / 20) : 4;
+        if (whd_step < 2) whd_step = 2;
+        if ((i % whd_step) == 0 || i == whd_count - 1) {
+            float frac = (float)processed / (float)total_items;
+            if (is_splash) frac = 0.20f + frac * 0.75f;
+            if (frac > 0.98f) frac = 0.98f;
+            char sub[128];
+            snprintf(sub, sizeof(sub), "Scanning games: %d / %d (%d%%)", processed, total_items, (int)(frac * 100.0f));
+            report_scan_progress(is_splash, frac, sub, whd_names[i]);
+        }
+    }
+
+    if (s_lib_rom_dir[0] != '\0') {
+        lib_scan_directory(s_lib_rom_dir, 0, &processed, total_items, is_splash);
+    }
+    if (strcmp(s_lib_rom_dir, "./roms") != 0 && strcmp(s_lib_rom_dir, "./roms/") != 0) {
+        lib_scan_directory("./roms", 0, &processed, total_items, is_splash);
+    }
+    if (currentDir[0] != '\0' && strcmp(currentDir, s_lib_rom_dir) != 0 &&
+        strcmp(currentDir, "./roms") != 0 && strcmp(currentDir, "./roms/") != 0) {
+        lib_scan_directory(currentDir, 0, &processed, total_items, is_splash);
+    }
+
+    report_scan_progress(is_splash, 0.98f, "Sorting games alphabetically...", "");
+    if (s_lib_game_count > 1) {
+        qsort(s_lib_games, s_lib_game_count, sizeof(SwitchLibGame), compare_lib_games);
+    }
+
+    static SwitchLibCacheEntry new_cache[4096];
+    int new_cache_count = 0;
+    for (int i = 0; i < s_lib_game_count && new_cache_count < 4096; i++) {
+        int c_idx = lib_cache_find(s_lib_games[i].path);
+        if (c_idx >= 0) {
+            new_cache[new_cache_count] = s_lib_cache[c_idx];
+            new_cache[new_cache_count].model = s_lib_games[i].model;
+            new_cache_count++;
+        } else {
+            strncpy(new_cache[new_cache_count].path, s_lib_games[i].path, sizeof(new_cache[new_cache_count].path) - 1);
+            new_cache[new_cache_count].path[sizeof(new_cache[new_cache_count].path) - 1] = '\0';
+            strncpy(new_cache[new_cache_count].title, s_lib_games[i].title, sizeof(new_cache[new_cache_count].title) - 1);
+            new_cache[new_cache_count].title[sizeof(new_cache[new_cache_count].title) - 1] = '\0';
+            new_cache[new_cache_count].type = (int32_t)s_lib_games[i].type;
+            new_cache[new_cache_count].model = s_lib_games[i].model;
+            struct stat st;
+            if (stat(s_lib_games[i].path, &st) == 0) {
+                new_cache[new_cache_count].mtime = (int64_t)st.st_mtime;
+                new_cache[new_cache_count].size = (int64_t)st.st_size;
+            } else {
+                new_cache[new_cache_count].mtime = 0;
+                new_cache[new_cache_count].size = 0;
+            }
+            new_cache_count++;
+        }
+    }
+    memcpy(s_lib_cache, new_cache, sizeof(SwitchLibCacheEntry) * new_cache_count);
+    s_lib_cache_count = new_cache_count;
+    lib_cache_save();
+
+    char fin[128];
+    snprintf(fin, sizeof(fin), "Scan finished: %d games found", s_lib_game_count);
+    report_scan_progress(is_splash, 1.0f, fin, "");
+    SDL_Delay(250);
+
+    s_lib_scanned = true;
+}
+
+static void lib_rescan(void)
+{
+    lib_rescan_internal(false);
+}
+
+static void lib_splash_progress(int processed, int total, const char *phase, float frac_from, float frac_to)
+{
+    if (total < 1)
+        total = 1;
+    if (processed < 0)
+        processed = 0;
+    if (processed > total)
+        processed = total;
+    if (processed != total && (processed % 16) != 0)
+        return;
+    float p = (float)processed / (float)total;
+    if (p < 0.0f) p = 0.0f;
+    if (p > 1.0f) p = 1.0f;
+    float frac = frac_from + (frac_to - frac_from) * p;
+    if (frac < 0.0f) frac = 0.0f;
+    if (frac > 0.98f) frac = 0.98f;
+    char sub[128];
+    snprintf(sub, sizeof(sub), "%s: %d / %d (%d%%)", phase, processed, total, (int)(frac * 100.0f));
+    report_scan_progress(true, frac, sub, "");
+}
+
+static void lib_fast_scan_dir(const char *dir_path, int depth, bool *modified)
+{
+    if (!dir_path || dir_path[0] == '\0' || depth > 2 || s_lib_game_count >= 4096)
+        return;
+    DIR *d = opendir(dir_path);
+    if (!d)
+        return;
+    struct dirent *ent;
+    while (s_lib_game_count < 4096 && (ent = readdir(d)) != NULL) {
+        if (ent->d_name[0] == '.')
+            continue;
+        char full[512];
+        snprintf(full, sizeof(full), "%s/%s", dir_path, ent->d_name);
+        struct stat st;
+        if (stat(full, &st) != 0)
+            continue;
+        if (S_ISDIR(st.st_mode)) {
+            if (depth < 2) {
+                if (strcasecmp(ent->d_name, "covers") != 0 &&
+                    strcasecmp(ent->d_name, "save") != 0 &&
+                    strcasecmp(ent->d_name, "saves") != 0 &&
+                    strcasecmp(ent->d_name, "kickstarts") != 0 &&
+                    strcasecmp(ent->d_name, "data") != 0 &&
+                    strcasecmp(ent->d_name, "conf") != 0 &&
+                    strcasecmp(ent->d_name, "C") != 0 &&
+                    strcasecmp(ent->d_name, "S") != 0 &&
+                    strcasecmp(ent->d_name, "Devs") != 0 &&
+                    strcasecmp(ent->d_name, "Libs") != 0) {
+                    lib_fast_scan_dir(full, depth + 1, modified);
+                }
+            }
+            continue;
+        }
+
+        const char *dot = strrchr(ent->d_name, '.');
+        if (!dot)
+            continue;
+        SwitchLibGameType gtype;
+        if (strcasecmp(dot, ".adf") == 0 ||
+            strcasecmp(dot, ".adz") == 0 ||
+            strcasecmp(dot, ".ipf") == 0 ||
+            strcasecmp(dot, ".dms") == 0) {
+            gtype = SWITCH_LIB_FLOPPY;
+        } else if (strcasecmp(dot, ".m3u") == 0) {
+            gtype = SWITCH_LIB_M3U;
+        } else if (strcasecmp(dot, ".lha") == 0 ||
+                   strcasecmp(dot, ".lzh") == 0) {
+            gtype = SWITCH_LIB_LHA;
+        } else if (strcasecmp(dot, ".zip") == 0 ||
+                   strcasecmp(dot, ".7z") == 0) {
+            gtype = SWITCH_LIB_ZIP;
+        } else if (strcasecmp(dot, ".chd") == 0 ||
+                   strcasecmp(dot, ".iso") == 0 ||
+                   strcasecmp(dot, ".cue") == 0) {
+            gtype = SWITCH_LIB_CD32;
+        } else if (strcasecmp(dot, ".hdf") == 0) {
+            gtype = SWITCH_LIB_HDF;
+        } else {
+            continue;
+        }
+
+        int c_idx = lib_cache_find(full);
+        if (c_idx >= 0)
+            continue;
+
+        bool duplicate = false;
+        for (int ex = 0; ex < s_lib_game_count; ex++) {
+            if (strcmp(s_lib_games[ex].path, full) == 0) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (duplicate)
+            continue;
+
+        SwitchLibGame *g = &s_lib_games[s_lib_game_count];
+        strncpy(g->path, full, sizeof(g->path) - 1);
+        g->path[sizeof(g->path) - 1] = '\0';
+        g->type = gtype;
+        size_t title_len = (size_t)(dot - ent->d_name);
+        if (title_len >= sizeof(g->title))
+            title_len = sizeof(g->title) - 1;
+        strncpy(g->title, ent->d_name, title_len);
+        g->title[title_len] = '\0';
+        if (gtype == SWITCH_LIB_FLOPPY || gtype == SWITCH_LIB_M3U || gtype == SWITCH_LIB_ZIP) {
+            g->model = switch_detect_floppy_profile(full, g->title);
+        } else if (gtype == SWITCH_LIB_CD32) {
+            g->model = 3;
+        } else {
+            g->model = 2;
+        }
+
+        if (s_lib_cache_count < 4096) {
+            strncpy(s_lib_cache[s_lib_cache_count].path, full, sizeof(s_lib_cache[s_lib_cache_count].path) - 1);
+            s_lib_cache[s_lib_cache_count].path[sizeof(s_lib_cache[s_lib_cache_count].path) - 1] = '\0';
+            strncpy(s_lib_cache[s_lib_cache_count].title, g->title, sizeof(s_lib_cache[s_lib_cache_count].title) - 1);
+            s_lib_cache[s_lib_cache_count].title[sizeof(s_lib_cache[s_lib_cache_count].title) - 1] = '\0';
+            s_lib_cache[s_lib_cache_count].type = (int32_t)g->type;
+            s_lib_cache[s_lib_cache_count].model = g->model;
+            s_lib_cache[s_lib_cache_count].mtime = (int64_t)st.st_mtime;
+            s_lib_cache[s_lib_cache_count].size = (int64_t)st.st_size;
+            s_lib_cache_count++;
+        }
+        s_lib_game_count++;
+        if (modified) *modified = true;
+    }
+    closedir(d);
+}
+
+void switch_library_initial_load(void)
+{
+    meta_db_load("./data/gameinfo/games.json");
+
+    lib_load_rom_dir();
+    lib_cache_load();
+    if (s_lib_cache_count == 0) {
+        lib_rescan_internal(true);
+        return;
+    }
+
+    report_scan_progress(true, 0.20f, "Loading game library...", "");
+
+    s_lib_game_count = 0;
+    for (int i = 0; i < s_lib_cache_count && s_lib_game_count < 4096; i++) {
+        s_lib_games[s_lib_game_count].type = (SwitchLibGameType)s_lib_cache[i].type;
+        s_lib_games[s_lib_game_count].model = s_lib_cache[i].model;
+        strncpy(s_lib_games[s_lib_game_count].title, s_lib_cache[i].title, sizeof(s_lib_games[s_lib_game_count].title) - 1);
+        s_lib_games[s_lib_game_count].title[sizeof(s_lib_games[s_lib_game_count].title) - 1] = '\0';
+        strncpy(s_lib_games[s_lib_game_count].path, s_lib_cache[i].path, sizeof(s_lib_games[s_lib_game_count].path) - 1);
+        s_lib_games[s_lib_game_count].path[sizeof(s_lib_games[s_lib_game_count].path) - 1] = '\0';
+        s_lib_game_count++;
+        lib_splash_progress(i, s_lib_cache_count, "Loading game library", 0.20f, 0.40f);
+    }
+
+    bool modified = false;
+    report_scan_progress(true, 0.40f, "Checking WHDLoad titles...", "");
+    static char whd_names[4096][128];
+    int whd_count = switch_whdload_list(whd_names, 4096);
+    const char *whd_root = switch_whdload_root();
+    for (int i = 0; i < whd_count && s_lib_game_count < 4096; i++) {
+        char full_whd[512];
+        snprintf(full_whd, sizeof(full_whd), "%s/%s", whd_root, whd_names[i]);
+        if (lib_cache_find(full_whd) >= 0)
+            continue;
+        bool dup = false;
+        for (int ex = 0; ex < s_lib_game_count; ex++) {
+            if (strcmp(s_lib_games[ex].path, full_whd) == 0) {
+                dup = true;
+                break;
+            }
+        }
+        if (dup)
+            continue;
+        SwitchLibGame *g = &s_lib_games[s_lib_game_count];
+        g->type = SWITCH_LIB_WHDLOAD;
+        g->model = 2;
+        strncpy(g->title, whd_names[i], sizeof(g->title) - 1);
+        g->title[sizeof(g->title) - 1] = '\0';
+        strncpy(g->path, full_whd, sizeof(g->path) - 1);
+        g->path[sizeof(g->path) - 1] = '\0';
+        s_lib_game_count++;
+        modified = true;
+        lib_splash_progress(i, whd_count, "Checking WHDLoad titles", 0.40f, 0.55f);
+    }
+
+    report_scan_progress(true, 0.55f, "Checking ROM folders...", "");
+    if (s_lib_rom_dir[0] != '\0') {
+        lib_fast_scan_dir(s_lib_rom_dir, 0, &modified);
+    }
+    if (strcmp(s_lib_rom_dir, "./roms") != 0 && strcmp(s_lib_rom_dir, "./roms/") != 0) {
+        lib_fast_scan_dir("./roms", 0, &modified);
+    }
+    if (currentDir[0] != '\0' && strcmp(currentDir, s_lib_rom_dir) != 0 &&
+        strcmp(currentDir, "./roms") != 0 && strcmp(currentDir, "./roms/") != 0) {
+        lib_fast_scan_dir(currentDir, 0, &modified);
+    }
+
+    bool removed = false;
+    int dst = 0;
+    for (int src = 0; src < s_lib_game_count; src++) {
+        struct stat st_chk;
+        if (stat(s_lib_games[src].path, &st_chk) != 0) {
+            removed = true;
+            lib_splash_progress(src, s_lib_game_count, "Verifying games", 0.60f, 0.85f);
+            continue;
+        }
+        lib_splash_progress(src, s_lib_game_count, "Verifying games", 0.60f, 0.85f);
+        if (dst != src) {
+            s_lib_games[dst] = s_lib_games[src];
+        }
+        dst++;
+    }
+    s_lib_game_count = dst;
+
+    report_scan_progress(true, 0.88f, "Updating library cache...", "");
+    if (modified || removed) {
+        if (s_lib_game_count > 1) {
+            qsort(s_lib_games, s_lib_game_count, sizeof(SwitchLibGame), compare_lib_games);
+        }
+        s_lib_cache_count = 0;
+        for (int i = 0; i < s_lib_game_count && s_lib_cache_count < 4096; i++) {
+            strncpy(s_lib_cache[s_lib_cache_count].path, s_lib_games[i].path, sizeof(s_lib_cache[s_lib_cache_count].path) - 1);
+            s_lib_cache[s_lib_cache_count].path[sizeof(s_lib_cache[s_lib_cache_count].path) - 1] = '\0';
+            strncpy(s_lib_cache[s_lib_cache_count].title, s_lib_games[i].title, sizeof(s_lib_cache[s_lib_cache_count].title) - 1);
+            s_lib_cache[s_lib_cache_count].title[sizeof(s_lib_cache[s_lib_cache_count].title) - 1] = '\0';
+            s_lib_cache[s_lib_cache_count].type = (int32_t)s_lib_games[i].type;
+            s_lib_cache[s_lib_cache_count].model = s_lib_games[i].model;
+            struct stat st;
+            if (stat(s_lib_games[i].path, &st) == 0) {
+                s_lib_cache[s_lib_cache_count].mtime = (int64_t)st.st_mtime;
+                s_lib_cache[s_lib_cache_count].size = (int64_t)st.st_size;
+            } else {
+                s_lib_cache[s_lib_cache_count].mtime = 0;
+                s_lib_cache[s_lib_cache_count].size = 0;
+            }
+            s_lib_cache_count++;
+        }
+        lib_cache_save();
+    }
+
+    char fin[128];
+    snprintf(fin, sizeof(fin), "Ready: %d games loaded from cache", s_lib_game_count);
+    report_scan_progress(true, 1.0f, fin, "");
+    SDL_Delay(100);
+    s_lib_scanned = true;
+}
+
+static float s_lib_cover_angle = 0.0f;
+
+static void lib_cover_unload(void)
+{
+    cover_mgr_unload();
+}
+
+static void lib_cover_load(const char *title, const char *path)
+{
+    if (!title || title[0] == '\0') {
+        cover_mgr_unload();
+        return;
+    }
+    cover_mgr_load(title, path);
+}
+
+static int lib_find_next_letter_index(const int *vis_index, int vis_count, int cur_vis, int direction)
+{
+    if (vis_count <= 1)
+        return 0;
+    char cur_c = (char)toupper((unsigned char)s_lib_games[vis_index[cur_vis]].title[0]);
+    if (direction > 0) {
+        for (int i = cur_vis + 1; i < vis_count; i++) {
+            char c = (char)toupper((unsigned char)s_lib_games[vis_index[i]].title[0]);
+            if (c != cur_c)
+                return i;
+        }
+        return 0;
+    } else {
+        for (int i = cur_vis - 1; i >= 0; i--) {
+            char c = (char)toupper((unsigned char)s_lib_games[vis_index[i]].title[0]);
+            if (c != cur_c) {
+                while (i > 0) {
+                    char prev = (char)toupper((unsigned char)s_lib_games[vis_index[i - 1]].title[0]);
+                    if (prev == c) i--;
+                    else break;
+                }
+                return i;
+            }
+        }
+        return vis_count - 1;
+    }
+}
+
+void switch_view_library(SwitchInputState *input, int *selected_item)
+{
+    if (!s_lib_scanned || s_lib_refresh_requested) {
+        s_lib_refresh_requested = 0;
+        lib_rescan();
+    }
+
+    whdload_refresh_meta();
+
+    static int vis_index[4096];
+    int vis_count = 0;
+    for (int k = 0; k < s_lib_game_count; k++) {
+        bool keep = false;
+        if (s_lib_filter == 0) {
+            keep = true;
+        } else if (s_lib_filter == 1) {
+            keep = (s_lib_games[k].type == SWITCH_LIB_FLOPPY);
+        } else if (s_lib_filter == 2) {
+            keep = (s_lib_games[k].type == SWITCH_LIB_ZIP);
+        } else if (s_lib_filter == 3) {
+            keep = (s_lib_games[k].type == SWITCH_LIB_M3U);
+        } else if (s_lib_filter == 4) {
+            keep = (s_lib_games[k].type == SWITCH_LIB_WHDLOAD);
+        } else if (s_lib_filter == 5) {
+            keep = (s_lib_games[k].type == SWITCH_LIB_LHA);
+        } else if (s_lib_filter == 6) {
+            keep = (s_lib_games[k].type == SWITCH_LIB_CD32);
+        } else if (s_lib_filter == 7) {
+            keep = (s_lib_games[k].type == SWITCH_LIB_HDF);
+        } else if (s_lib_filter == 8) {
+            keep = whdload_is_favorite(s_lib_games[k].title);
+        }
+        if (keep) {
+            vis_index[vis_count++] = k;
+        }
+    }
+
+    if (*selected_item < 0) *selected_item = 0;
+    if (vis_count > 0 && *selected_item >= vis_count) *selected_item = vis_count - 1;
+
+    if (input->pressed & SWITCH_BTN_UP) {
+        (*selected_item)--;
+        if (*selected_item < 0) *selected_item = (vis_count > 0) ? (vis_count - 1) : 0;
+    }
+    if (input->pressed & SWITCH_BTN_DOWN) {
+        (*selected_item)++;
+        if (vis_count > 0 && *selected_item >= vis_count) *selected_item = 0;
+    }
+
+    if (vis_count > 0 && *selected_item >= 0 && *selected_item < vis_count) {
+        SwitchLibGame *cur_g = &s_lib_games[vis_index[*selected_item]];
+        if (cur_g->type == SWITCH_LIB_FLOPPY || cur_g->type == SWITCH_LIB_M3U || cur_g->type == SWITCH_LIB_ZIP) {
+            if (input->pressed & SWITCH_BTN_R) {
+                cur_g->model = (cur_g->model + 1) % 3;
+                int c_idx = lib_cache_find(cur_g->path);
+                if (c_idx >= 0) {
+                    s_lib_cache[c_idx].model = cur_g->model;
+                    lib_cache_save();
+                } else if (s_lib_cache_count < 4096) {
+                    strncpy(s_lib_cache[s_lib_cache_count].path, cur_g->path, sizeof(s_lib_cache[s_lib_cache_count].path) - 1);
+                    s_lib_cache[s_lib_cache_count].path[sizeof(s_lib_cache[s_lib_cache_count].path) - 1] = '\0';
+                    strncpy(s_lib_cache[s_lib_cache_count].title, cur_g->title, sizeof(s_lib_cache[s_lib_cache_count].title) - 1);
+                    s_lib_cache[s_lib_cache_count].title[sizeof(s_lib_cache[s_lib_cache_count].title) - 1] = '\0';
+                    s_lib_cache[s_lib_cache_count].type = (int32_t)cur_g->type;
+                    s_lib_cache[s_lib_cache_count].model = cur_g->model;
+                    s_lib_cache[s_lib_cache_count].mtime = 0;
+                    s_lib_cache[s_lib_cache_count].size = 0;
+                    s_lib_cache_count++;
+                    lib_cache_save();
+                }
+                const char *mname = (cur_g->model == 2) ? "AMIGA 1200 (AGA)" : ((cur_g->model == 1) ? "AMIGA 600 (ECS)" : "AMIGA 500 (OCS 1.3)");
+                char mmsg[96];
+                snprintf(mmsg, sizeof(mmsg), "PROFILE: %s", mname);
+                switch_osd_show(mmsg, 1800);
+            } else if (input->pressed & SWITCH_BTN_L) {
+                cur_g->model = (cur_g->model + 2) % 3;
+                int c_idx = lib_cache_find(cur_g->path);
+                if (c_idx >= 0) {
+                    s_lib_cache[c_idx].model = cur_g->model;
+                    lib_cache_save();
+                } else if (s_lib_cache_count < 4096) {
+                    strncpy(s_lib_cache[s_lib_cache_count].path, cur_g->path, sizeof(s_lib_cache[s_lib_cache_count].path) - 1);
+                    s_lib_cache[s_lib_cache_count].path[sizeof(s_lib_cache[s_lib_cache_count].path) - 1] = '\0';
+                    strncpy(s_lib_cache[s_lib_cache_count].title, cur_g->title, sizeof(s_lib_cache[s_lib_cache_count].title) - 1);
+                    s_lib_cache[s_lib_cache_count].title[sizeof(s_lib_cache[s_lib_cache_count].title) - 1] = '\0';
+                    s_lib_cache[s_lib_cache_count].type = (int32_t)cur_g->type;
+                    s_lib_cache[s_lib_cache_count].model = cur_g->model;
+                    s_lib_cache[s_lib_cache_count].mtime = 0;
+                    s_lib_cache[s_lib_cache_count].size = 0;
+                    s_lib_cache_count++;
+                    lib_cache_save();
+                }
+                const char *mname = (cur_g->model == 2) ? "AMIGA 1200 (AGA)" : ((cur_g->model == 1) ? "AMIGA 600 (ECS)" : "AMIGA 500 (OCS 1.3)");
+                char mmsg[96];
+                snprintf(mmsg, sizeof(mmsg), "PROFILE: %s", mname);
+                switch_osd_show(mmsg, 1800);
+            }
+        } else if (input->pressed & (SWITCH_BTN_L | SWITCH_BTN_R)) {
+            int dir = (input->pressed & SWITCH_BTN_R) ? 1 : -1;
+            *selected_item = lib_find_next_letter_index(vis_index, vis_count, *selected_item, dir);
+        }
+    }
+
+    if (vis_count > 0 && (input->pressed & (SWITCH_BTN_LEFT | SWITCH_BTN_RIGHT))) {
+        int dir = (input->pressed & SWITCH_BTN_RIGHT) ? 1 : -1;
+        *selected_item = lib_find_next_letter_index(vis_index, vis_count, *selected_item, dir);
+    }
+
+    if (input->pressed & SWITCH_BTN_X) {
+        s_lib_filter = (s_lib_filter + 1) % 9;
+        *selected_item = 0;
+        const char *fnames[9] = {
+            "ALL GAMES", "FLOPPY (ADF)", "ZIP ARCHIVES", "M3U PLAYLISTS",
+            "WHDLOAD INSTALLED", "LHA ARCHIVES", "CD32 IMAGES",
+            "HARDFILES (HDF)", "FAVORITES"
+        };
+        char f_msg[64];
+        snprintf(f_msg, sizeof(f_msg), "FILTER: %s", fnames[s_lib_filter]);
+        switch_osd_show(f_msg, 1500);
+    }
+
+    if (input->pressed & SWITCH_BTN_Y) {
+        lib_load_rom_dir();
+        int opt = switch_show_library_options_dialog(s_lib_rom_dir);
+        if (opt == 1) {
+            char chosen_dir[512];
+            chosen_dir[0] = '\0';
+            int res = switch_gui_run_browser(chosen_dir, s_lib_rom_dir[0] ? s_lib_rom_dir : currentDir, 12);
+            if (res == 1 && chosen_dir[0] != '\0') {
+                strncpy(s_lib_rom_dir, chosen_dir, sizeof(s_lib_rom_dir) - 1);
+                s_lib_rom_dir[sizeof(s_lib_rom_dir) - 1] = '\0';
+                strncpy(currentDir, chosen_dir, 299);
+                currentDir[299] = '\0';
+                lib_save_rom_dir();
+                saveAdfDir();
+
+                char chg_msg[384];
+                snprintf(chg_msg, sizeof(chg_msg), "ROM directory successfully changed to:\n%s\n\nThe library will now be rescanned.", chosen_dir);
+                switch_show_message_box("ROM Directory Changed", chg_msg, "OK (A)");
+
+                lib_cover_unload();
+                lib_rescan();
+                *selected_item = 0;
+                char msg[96];
+                snprintf(msg, sizeof(msg), "ROM DIR UPDATED: %d GAMES", s_lib_game_count);
+                switch_osd_show(msg, 2500);
+            }
+        } else if (opt == 2) {
+            lib_cover_unload();
+            lib_rescan();
+            *selected_item = 0;
+            char msg[96];
+            snprintf(msg, sizeof(msg), "RESCAN COMPLETE: %d GAMES", s_lib_game_count);
+            switch_osd_show(msg, 2500);
+        } else if (opt == 3) {
+            if (vis_count > 0 && *selected_item >= 0 && *selected_item < vis_count) {
+                SwitchLibGame *cur_g = &s_lib_games[vis_index[*selected_item]];
+                int rc = cover_mgr_download(cur_g->title);
+                if (rc == 0) {
+                    lib_cover_unload();
+                    lib_cover_load(cur_g->title, cur_g->path);
+                    switch_show_message_box("Cover Downloaded", "Boxart saved to:\n./data/covers/", "OK (A)");
+                } else if (rc == -6) {
+                    switch_show_message_box("Cover Not Found", "No boxart found on the server for this title.", "OK (A)");
+                } else if (rc == -2) {
+                    switch_show_message_box("No Server Configured", "Configure server URL in:\n./data/covers/source.txt", "OK (A)");
+                } else {
+                    switch_show_message_box("Download Failed", "Network error or no internet connection.\nServer: ./data/covers/source.txt", "OK (A)");
+                }
+            } else {
+                switch_show_message_box("Download Cover", "No game currently selected.", "OK (A)");
+            }
+        }
+        while (1) {
+            switch_gui_update_input(input);
+            if (!(input->pad.buttons & (SWITCH_BTN_A | SWITCH_BTN_B | SWITCH_BTN_X | SWITCH_BTN_Y)))
+                break;
+            SDL_Delay(10);
+        }
+        input->pressed = 0;
+        input->held = 0;
+        return;
+    }
+
+    if ((input->pressed & SWITCH_BTN_MINUS) && vis_count > 0 && *selected_item >= 0 && *selected_item < vis_count) {
+        whdload_toggle_favorite(s_lib_games[vis_index[*selected_item]].title);
+        bool now_fav = whdload_is_favorite(s_lib_games[vis_index[*selected_item]].title);
+        char fav_msg[128];
+        snprintf(fav_msg, sizeof(fav_msg), "%s: %s", now_fav ? "ADDED TO FAVORITES" : "REMOVED FROM FAVORITES", s_lib_games[vis_index[*selected_item]].title);
+        switch_osd_show(fav_msg, 2000);
+    }
+
+    if (vis_count > 0 && *selected_item >= 0 && *selected_item < vis_count) {
+        const SwitchLibGame *cur_g = &s_lib_games[vis_index[*selected_item]];
+        lib_cover_load(cur_g->title, cur_g->path);
+    } else {
+        lib_cover_unload();
+    }
+
+    if (input->pressed & SWITCH_BTN_A) {
+        if (vis_count > 0 && *selected_item >= 0 && *selected_item < vis_count) {
+            SwitchLibGame *game = &s_lib_games[vis_index[*selected_item]];
+            if (game->type == SWITCH_LIB_FLOPPY || game->type == SWITCH_LIB_ZIP) {
+                if (emulating && uae4all_image_file0[0] != '\0') {
+                    int act = switch_show_disk_swap_dialog(game->title, game->model);
+                    if (act == 1) {
+                        m3u_clear();
+                        copy_drive_path(uae4all_image_file0, game->path);
+                        gui_update();
+                        char osd_msg[128];
+                        snprintf(osd_msg, sizeof(osd_msg), "INSERTED IN DF0: %s", game->title);
+                        switch_osd_show(osd_msg, 2500);
+                        mainMenu_case = MAIN_MENU_CASE_RUN;
+                        return;
+                    } else if (act >= 2) {
+                        int chosen_model = act - 2;
+                        game->model = chosen_model;
+                        int c_idx = lib_cache_find(game->path);
+                        if (c_idx >= 0) {
+                            s_lib_cache[c_idx].model = chosen_model;
+                            lib_cache_save();
+                        } else if (s_lib_cache_count < 4096) {
+                            strncpy(s_lib_cache[s_lib_cache_count].path, game->path, sizeof(s_lib_cache[s_lib_cache_count].path) - 1);
+                            s_lib_cache[s_lib_cache_count].path[sizeof(s_lib_cache[s_lib_cache_count].path) - 1] = '\0';
+                            strncpy(s_lib_cache[s_lib_cache_count].title, game->title, sizeof(s_lib_cache[s_lib_cache_count].title) - 1);
+                            s_lib_cache[s_lib_cache_count].title[sizeof(s_lib_cache[s_lib_cache_count].title) - 1] = '\0';
+                            s_lib_cache[s_lib_cache_count].type = (int32_t)game->type;
+                            s_lib_cache[s_lib_cache_count].model = chosen_model;
+                            s_lib_cache[s_lib_cache_count].mtime = 0;
+                            s_lib_cache[s_lib_cache_count].size = 0;
+                            s_lib_cache_count++;
+                            lib_cache_save();
+                        }
+                        vita_eject_all_floppies();
+                        vita_eject_all_hdf();
+                        m3u_clear();
+                        copy_drive_path(uae4all_image_file0, game->path);
+                        mainMenu_whdload_game[0] = '\0';
+                        uae4all_hard_dir[0] = '\0';
+                        mainMenu_bootHD = 0;
+                        reset_hdConf();
+                        switch_apply_floppy_model(chosen_model);
+                        gui_update();
+                        mainMenu_case = MAIN_MENU_CASE_RESET;
+                        return;
+                    } else {
+                        while (1) {
+                            switch_gui_update_input(input);
+                            if (!(input->pad.buttons & (SWITCH_BTN_A | SWITCH_BTN_B | SWITCH_BTN_X | SWITCH_BTN_Y)))
+                                break;
+                            SDL_Delay(10);
+                        }
+                        input->pressed = 0;
+                        input->held = 0;
+                        return;
+                    }
+                }
+                vita_eject_all_floppies();
+                vita_eject_all_hdf();
+                m3u_clear();
+                copy_drive_path(uae4all_image_file0, game->path);
+                mainMenu_whdload_game[0] = '\0';
+                uae4all_hard_dir[0] = '\0';
+                mainMenu_bootHD = 0;
+                reset_hdConf();
+                switch_apply_floppy_model(game->model);
+                gui_update();
+                mainMenu_case = MAIN_MENU_CASE_RESET;
+                return;
+            } else if (game->type == SWITCH_LIB_M3U) {
+                if (emulating && uae4all_image_file0[0] != '\0') {
+                    int act = switch_show_disk_swap_dialog(game->title, game->model);
+                    if (act == 1) {
+                        m3u_load(game->path);
+                        gui_update();
+                        switch_osd_show("M3U PLAYLIST LOADED IN DF0:", 2500);
+                        mainMenu_case = MAIN_MENU_CASE_RUN;
+                        return;
+                    } else if (act >= 2) {
+                        int chosen_model = act - 2;
+                        game->model = chosen_model;
+                        int c_idx = lib_cache_find(game->path);
+                        if (c_idx >= 0) {
+                            s_lib_cache[c_idx].model = chosen_model;
+                            lib_cache_save();
+                        } else if (s_lib_cache_count < 4096) {
+                            strncpy(s_lib_cache[s_lib_cache_count].path, game->path, sizeof(s_lib_cache[s_lib_cache_count].path) - 1);
+                            s_lib_cache[s_lib_cache_count].path[sizeof(s_lib_cache[s_lib_cache_count].path) - 1] = '\0';
+                            strncpy(s_lib_cache[s_lib_cache_count].title, game->title, sizeof(s_lib_cache[s_lib_cache_count].title) - 1);
+                            s_lib_cache[s_lib_cache_count].title[sizeof(s_lib_cache[s_lib_cache_count].title) - 1] = '\0';
+                            s_lib_cache[s_lib_cache_count].type = (int32_t)game->type;
+                            s_lib_cache[s_lib_cache_count].model = chosen_model;
+                            s_lib_cache[s_lib_cache_count].mtime = 0;
+                            s_lib_cache[s_lib_cache_count].size = 0;
+                            s_lib_cache_count++;
+                            lib_cache_save();
+                        }
+                        vita_eject_all_floppies();
+                        vita_eject_all_hdf();
+                        m3u_load(game->path);
+                        mainMenu_whdload_game[0] = '\0';
+                        uae4all_hard_dir[0] = '\0';
+                        mainMenu_bootHD = 0;
+                        reset_hdConf();
+                        switch_apply_floppy_model(chosen_model);
+                        gui_update();
+                        mainMenu_case = MAIN_MENU_CASE_RESET;
+                        return;
+                    } else {
+                        while (1) {
+                            switch_gui_update_input(input);
+                            if (!(input->pad.buttons & (SWITCH_BTN_A | SWITCH_BTN_B | SWITCH_BTN_X | SWITCH_BTN_Y)))
+                                break;
+                            SDL_Delay(10);
+                        }
+                        input->pressed = 0;
+                        input->held = 0;
+                        return;
+                    }
+                }
+                vita_eject_all_floppies();
+                vita_eject_all_hdf();
+                m3u_load(game->path);
+                mainMenu_whdload_game[0] = '\0';
+                uae4all_hard_dir[0] = '\0';
+                mainMenu_bootHD = 0;
+                reset_hdConf();
+                switch_apply_floppy_model(game->model);
+                gui_update();
+                mainMenu_case = MAIN_MENU_CASE_RESET;
+                return;
+            } else if (game->type == SWITCH_LIB_LHA) {
+                char installed_path[512];
+                installed_path[0] = '\0';
+                if (switch_whdload_install_lha(game->path, installed_path, sizeof(installed_path))) {
+                    const char *folder = strrchr(installed_path, '/');
+                    folder = folder ? folder + 1 : installed_path;
+                    if (folder && folder[0] && switch_whdload_can_launch(folder)) {
+                        vita_eject_all_floppies();
+                        vita_eject_all_hdf();
+                        filesys_prepare_reset();
+                        filesys_reset();
+                        strncpy(mainMenu_whdload_game, folder, sizeof(mainMenu_whdload_game) - 1);
+                        mainMenu_whdload_game[sizeof(mainMenu_whdload_game) - 1] = '\0';
+                        whdload_ensure_game_dir(folder);
+                        whdload_mark_recent(folder);
+                        strncpy(uae4all_hard_dir, switch_whdload_root(), 255);
+                        uae4all_hard_dir[255] = '\0';
+                        ApplyAutomaticGamePreset(2);
+                        switch_set_kickstart(kickstart, 0);
+                        switch_whdload_prepare_launch(folder);
+                        gui_update();
+                        mainMenu_case = MAIN_MENU_CASE_RESET;
+                        return;
+                    }
+                }
+            } else if (game->type == SWITCH_LIB_WHDLOAD) {
+                if (switch_whdload_can_launch(game->title)) {
+                    vita_eject_all_floppies();
+                    vita_eject_all_hdf();
+                    filesys_prepare_reset();
+                    filesys_reset();
+                    strncpy(mainMenu_whdload_game, game->title, sizeof(mainMenu_whdload_game) - 1);
+                    mainMenu_whdload_game[sizeof(mainMenu_whdload_game) - 1] = '\0';
+                    whdload_ensure_game_dir(game->title);
+                    whdload_mark_recent(game->title);
+                    strncpy(uae4all_hard_dir, switch_whdload_root(), 255);
+                    uae4all_hard_dir[255] = '\0';
+                    ApplyAutomaticGamePreset(2);
+                    switch_set_kickstart(kickstart, 0);
+                    switch_whdload_prepare_launch(game->title);
+                    gui_update();
+                    mainMenu_case = MAIN_MENU_CASE_RESET;
+                    return;
+                } else {
+                    switch_show_message_box("WHDLoad Error", "No .slave file was found in the game directory.", "OK (A)");
+                }
+            } else if (game->type == SWITCH_LIB_CD32) {
+                vita_eject_all_floppies();
+                vita_eject_all_hdf();
+                if (cdrom_open_image(game->path)) {
+                    mainMenu_whdload_game[0] = '\0';
+                    uae4all_hard_dir[0] = '\0';
+                    mainMenu_bootHD = 0;
+                    reset_hdConf();
+                    ApplyCd32Profile();
+                    switch_set_kickstart(kickstart, 0);
+                    bReloadKickstart = 1;
+                    gui_update();
+                    mainMenu_case = MAIN_MENU_CASE_RESET;
+                    return;
+                } else {
+                    switch_show_message_box("CD32 Error", "The selected CD image could not be loaded.", "OK (A)");
+                }
+            } else if (game->type == SWITCH_LIB_HDF) {
+                vita_eject_all_floppies();
+                vita_eject_all_hdf();
+                copy_drive_path(uae4all_hard_file0, game->path);
+                make_hard_file_cfg_line(uae4all_hard_file0);
+                mainMenu_whdload_game[0] = '\0';
+                uae4all_hard_dir[0] = '\0';
+                mainMenu_bootHD = 1;
+                reset_hdConf();
+                ApplyAutomaticGamePreset(1);
+                bReloadKickstart = 1;
+                gui_update();
+                mainMenu_case = MAIN_MENU_CASE_RESET;
+                return;
+            }
+        }
+    }
+
+    float card_x = 20.0f;
+    float card_w = 560.0f;
+    const float start_y = SWITCH_LIST_START_Y;
+    const float item_h = 56.0f;
+    const float item_gap = 8.0f;
+    const int visible_items = switch_list_visible_rows(start_y, item_h, item_gap);
+    int first_item = *selected_item >= visible_items ? *selected_item - visible_items + 1 : 0;
+
+    if (vis_count == 0) {
+        switch_draw_card_custom(card_x, start_y, card_w, 120.0f, SWITCH_COLOR_CARD, SWITCH_COLOR_CARD_BORDER);
+        switch_draw_text(card_x + 20.0f, start_y + 24.0f, SWITCH_COLOR_TEXT_WHITE, 0.95f, "No Games Found");
+        switch_draw_text(card_x + 20.0f, start_y + 54.0f, SWITCH_COLOR_TEXT_MUTED, 0.78f, "Place .adf / .m3u / .chd / .lha in your ROM folder or install WHDLoad games.");
+        switch_draw_text(card_x + 20.0f, start_y + 78.0f, SWITCH_COLOR_AMIGA_ORANGE, 0.78f, "Press (Y) for Library Options or (X) to Change Filter.");
+    } else {
+        for (int i = 0; i < visible_items; i++) {
+            int item = first_item + i;
+            if (item >= vis_count) break;
+            float y = start_y + (float)i * (item_h + item_gap);
+            int orig = vis_index[item];
+            const SwitchLibGame *g = &s_lib_games[orig];
+            bool fav = whdload_is_favorite(g->title);
+
+            const char *sub = "Game";
+            const char *badge = "READY";
+            unsigned int badge_col = SWITCH_COLOR_AMIGA_BLUE;
+
+            if (g->type == SWITCH_LIB_WHDLOAD) {
+                sub = "Installed WHDLoad AGA / ECS game";
+                badge = "WHDLOAD";
+                badge_col = RGBA8(168, 85, 247, 255);
+            } else if (g->type == SWITCH_LIB_LHA) {
+                sub = "WHDLoad LHA Game Archive";
+                badge = "LHA";
+                badge_col = RGBA8(234, 179, 8, 255);
+            } else if (g->type == SWITCH_LIB_FLOPPY) {
+                sub = "Amiga Floppy Disk (.adf)";
+                badge = "FLOPPY";
+                badge_col = RGBA8(14, 165, 233, 255);
+            } else if (g->type == SWITCH_LIB_M3U) {
+                sub = "Multi-Disk Floppy Playlist (.m3u)";
+                badge = "M3U";
+                badge_col = RGBA8(249, 115, 22, 255);
+            } else if (g->type == SWITCH_LIB_ZIP) {
+                sub = "Compressed Game Archive (.zip)";
+                badge = "ZIP";
+                badge_col = RGBA8(236, 72, 153, 255);
+            } else if (g->type == SWITCH_LIB_CD32) {
+                sub = "Amiga CD32 Disc Image";
+                badge = "CD32";
+                badge_col = RGBA8(229, 37, 33, 255);
+            } else if (g->type == SWITCH_LIB_HDF) {
+                sub = "Bootable Hardfile (.hdf)";
+                badge = "HARDFILE";
+                badge_col = RGBA8(16, 185, 129, 255);
+            }
+
+            if (fav) {
+                badge = "* FAV";
+                badge_col = SWITCH_COLOR_AMIGA_RED;
+            }
+
+            bool focused = (item == *selected_item);
+            switch_draw_button_item_custom(card_x, y, card_w, item_h, g->title, sub, badge, badge_col, focused, false);
+        }
+        switch_draw_list_page_indicator(*selected_item, vis_count, visible_items);
+    }
+
+    float preview_x = 596.0f;
+    float preview_w = SWITCH_SCREEN_W - 20.0f - preview_x;
+    float preview_y = SWITCH_LIST_START_Y;
+    float preview_h = SWITCH_LIST_BOTTOM_Y - preview_y;
+    switch_draw_card_custom(preview_x, preview_y, preview_w, preview_h, SWITCH_COLOR_CARD, SWITCH_COLOR_CARD_BORDER);
+
+    const char *filter_names[9] = {
+        "ALL GAMES",
+        "FLOPPY (ADF)",
+        "ZIP ARCHIVES",
+        "M3U PLAYLISTS",
+        "WHDLOAD INSTALLED",
+        "LHA ARCHIVES",
+        "CD32 IMAGES",
+        "HARDFILES (HDF)",
+        "FAVORITES"
+    };
+    Uint32 filter_badge_col = SWITCH_COLOR_AMIGA_ORANGE;
+    if (s_lib_filter == 1) filter_badge_col = RGBA8(14, 165, 233, 255);
+    else if (s_lib_filter == 2) filter_badge_col = RGBA8(236, 72, 153, 255);
+    else if (s_lib_filter == 3) filter_badge_col = RGBA8(249, 115, 22, 255);
+    else if (s_lib_filter == 4) filter_badge_col = RGBA8(168, 85, 247, 255);
+    else if (s_lib_filter == 5) filter_badge_col = RGBA8(234, 179, 8, 255);
+    else if (s_lib_filter == 6) filter_badge_col = RGBA8(229, 37, 33, 255);
+    else if (s_lib_filter == 7) filter_badge_col = RGBA8(16, 185, 129, 255);
+    else if (s_lib_filter == 8) filter_badge_col = RGBA8(239, 68, 68, 255);
+
+    float fbw = (float)switch_get_text_width(0.80f, filter_names[s_lib_filter]) + 16.0f;
+    switch_draw_badge(preview_x + preview_w - fbw - 14.0f, preview_y + 12.0f, filter_names[s_lib_filter], filter_badge_col, RGBA8(20, 24, 34, 255));
+
+    if (vis_count > 0 && *selected_item >= 0 && *selected_item < vis_count) {
+        const SwitchLibGame *g = &s_lib_games[vis_index[*selected_item]];
+        bool is_fav = whdload_is_favorite(g->title);
+
+        const char *type_badge = "GAME";
+        Uint32 type_badge_col = SWITCH_COLOR_AMIGA_RED;
+        if (g->type == SWITCH_LIB_WHDLOAD) { type_badge = "WHDLOAD GAME"; type_badge_col = RGBA8(168, 85, 247, 255); }
+        else if (g->type == SWITCH_LIB_LHA) { type_badge = "WHDLOAD ARCHIVE"; type_badge_col = RGBA8(234, 179, 8, 255); }
+        else if (g->type == SWITCH_LIB_FLOPPY) { type_badge = "AMIGA FLOPPY DISK"; type_badge_col = RGBA8(14, 165, 233, 255); }
+        else if (g->type == SWITCH_LIB_M3U) { type_badge = "MULTI-DISK PLAYLIST"; type_badge_col = RGBA8(249, 115, 22, 255); }
+        else if (g->type == SWITCH_LIB_ZIP) { type_badge = "ZIP ARCHIVE"; type_badge_col = RGBA8(236, 72, 153, 255); }
+        else if (g->type == SWITCH_LIB_CD32) { type_badge = "AMIGA CD32 CONSOLE"; type_badge_col = RGBA8(229, 37, 33, 255); }
+        else if (g->type == SWITCH_LIB_HDF) { type_badge = "BOOTABLE HARDFILE"; type_badge_col = RGBA8(16, 185, 129, 255); }
+
+        switch_draw_badge(preview_x + 14.0f, preview_y + 12.0f, type_badge, type_badge_col, SWITCH_COLOR_TEXT_WHITE);
+
+        float art_x = preview_x + 16.0f;
+        float art_y = preview_y + 42.0f;
+        float art_w = preview_w - 32.0f;
+        float art_h = 210.0f;
+
+        SDL_Surface *lib_cover_surf = cover_mgr_get();
+        if (lib_cover_surf) {
+            float surf_w = (float)lib_cover_surf->w;
+            float surf_h = (float)lib_cover_surf->h;
+            float scale_x = art_w / surf_w;
+            float scale_y = art_h / surf_h;
+            float final_scale = (scale_x < scale_y) ? scale_x : scale_y;
+            if (final_scale > 1.0f) final_scale = 1.0f;
+            if (final_scale < 0.05f) final_scale = 0.05f;
+
+            int draw_w = (int)(surf_w * final_scale);
+            int draw_h = (int)(surf_h * final_scale);
+            int draw_x = (int)(art_x + (art_w - draw_w) * 0.5f);
+            int draw_y = (int)(art_y + (art_h - draw_h) * 0.5f);
+
+            switch_draw_rounded_rect(art_x - 3.0f, art_y - 3.0f, art_w + 6.0f, art_h + 6.0f, 6.0f, RGBA8(10, 13, 20, 255));
+            SDL_Rect dst_r = { (Sint16)draw_x, (Sint16)draw_y, (Uint16)draw_w, (Uint16)draw_h };
+            SDL_SoftStretch(lib_cover_surf, NULL, prSDLScreen, &dst_r);
+        } else {
+            s_lib_cover_angle += 0.08f;
+            switch_draw_rounded_rect(art_x, art_y, art_w, art_h, 6.0f, RGBA8(18, 22, 32, 255));
+            switch_draw_boing_ball_icon(art_x + (art_w * 0.5f), art_y + (art_h * 0.5f) - 10.0f, 34.0f, s_lib_cover_angle);
+            switch_draw_text_centered(art_x + (art_w * 0.5f), art_y + art_h - 28.0f, SWITCH_COLOR_TEXT_MUTED, 0.85f, "No cover found");
+        }
+
+        switch_draw_text(preview_x + 16.0f, preview_y + 262.0f, SWITCH_COLOR_TEXT_DIM, 0.72f, "GAME TITLE");
+        char title_buf[128];
+        float title_max_w = preview_w - 32.0f - (is_fav ? 78.0f : 0.0f);
+        switch_truncate_text(g->title, title_max_w, 0.90f, title_buf, sizeof(title_buf));
+        switch_draw_text(preview_x + 16.0f, preview_y + 278.0f, SWITCH_COLOR_TEXT_WHITE, 0.90f, title_buf);
+        if (is_fav) {
+            switch_draw_badge(preview_x + preview_w - 86.0f, preview_y + 274.0f, "* FAV", SWITCH_COLOR_AMIGA_RED, SWITCH_COLOR_TEXT_WHITE);
+        }
+
+        char lib_meta_key[256];
+        cover_mgr_normalize(g->title, lib_meta_key, sizeof(lib_meta_key));
+        struct GameMetadata lib_gm;
+        bool has_meta = meta_db_lookup(lib_meta_key, &lib_gm);
+
+        char meta_l1[128];
+        if (has_meta && strcmp(lib_gm.year, "N/A") != 0) {
+            snprintf(meta_l1, sizeof(meta_l1), "Year: %s  |  %s", lib_gm.year, lib_gm.genre);
+        } else {
+            snprintf(meta_l1, sizeof(meta_l1), "Year: ----  |  Amiga Game");
+        }
+        switch_truncate_text(meta_l1, preview_w - 32.0f, 0.72f, meta_l1, sizeof(meta_l1));
+        switch_draw_text(preview_x + 16.0f, preview_y + 300.0f, SWITCH_COLOR_AMIGA_ORANGE, 0.72f, meta_l1);
+
+        char meta_l2[128];
+        if (has_meta && strcmp(lib_gm.developer, "N/A") != 0) {
+            snprintf(meta_l2, sizeof(meta_l2), "Dev: %s  |  Players: %s", lib_gm.developer, lib_gm.players);
+        } else {
+            snprintf(meta_l2, sizeof(meta_l2), "Dev: Unknown");
+        }
+        switch_truncate_text(meta_l2, preview_w - 32.0f, 0.70f, meta_l2, sizeof(meta_l2));
+        switch_draw_text(preview_x + 16.0f, preview_y + 316.0f, SWITCH_COLOR_TEXT_MUTED, 0.70f, meta_l2);
+
+        switch_draw_text(preview_x + 16.0f, preview_y + 338.0f, SWITCH_COLOR_TEXT_DIM, 0.72f, "AUTODETECTED PROFILE");
+        const char *prof_badge = "AMIGA 500";
+        const char *prof_desc = "Amiga 500 (Kickstart 1.3 | OCS/ECS | 512K Chip + 512K Slow)";
+        if (g->type == SWITCH_LIB_WHDLOAD) {
+            prof_badge = "A1200 AGA";
+            prof_desc = "68020 14MHz | Kickstart 3.1 | 2MB Chip + 8MB Fast";
+        } else if (g->type == SWITCH_LIB_LHA) {
+            prof_badge = "WHDLOAD LHA";
+            prof_desc = "Auto-extracts and installs to WHDLoad games directory";
+        } else if (g->type == SWITCH_LIB_M3U) {
+            if (g->model == 2) {
+                prof_badge = "A1200 AGA (M3U)";
+                prof_desc = "Amiga 1200 | Kickstart 3.1 | AGA | Hot-swap with ZL + D-Pad";
+            } else if (g->model == 1) {
+                prof_badge = "A600 ECS (M3U)";
+                prof_desc = "Amiga 600 | Kickstart 2.05 | ECS | Hot-swap with ZL + D-Pad";
+            } else {
+                prof_badge = "A500 MULTI-DISK";
+                prof_desc = "Amiga 500 (Hot-swap disks during play with ZL + D-Pad)";
+            }
+        } else if (g->type == SWITCH_LIB_ZIP || g->type == SWITCH_LIB_FLOPPY) {
+            if (g->model == 2) {
+                prof_badge = (g->type == SWITCH_LIB_ZIP) ? "A1200 ZIP" : "A1200 AGA";
+                prof_desc = "Amiga 1200 (Kickstart 3.1 | AGA | 68020 2MB Chip + 4MB Fast)";
+            } else if (g->model == 1) {
+                prof_badge = (g->type == SWITCH_LIB_ZIP) ? "A600 ZIP" : "A600 ECS";
+                prof_desc = "Amiga 600 (Kickstart 2.05 | ECS | 2MB Chip RAM)";
+            } else {
+                prof_badge = (g->type == SWITCH_LIB_ZIP) ? "AMIGA 500 ZIP" : "AMIGA 500";
+                prof_desc = "Amiga 500 (Kickstart 1.3 | OCS/ECS | 512K Chip + 512K Slow)";
+            }
+        } else if (g->type == SWITCH_LIB_CD32) {
+            prof_badge = "AMIGA CD32";
+            prof_desc = "Akiko Chipset | CD-ROM | Kickstart 3.1 Extended";
+        } else if (g->type == SWITCH_LIB_HDF) {
+            prof_badge = "A1200 HARDFILE";
+            prof_desc = "Amiga 1200 (Boot HD | Kickstart 3.1 | Fast RAM)";
+        }
+
+        switch_draw_badge(preview_x + 16.0f, preview_y + 356.0f, prof_badge, SWITCH_COLOR_AMIGA_ORANGE, RGBA8(20, 24, 34, 255));
+        bool can_swap = (emulating && uae4all_image_file0[0] != '\0' && (g->type == SWITCH_LIB_FLOPPY || g->type == SWITCH_LIB_M3U || g->type == SWITCH_LIB_ZIP));
+        switch_draw_hint_item(preview_x + preview_w - (can_swap ? 190.0f : 150.0f), preview_y + 356.0f, SWITCH_GLYPH_A, can_swap ? "SWAP / BOOT" : "LAUNCH");
+        char hw_buf[128];
+        switch_truncate_text(prof_desc, preview_w - 32.0f, 0.76f, hw_buf, sizeof(hw_buf));
+        switch_draw_text(preview_x + 16.0f, preview_y + 384.0f, SWITCH_COLOR_TEXT_MUTED, 0.76f, hw_buf);
+        if (g->type == SWITCH_LIB_FLOPPY || g->type == SWITCH_LIB_M3U || g->type == SWITCH_LIB_ZIP) {
+            switch_draw_text(preview_x + 16.0f, preview_y + 400.0f, SWITCH_COLOR_TEXT_DIM, 0.68f, "(L/R) Cycle Model: A500 / A600 / A1200");
+        }
+    } else {
+        switch_draw_badge(preview_x + 14.0f, preview_y + 12.0f, "GAME LIBRARY", RGBA8(40, 50, 70, 255), SWITCH_COLOR_TEXT_WHITE);
+        float art_x = preview_x + 16.0f;
+        float art_y = preview_y + 42.0f;
+        float art_w = preview_w - 32.0f;
+        float art_h = 210.0f;
+        s_lib_cover_angle += 0.08f;
+        switch_draw_rounded_rect(art_x, art_y, art_w, art_h, 6.0f, RGBA8(18, 22, 32, 255));
+        switch_draw_boing_ball_icon(art_x + (art_w * 0.5f), art_y + (art_h * 0.5f) - 10.0f, 34.0f, s_lib_cover_angle);
+        switch_draw_text_centered(art_x + (art_w * 0.5f), art_y + art_h - 28.0f, SWITCH_COLOR_AMIGA_ORANGE, 0.85f, "Press (Y) for options");
+        switch_draw_text(preview_x + 16.0f, preview_y + 310.0f, SWITCH_COLOR_TEXT_WHITE, 0.95f, "All-in-One Game Library");
+        switch_draw_text(preview_x + 16.0f, preview_y + 340.0f, SWITCH_COLOR_TEXT_MUTED, 0.80f, "Supports WHDLoad, ADF floppies, M3U playlists, LHA, ZIP, HDF and CD32.");
     }
 }
 
@@ -2363,7 +3985,7 @@ void switch_view_presets(SwitchInputState *input, int *selected_item)
             kickstart = 1;
             extfile[0] = '\0';
             mainMenu_CPU_model = 0;
-            mainMenu_chipset = 0x100;
+            mainMenu_chipset = 0;
             mainMenu_chipMemory = 0;
             mainMenu_slowMemory = 1;
             mainMenu_fastMemory = 0;
@@ -2380,7 +4002,7 @@ void switch_view_presets(SwitchInputState *input, int *selected_item)
             kickstart = 2;
             extfile[0] = '\0';
             mainMenu_CPU_model = 0;
-            mainMenu_chipset = 1 | 0x100;
+            mainMenu_chipset = 1;
             mainMenu_chipMemory = 1;
             mainMenu_slowMemory = 0;
             mainMenu_fastMemory = 1;
@@ -2397,7 +4019,7 @@ void switch_view_presets(SwitchInputState *input, int *selected_item)
             kickstart = 11;
             extfile[0] = '\0';
             mainMenu_CPU_model = 0;
-            mainMenu_chipset = 1 | 0x100;
+            mainMenu_chipset = 1;
             mainMenu_chipMemory = 2;
             mainMenu_slowMemory = 0;
             mainMenu_fastMemory = 4;
@@ -2414,7 +4036,7 @@ void switch_view_presets(SwitchInputState *input, int *selected_item)
             kickstart = 3;
             extfile[0] = '\0';
             mainMenu_CPU_model = 1;
-            mainMenu_chipset = 2 | 0x100;
+            mainMenu_chipset = 2;
             mainMenu_chipMemory = 2;
             mainMenu_slowMemory = 0;
             mainMenu_fastMemory = 3;
@@ -2431,7 +4053,7 @@ void switch_view_presets(SwitchInputState *input, int *selected_item)
         } else if (*selected_item == 4) {
             kickstart = 6;
             mainMenu_CPU_model = 1;
-            mainMenu_chipset = 2 | 0x100;
+            mainMenu_chipset = 2;
             mainMenu_chipMemory = 2;
             mainMenu_slowMemory = 0;
             mainMenu_fastMemory = 0;
@@ -3270,7 +4892,7 @@ void switch_view_controls(SwitchInputState *input, int *selected_item)
         return;
     }
 
-    const int total_items = 13;
+    const int total_items = 14;
     if (*selected_item < 0) *selected_item = 0;
     if (*selected_item >= total_items) *selected_item = total_items - 1;
 
@@ -3329,6 +4951,9 @@ void switch_view_controls(SwitchInputState *input, int *selected_item)
                 if (mainMenu_deadZone < 1000) mainMenu_deadZone = 1000;
                 if (mainMenu_deadZone > 25000) mainMenu_deadZone = 25000;
                 break;
+            case 12:
+                mainMenu_numPlayers = (mainMenu_numPlayers + 7 + dir) % 8 + 1;
+                break;
         }
     }
 
@@ -3369,7 +4994,13 @@ void switch_view_controls(SwitchInputState *input, int *selected_item)
             case 10:
                 mainMenu_autoEjectFloppy = 1 - mainMenu_autoEjectFloppy;
                 break;
+            case 11:
+                mainMenu_deadZone = (mainMenu_deadZone + 1000) > 25000 ? 1000 : mainMenu_deadZone + 1000;
+                break;
             case 12:
+                mainMenu_numPlayers = (mainMenu_numPlayers % 8) + 1;
+                break;
+            case 13:
                 s_custom_controls_modal_open = true;
                 s_custom_modal_selected = 0;
                 break;
@@ -3386,6 +5017,11 @@ void switch_view_controls(SwitchInputState *input, int *selected_item)
 
     char deadzone_buf[32];
     snprintf(deadzone_buf, sizeof(deadzone_buf), "%d%% Threshold", (int)((float)mainMenu_deadZone / 32768.0f * 100.0f));
+
+    char players_buf[64];
+    snprintf(players_buf, sizeof(players_buf), "%d Player%s%s", mainMenu_numPlayers, mainMenu_numPlayers == 1 ? "" : "s", (mainMenu_singleJoycons && mainMenu_numPlayers > 2) ? " (max 2 with Single Joy-Con)" : "");
+
+
 
     for (int i = 0; i < visible_items; i++) {
         int item = first_item + i;
@@ -3430,6 +5066,9 @@ void switch_view_controls(SwitchInputState *input, int *selected_item)
                 switch_draw_selector_item(card_x, y, card_w, item_h, "Analog Stick Deadzone", deadzone_buf, focused);
                 break;
             case 12:
+                switch_draw_selector_item(card_x, y, card_w, item_h, "Number of Players", players_buf, focused);
+                break;
+            case 13:
                 switch_draw_button_item(card_x, y, card_w, item_h, "Custom Button Remapping...", "Configure individual actions for up to 8 Switch controllers", "REMAP", focused, false);
                 break;
         }

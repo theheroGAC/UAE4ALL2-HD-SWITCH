@@ -48,6 +48,7 @@ static bool s_cd_mode = false;
 static bool s_conf_mode = false;
 static bool s_lha_mode = false;
 static bool s_state_mode = false;
+static bool s_dir_picker_mode = false;
 static SDL_Surface *s_cover_surf = NULL;
 static char s_cover_loaded_path[MAX_PATH_LEN] = "";
 
@@ -56,6 +57,9 @@ static bool is_supported_ext(const char *name)
     const char *ext = strrchr(name, '.');
     if (!ext) return false;
 
+    if (s_dir_picker_mode) {
+        return true;
+    }
     if (s_conf_mode) {
         return (strcasecmp(ext, ".conf") == 0);
     }
@@ -248,6 +252,7 @@ int switch_gui_run_browser(char *out_path, const char *start_dir, int disk_drive
     s_conf_mode = (disk_drive_idx == 9);
     s_lha_mode = (disk_drive_idx == 11);
     s_state_mode = (disk_drive_idx == 10);
+    s_dir_picker_mode = (disk_drive_idx == 12);
     if (start_dir && strlen(start_dir) > 0) {
         strncpy(s_current_dir, start_dir, sizeof(s_current_dir) - 1);
     }
@@ -311,7 +316,10 @@ int switch_gui_run_browser(char *out_path, const char *start_dir, int disk_drive
         if (input.pressed & (SWITCH_BTN_L | SWITCH_BTN_LEFT)) {
             selected_idx = find_next_letter_index(selected_idx, -1);
         }
-        if (input.pressed & (SWITCH_BTN_R | SWITCH_BTN_RIGHT | SWITCH_BTN_Y)) {
+        if (input.pressed & (SWITCH_BTN_R | SWITCH_BTN_RIGHT)) {
+            selected_idx = find_next_letter_index(selected_idx, 1);
+        }
+        if (!s_dir_picker_mode && (input.pressed & SWITCH_BTN_Y)) {
             selected_idx = find_next_letter_index(selected_idx, 1);
         }
 
@@ -374,20 +382,63 @@ int switch_gui_run_browser(char *out_path, const char *start_dir, int disk_drive
                     scroll_offset = 0;
                     last_cover_idx = -1;
                 } else {
+                    if (s_dir_picker_mode) {
+                        strncpy(out_path, s_current_dir, MAX_PATH_LEN - 1);
+                        out_path[MAX_PATH_LEN - 1] = '\0';
+                        if (s_cover_surf) {
+                            SDL_FreeSurface(s_cover_surf);
+                            s_cover_surf = NULL;
+                        }
+                        while (1) {
+                            switch_gui_update_input(&input);
+                            if (!(input.pad.buttons & (SWITCH_BTN_A | SWITCH_BTN_B | SWITCH_BTN_X | SWITCH_BTN_Y)))
+                                break;
+                            SDL_Delay(10);
+                        }
+                        return 1;
+                    }
                     snprintf(out_path, MAX_PATH_LEN, "%s/%s", s_current_dir, ent->name);
                     if (s_cover_surf) {
                         SDL_FreeSurface(s_cover_surf);
                         s_cover_surf = NULL;
+                    }
+                    while (1) {
+                        switch_gui_update_input(&input);
+                        if (!(input.pad.buttons & (SWITCH_BTN_A | SWITCH_BTN_B | SWITCH_BTN_X | SWITCH_BTN_Y)))
+                            break;
+                        SDL_Delay(10);
                     }
                     return 1;
                 }
             }
         }
 
+        if (s_dir_picker_mode && (input.pressed & SWITCH_BTN_Y)) {
+            strncpy(out_path, s_current_dir, MAX_PATH_LEN - 1);
+            out_path[MAX_PATH_LEN - 1] = '\0';
+            if (s_cover_surf) {
+                SDL_FreeSurface(s_cover_surf);
+                s_cover_surf = NULL;
+            }
+            while (1) {
+                switch_gui_update_input(&input);
+                if (!(input.pad.buttons & (SWITCH_BTN_A | SWITCH_BTN_B | SWITCH_BTN_X | SWITCH_BTN_Y)))
+                    break;
+                SDL_Delay(10);
+            }
+            return 1;
+        }
+
         if (input.pressed & SWITCH_BTN_B) {
             if (s_cover_surf) {
                 SDL_FreeSurface(s_cover_surf);
                 s_cover_surf = NULL;
+            }
+            while (1) {
+                switch_gui_update_input(&input);
+                if (!(input.pad.buttons & (SWITCH_BTN_A | SWITCH_BTN_B | SWITCH_BTN_X | SWITCH_BTN_Y)))
+                    break;
+                SDL_Delay(10);
             }
             return 0;
         }
@@ -398,21 +449,33 @@ int switch_gui_run_browser(char *out_path, const char *start_dir, int disk_drive
                 SDL_FreeSurface(s_cover_surf);
                 s_cover_surf = NULL;
             }
+            while (1) {
+                switch_gui_update_input(&input);
+                if (!(input.pad.buttons & (SWITCH_BTN_A | SWITCH_BTN_B | SWITCH_BTN_X | SWITCH_BTN_Y)))
+                    break;
+                SDL_Delay(10);
+            }
             return 2;
         }
 
         SDL_FillRect(prSDLScreen, NULL, to_sdl_color(SWITCH_COLOR_BG));
 
         char browser_title[128];
-        if (disk_drive_idx == 9)
+        if (s_dir_picker_mode)
+            snprintf(browser_title, sizeof(browser_title), "SELECT ROM DIRECTORY");
+        else if (disk_drive_idx == 11)
             snprintf(browser_title, sizeof(browser_title), "SELECT WHDLOAD LHA");
+        else if (disk_drive_idx == 9)
+            snprintf(browser_title, sizeof(browser_title), "SELECT CONFIGURATION");
+        else if (disk_drive_idx == 10)
+            snprintf(browser_title, sizeof(browser_title), "SELECT SAVE STATE");
         else if (s_hdf_mode)
             snprintf(browser_title, sizeof(browser_title), "SELECT HDF FOR SLOT %d", disk_drive_idx - 3);
         else if (s_cd_mode)
             snprintf(browser_title, sizeof(browser_title), "SELECT CD32 IMAGE");
         else
             snprintf(browser_title, sizeof(browser_title), "INSERT DISK INTO DF%d", disk_drive_idx);
-        switch_draw_header(browser_title, s_hdf_mode ? SWITCH_TAB_HARD_DISK : SWITCH_TAB_FLOPPY, &sysinfo);
+        switch_draw_header(browser_title, s_dir_picker_mode ? SWITCH_TAB_LIBRARY : (s_hdf_mode ? SWITCH_TAB_HARD_DISK : SWITCH_TAB_FLOPPY), &sysinfo);
 
         switch_draw_card_custom(20.0f, 52.0f, SWITCH_SCREEN_W - 40.0f, 34.0f, RGBA8(22, 28, 40, 255), SWITCH_COLOR_CARD_BORDER);
         switch_draw_text(34.0f, 60.0f, SWITCH_COLOR_AMIGA_BLUE, 0.95f, "DIR:");
@@ -450,7 +513,24 @@ int switch_gui_run_browser(char *out_path, const char *start_dir, int disk_drive
                 } else {
                     const char *ext = strrchr(entry->name, '.');
                     const char *type_tag = ext ? (ext + 1) : "ADF";
-                    switch_draw_badge(list_x + 12.0f, item_y + 10.0f, type_tag, RGBA8(50, 35, 45, 255), SWITCH_COLOR_AMIGA_RED);
+                    Uint32 b_bg = RGBA8(40, 40, 50, 255);
+                    Uint32 b_fg = SWITCH_COLOR_TEXT_WHITE;
+                    if (ext) {
+                        if (!strcasecmp(ext, ".adf") || !strcasecmp(ext, ".adz") || !strcasecmp(ext, ".ipf") || !strcasecmp(ext, ".dms")) {
+                            b_bg = RGBA8(12, 45, 75, 255); b_fg = RGBA8(14, 165, 233, 255);
+                        } else if (!strcasecmp(ext, ".m3u")) {
+                            b_bg = RGBA8(65, 35, 15, 255); b_fg = RGBA8(249, 115, 22, 255);
+                        } else if (!strcasecmp(ext, ".lha") || !strcasecmp(ext, ".lzh")) {
+                            b_bg = RGBA8(60, 50, 15, 255); b_fg = RGBA8(234, 179, 8, 255);
+                        } else if (!strcasecmp(ext, ".zip") || !strcasecmp(ext, ".7z")) {
+                            b_bg = RGBA8(65, 20, 45, 255); b_fg = RGBA8(236, 72, 153, 255);
+                        } else if (!strcasecmp(ext, ".chd") || !strcasecmp(ext, ".iso") || !strcasecmp(ext, ".cue")) {
+                            b_bg = RGBA8(60, 20, 20, 255); b_fg = RGBA8(229, 37, 33, 255);
+                        } else if (!strcasecmp(ext, ".hdf") || !strcasecmp(ext, ".hda") || !strcasecmp(ext, ".vhd")) {
+                            b_bg = RGBA8(15, 55, 35, 255); b_fg = RGBA8(16, 185, 129, 255);
+                        }
+                    }
+                    switch_draw_badge(list_x + 12.0f, item_y + 10.0f, type_tag, b_bg, b_fg);
                     switch_draw_text(list_x + 62.0f, item_y + 11.0f, is_sel ? SWITCH_COLOR_TEXT_WHITE : RGBA8(220, 230, 245, 255), 0.95f, name_buf);
 
                     char sz_buf[32];
@@ -475,8 +555,8 @@ int switch_gui_run_browser(char *out_path, const char *start_dir, int disk_drive
             FileEntry *sel_entry = &s_entries[selected_idx];
 
             switch_draw_badge(preview_x + 16.0f, preview_y + 12.0f,
-                sel_entry->is_dir ? "DIRECTORY INFO" : (s_cd_mode ? "CD IMAGE INFO" : "AMIGA DISK INFO"),
-                SWITCH_COLOR_AMIGA_RED, SWITCH_COLOR_TEXT_WHITE);
+                s_dir_picker_mode ? (sel_entry->is_dir ? "DIRECTORY" : "FILE IN FOLDER") : (sel_entry->is_dir ? "DIRECTORY INFO" : (s_cd_mode ? "CD IMAGE INFO" : "AMIGA DISK INFO")),
+                s_dir_picker_mode ? SWITCH_COLOR_AMIGA_BLUE : SWITCH_COLOR_AMIGA_RED, SWITCH_COLOR_TEXT_WHITE);
 
             if (s_cover_surf) {
                 float img_max_w = preview_w - 32.0f;
@@ -551,17 +631,25 @@ int switch_gui_run_browser(char *out_path, const char *start_dir, int disk_drive
         float cur_x = 20.0f;
         float btn_y = SWITCH_SCREEN_H - 32.0f;
 
-        switch_draw_hint_item(cur_x, btn_y, SWITCH_GLYPH_A, "Insert");
-        cur_x += 115.0f;
+        if (s_dir_picker_mode) {
+            switch_draw_hint_item(cur_x, btn_y, SWITCH_GLYPH_A, "Open Folder");
+            cur_x += 140.0f;
+            switch_draw_hint_item(cur_x, btn_y, SWITCH_GLYPH_Y, "Select Folder");
+            cur_x += 160.0f;
+            switch_draw_hint_item(cur_x, btn_y, SWITCH_GLYPH_B, "Cancel");
+        } else {
+            switch_draw_hint_item(cur_x, btn_y, SWITCH_GLYPH_A, "Insert");
+            cur_x += 115.0f;
 
-        switch_draw_hint_item(cur_x, btn_y, SWITCH_GLYPH_B, "Back");
-        cur_x += 100.0f;
+            switch_draw_hint_item(cur_x, btn_y, SWITCH_GLYPH_B, "Back");
+            cur_x += 100.0f;
 
-        switch_draw_hint_item(cur_x, btn_y, SWITCH_GLYPH_X, "Eject");
-        cur_x += 110.0f;
+            switch_draw_hint_item(cur_x, btn_y, SWITCH_GLYPH_X, "Eject");
+            cur_x += 110.0f;
 
-        switch_draw_hint_item(cur_x, btn_y, SWITCH_GLYPH_L, "");
-        switch_draw_hint_item(cur_x + 35.0f, btn_y, SWITCH_GLYPH_R, "Letter A-Z");
+            switch_draw_hint_item(cur_x, btn_y, SWITCH_GLYPH_L, "");
+            switch_draw_hint_item(cur_x + 35.0f, btn_y, SWITCH_GLYPH_R, "Letter A-Z");
+        }
 
         switch_draw_hint_item(SWITCH_SCREEN_W - 200.0f, btn_y, SWITCH_GLYPH_ZL, "");
         switch_draw_hint_item(SWITCH_SCREEN_W - 160.0f, btn_y, SWITCH_GLYPH_ZR, "Page Up/Down");

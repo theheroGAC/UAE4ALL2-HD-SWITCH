@@ -26,6 +26,9 @@ struct group *getgrnam(const char *name) { (void)name; return NULL; }
 #include "sysdeps.h"
 #include "menu_config.h"
 
+extern char s_lib_rom_dir[512];
+void switch_load_rom_dir_if_needed(void);
+
 static int path_exists(const char *path, int *is_dir)
 {
     struct stat st;
@@ -1019,7 +1022,14 @@ static int deploy_rom_clean(const char *src, const char *dst)
     }
 
     if (is_cloanto) {
+        switch_load_rom_dir_if_needed();
+        char custom_key1[512];
+        char custom_key2[512];
+        snprintf(custom_key1, sizeof(custom_key1), "%s/rom.key", s_lib_rom_dir);
+        snprintf(custom_key2, sizeof(custom_key2), "%s/kickstarts/rom.key", s_lib_rom_dir);
         const char *key_dirs[] = {
+            custom_key1,
+            custom_key2,
             "./kickstarts/rom.key",
             "./kickstarts/rom.keys",
             "./roms/kickstarts/rom.key",
@@ -1102,9 +1112,16 @@ static int deploy_rom_clean(const char *src, const char *dst)
 
 static void deploy_kickstart_file(const char *destination_name, const char *const *source_names)
 {
+    switch_load_rom_dir_if_needed();
     char destination[512];
     snprintf(destination, sizeof(destination), "%s/Devs/Kickstarts/%s", SWITCH_WHDLOAD_ROOT, destination_name);
+    char custom_dir1[512];
+    char custom_dir2[512];
+    snprintf(custom_dir1, sizeof(custom_dir1), "%s/kickstarts", s_lib_rom_dir);
+    snprintf(custom_dir2, sizeof(custom_dir2), "%s", s_lib_rom_dir);
     const char *search_dirs[] = {
+        custom_dir1,
+        custom_dir2,
         "./kickstarts",
         "./roms/kickstarts",
         "./roms",
@@ -1155,7 +1172,14 @@ static void deploy_kickstart_aliases(void)
     for (int i = 0; files[i].name; i++)
         deploy_kickstart_file(files[i].name, files[i].sources);
 
+    switch_load_rom_dir_if_needed();
+    char custom_dir1[512];
+    char custom_dir2[512];
+    snprintf(custom_dir1, sizeof(custom_dir1), "%s/kickstarts", s_lib_rom_dir);
+    snprintf(custom_dir2, sizeof(custom_dir2), "%s", s_lib_rom_dir);
     const char *search_dirs[] = {
+        custom_dir1,
+        custom_dir2,
         "./kickstarts",
         "./roms/kickstarts",
         "./roms",
@@ -1339,10 +1363,14 @@ int switch_whdload_prepare_launch(const char *game_name)
     }
 
     char launch_line[640];
-    if (mainMenu_whdload_args[0])
-        snprintf(launch_line, sizeof(launch_line), "CD \"%s\"\nC:WHDLoad \"%s\" %s PRELOAD\n", amiga_dir, slave_file, mainMenu_whdload_args);
-    else
-        snprintf(launch_line, sizeof(launch_line), "CD \"%s\"\nC:WHDLoad \"%s\" PRELOAD\n", amiga_dir, slave_file);
+    if (mainMenu_whdload_args[0]) {
+        if (!strstr(mainMenu_whdload_args, "ChipNoCache") && !strstr(mainMenu_whdload_args, "NoCache"))
+            snprintf(launch_line, sizeof(launch_line), "CD \"%s\"\nC:WHDLoad \"%s\" %s PRELOAD ChipNoCache\n", amiga_dir, slave_file, mainMenu_whdload_args);
+        else
+            snprintf(launch_line, sizeof(launch_line), "CD \"%s\"\nC:WHDLoad \"%s\" %s PRELOAD\n", amiga_dir, slave_file, mainMenu_whdload_args);
+    } else {
+        snprintf(launch_line, sizeof(launch_line), "CD \"%s\"\nC:WHDLoad \"%s\" PRELOAD ChipNoCache\n", amiga_dir, slave_file);
+    }
 
     char *updated_startup = (char *)calloc(1, 66000);
     if (!updated_startup) {

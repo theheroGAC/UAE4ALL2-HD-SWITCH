@@ -46,7 +46,8 @@ extern "C" {
 #define SWITCH_COLOR_OVERLAY_BG    RGBA8(8, 10, 16, 210)
 
 typedef enum {
-    SWITCH_TAB_FLOPPY = 0,
+    SWITCH_TAB_LIBRARY = 0,
+    SWITCH_TAB_FLOPPY,
     SWITCH_TAB_HARD_DISK,
     SWITCH_TAB_WHDLOAD,
     SWITCH_TAB_PRESETS,
@@ -159,8 +160,15 @@ void switch_draw_slider_item(float x, float y, float w, float h, const char *tit
 void switch_show_message_box(const char *title, const char *message, const char *btn_label);
 void switch_show_about_box(void);
 bool switch_show_confirm_box(const char *title, const char *message, const char *yes_label, const char *no_label);
+int  switch_show_disk_swap_dialog(const char *disk_title, int current_model);
+int  switch_show_library_options_dialog(const char *current_folder);
+void switch_gui_show_splash(void);
+void switch_gui_draw_splash_progress(float progress, const char *status_text, float ball_angle, float bounce);
 void switch_gui_draw_progress(const char *title, const char *subtitle, float fraction, const char *item_name);
+void switch_library_initial_load(void);
 
+void switch_view_library(SwitchInputState *input, int *selected_item);
+void switch_library_mark_dirty(void);
 void switch_view_floppy(SwitchInputState *input, int *selected_item);
 void switch_view_hard_disk(SwitchInputState *input, int *selected_item);
 void switch_view_whdload(SwitchInputState *input, int *selected_item);

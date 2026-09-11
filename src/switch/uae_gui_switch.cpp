@@ -81,7 +81,7 @@ static void switch_gui_free_screen(void)
 
 static bool s_gui_initialized = false;
 static float s_boing_angle = 0.0f;
-static SwitchGuiTab s_active_tab = SWITCH_TAB_FLOPPY;
+static SwitchGuiTab s_active_tab = SWITCH_TAB_LIBRARY;
 static int s_tab_selected_item[SWITCH_TAB_COUNT] = {0};
 static int s_save_as_ime_active = 0;
 static int s_save_as_ime_result = 0;
@@ -200,6 +200,7 @@ static const unsigned char s_char_widths[96] = {
 };
 
 static const char *s_tab_names[SWITCH_TAB_COUNT] = {
+    "Library",
     "Floppy",
     "Hard Disk",
     "WHDLoad",
@@ -1043,7 +1044,12 @@ void switch_draw_footer(const char *left_hint, const char *right_hint)
         return;
     }
 
-    if (s_active_tab == SWITCH_TAB_WHDLOAD) {
+    if (s_active_tab == SWITCH_TAB_LIBRARY) {
+        switch_draw_hint_item(20.0f, btn_y, SWITCH_GLYPH_A, "LAUNCH");
+        switch_draw_hint_item(130.0f, btn_y, SWITCH_GLYPH_Y, "OPTIONS");
+        switch_draw_hint_item(240.0f, btn_y, SWITCH_GLYPH_X, "FILTER");
+        switch_draw_hint_item(340.0f, btn_y, SWITCH_GLYPH_MINUS, "FAV");
+    } else if (s_active_tab == SWITCH_TAB_WHDLOAD) {
         switch_draw_hint_item(20.0f, btn_y, SWITCH_GLYPH_A, "LAUNCH");
         switch_draw_hint_item(140.0f, btn_y, SWITCH_GLYPH_X, "INSTALL LHA");
         switch_draw_hint_item(290.0f, btn_y, SWITCH_GLYPH_Y, "REBOOT");
@@ -1338,7 +1344,7 @@ void switch_show_about_box(void)
 {
     static const CreditLine credits[] = {
         { "UAE4ALL2 HD Switch", CR_TITLE },
-        { "Version 1.03 by theheroGAC", CR_SUBTITLE },
+        { "Version 1.04 by theheroGAC", CR_SUBTITLE },
         { "Amiga Emulator for Nintendo Switch", CR_DIM },
         { "", CR_EMPTY },
         { "A high-definition port of the classic UAE4ALL Amiga emulator,", CR_TEXT },
@@ -1562,9 +1568,8 @@ void switch_gui_draw_progress(const char *title, const char *subtitle, float fra
     }
 
     if (item_name && item_name[0]) {
-        char item_buf[80];
-        strncpy(item_buf, item_name, sizeof(item_buf) - 1);
-        item_buf[sizeof(item_buf) - 1] = '\0';
+        char item_buf[128];
+        switch_truncate_text(item_name, dw - 60.0f, 0.80f, item_buf, sizeof(item_buf));
         switch_draw_text(dx + 30.0f, dy + 145.0f, SWITCH_COLOR_TEXT_DIM, 0.80f, item_buf);
     }
 
@@ -1629,9 +1634,222 @@ bool switch_show_confirm_box(const char *title, const char *message, const char 
     return false;
 }
 
+int switch_show_disk_swap_dialog(const char *disk_title, int current_model)
+{
+    switch_gui_init();
+    SwitchInputState input;
+    memset(&input, 0, sizeof(input));
+    int choice = 0;
+    int model = (current_model >= 0 && current_model <= 2) ? current_model : 0;
+    int frame_count = 0;
+
+    while (1) {
+        switch_gui_update_input(&input);
+        frame_count++;
+
+        if (frame_count > 6) {
+            if (input.pressed & (SWITCH_BTN_LEFT | SWITCH_BTN_UP)) {
+                choice = (choice + 2) % 3;
+            }
+            if (input.pressed & (SWITCH_BTN_RIGHT | SWITCH_BTN_DOWN)) {
+                choice = (choice + 1) % 3;
+            }
+            if (input.pressed & (SWITCH_BTN_X | SWITCH_BTN_ZL | SWITCH_BTN_ZR)) {
+                model = (model + 1) % 3;
+            }
+            if (input.pressed & SWITCH_BTN_A) {
+                int res = 0;
+                if (choice == 0) res = 2 + model;
+                else if (choice == 1) res = 1;
+                else res = 0;
+                while (1) {
+                    switch_gui_update_input(&input);
+                    if (!(input.pad.buttons & (SWITCH_BTN_A | SWITCH_BTN_B | SWITCH_BTN_X | SWITCH_BTN_Y)))
+                        break;
+                    SDL_Delay(10);
+                }
+                return res;
+            }
+            if (input.pressed & SWITCH_BTN_B) {
+                while (1) {
+                    switch_gui_update_input(&input);
+                    if (!(input.pad.buttons & (SWITCH_BTN_A | SWITCH_BTN_B | SWITCH_BTN_X | SWITCH_BTN_Y)))
+                        break;
+                    SDL_Delay(10);
+                }
+                return 0;
+            }
+        }
+
+        SDL_FillRect(prSDLScreen, NULL, to_sdl_color(SWITCH_COLOR_OVERLAY_BG));
+
+        float dw = 660.0f, dh = 270.0f;
+        float dx = (SWITCH_SCREEN_W - dw) * 0.5f;
+        float dy = (SWITCH_SCREEN_H - dh) * 0.5f;
+        switch_draw_card_custom(dx, dy, dw, dh, SWITCH_COLOR_HEADER, SWITCH_COLOR_FOCUS_BORDER);
+
+        switch_draw_text_centered(dx + (dw * 0.5f), dy + 22.0f, SWITCH_COLOR_AMIGA_RED, 1.12f, "Floppy Disk Selection");
+        char msg[256];
+        snprintf(msg, sizeof(msg), "\"%s\"\n\nEmulation is currently running. Select an action for DF0:", disk_title ? disk_title : "Disk");
+        switch_draw_text_wrapped(dx + 30.0f, dy + 62.0f, dw - 60.0f, SWITCH_COLOR_TEXT_WHITE, 0.86f, msg);
+
+        switch_draw_button_glyph(dx + 36.0f, dy + 138.0f, SWITCH_GLYPH_X);
+        switch_draw_text(dx + 66.0f, dy + 141.0f, SWITCH_COLOR_TEXT_DIM, 0.82f, "Amiga Model:");
+        const char *mname = (model == 2) ? "A1200 (AGA 3.1)" : ((model == 1) ? "A600 (ECS 2.05)" : "A500 (OCS 1.3)");
+        switch_draw_badge(dx + 180.0f, dy + 137.0f, mname, SWITCH_COLOR_AMIGA_ORANGE, RGBA8(20, 24, 34, 255));
+
+        float bw = 186.0f, bh = 38.0f;
+        float gap = 16.0f;
+        float total_bw = 3.0f * bw + 2.0f * gap;
+        float start_bx = dx + (dw - total_bw) * 0.5f;
+        float by = dy + dh - 56.0f;
+
+        float b0_x = start_bx;
+        switch_draw_rounded_rect(b0_x, by, bw, bh, 6.0f, choice == 0 ? SWITCH_COLOR_AMIGA_RED : SWITCH_COLOR_CARD);
+        if (choice == 0) switch_draw_rounded_rect_outline(b0_x, by, bw, bh, 6.0f, 2.0f, SWITCH_COLOR_FOCUS_BORDER);
+        else switch_draw_rounded_rect_outline(b0_x, by, bw, bh, 6.0f, 1.0f, SWITCH_COLOR_CARD_BORDER);
+        float b0_w = 28.0f + (float)switch_get_text_width(0.84f, "Insert & Restart");
+        float b0_gx = b0_x + (bw - b0_w) * 0.5f;
+        switch_draw_button_glyph(b0_gx, by + 8.0f, SWITCH_GLYPH_A);
+        switch_draw_text(b0_gx + 28.0f, by + 11.0f, SWITCH_COLOR_TEXT_WHITE, 0.84f, "Insert & Restart");
+
+        float b1_x = start_bx + bw + gap;
+        switch_draw_rounded_rect(b1_x, by, bw, bh, 6.0f, choice == 1 ? SWITCH_COLOR_AMIGA_RED : SWITCH_COLOR_CARD);
+        if (choice == 1) switch_draw_rounded_rect_outline(b1_x, by, bw, bh, 6.0f, 2.0f, SWITCH_COLOR_FOCUS_BORDER);
+        else switch_draw_rounded_rect_outline(b1_x, by, bw, bh, 6.0f, 1.0f, SWITCH_COLOR_CARD_BORDER);
+        float b1_w = 28.0f + (float)switch_get_text_width(0.84f, "Hot-Swap Disk");
+        float b1_gx = b1_x + (bw - b1_w) * 0.5f;
+        switch_draw_button_glyph(b1_gx, by + 8.0f, SWITCH_GLYPH_A);
+        switch_draw_text(b1_gx + 28.0f, by + 11.0f, SWITCH_COLOR_TEXT_WHITE, 0.84f, "Hot-Swap Disk");
+
+        float b2_x = start_bx + 2.0f * (bw + gap);
+        switch_draw_rounded_rect(b2_x, by, bw, bh, 6.0f, choice == 2 ? SWITCH_COLOR_AMIGA_RED : SWITCH_COLOR_CARD);
+        if (choice == 2) switch_draw_rounded_rect_outline(b2_x, by, bw, bh, 6.0f, 2.0f, SWITCH_COLOR_FOCUS_BORDER);
+        else switch_draw_rounded_rect_outline(b2_x, by, bw, bh, 6.0f, 1.0f, SWITCH_COLOR_CARD_BORDER);
+        float b2_w = 28.0f + (float)switch_get_text_width(0.84f, "Cancel");
+        float b2_gx = b2_x + (bw - b2_w) * 0.5f;
+        switch_draw_button_glyph(b2_gx, by + 8.0f, SWITCH_GLYPH_B);
+        switch_draw_text(b2_gx + 28.0f, by + 11.0f, SWITCH_COLOR_TEXT_WHITE, 0.84f, "Cancel");
+
+        SDL_Flip(prSDLScreen);
+        SDL_Delay(20);
+    }
+    return 0;
+}
+
+int switch_show_library_options_dialog(const char *current_folder)
+{
+    switch_gui_init();
+    SwitchInputState input;
+    memset(&input, 0, sizeof(input));
+    int choice = 0;
+    int frame_count = 0;
+
+    while (1) {
+        switch_gui_update_input(&input);
+        frame_count++;
+
+        if (frame_count > 6) {
+            if (input.pressed & (SWITCH_BTN_LEFT | SWITCH_BTN_UP)) {
+                choice = (choice + 3) % 4;
+            }
+            if (input.pressed & (SWITCH_BTN_RIGHT | SWITCH_BTN_DOWN)) {
+                choice = (choice + 1) % 4;
+            }
+            if (input.pressed & SWITCH_BTN_A) {
+                int res = 0;
+                if (choice == 0) res = 1;
+                else if (choice == 1) res = 2;
+                else if (choice == 2) res = 3;
+                else res = 0;
+                while (1) {
+                    switch_gui_update_input(&input);
+                    if (!(input.pad.buttons & (SWITCH_BTN_A | SWITCH_BTN_B | SWITCH_BTN_X | SWITCH_BTN_Y)))
+                        break;
+                    SDL_Delay(10);
+                }
+                return res;
+            }
+            if (input.pressed & (SWITCH_BTN_B | SWITCH_BTN_Y | SWITCH_BTN_PLUS)) {
+                while (1) {
+                    switch_gui_update_input(&input);
+                    if (!(input.pad.buttons & (SWITCH_BTN_A | SWITCH_BTN_B | SWITCH_BTN_X | SWITCH_BTN_Y | SWITCH_BTN_PLUS)))
+                        break;
+                    SDL_Delay(10);
+                }
+                return 0;
+            }
+        }
+
+        SDL_FillRect(prSDLScreen, NULL, to_sdl_color(SWITCH_COLOR_OVERLAY_BG));
+
+        float dw = 840.0f, dh = 270.0f;
+        float dx = (SWITCH_SCREEN_W - dw) * 0.5f;
+        float dy = (SWITCH_SCREEN_H - dh) * 0.5f;
+        switch_draw_card_custom(dx, dy, dw, dh, SWITCH_COLOR_HEADER, SWITCH_COLOR_FOCUS_BORDER);
+
+        switch_draw_text_centered(dx + (dw * 0.5f), dy + 22.0f, SWITCH_COLOR_AMIGA_BLUE, 1.15f, "Game Library Options");
+
+        switch_draw_text(dx + 30.0f, dy + 58.0f, SWITCH_COLOR_TEXT_DIM, 0.76f, "CURRENT ROM DIRECTORY");
+        switch_draw_rounded_rect(dx + 30.0f, dy + 78.0f, dw - 60.0f, 32.0f, 4.0f, RGBA8(14, 18, 28, 255));
+        switch_draw_rounded_rect_outline(dx + 30.0f, dy + 78.0f, dw - 60.0f, 32.0f, 4.0f, 1.0f, SWITCH_COLOR_CARD_BORDER);
+        char folder_buf[256];
+        switch_truncate_text((current_folder && current_folder[0]) ? current_folder : "./roms", dw - 84.0f, 0.85f, folder_buf, sizeof(folder_buf));
+        switch_draw_text(dx + 42.0f, dy + 85.0f, SWITCH_COLOR_TEXT_WHITE, 0.85f, folder_buf);
+
+        switch_draw_text(dx + 30.0f, dy + 126.0f, SWITCH_COLOR_TEXT_MUTED, 0.84f, "Select an action to configure, rescan or download covers for your games:");
+
+        float bw = 184.0f, bh = 42.0f;
+        float by = dy + dh - 64.0f;
+        float b0_x = dx + 20.0f;
+        float b1_x = dx + 224.0f;
+        float b2_x = dx + 428.0f;
+        float b3_x = dx + 632.0f;
+
+        unsigned int b0_bg = (choice == 0) ? SWITCH_COLOR_AMIGA_BLUE : SWITCH_COLOR_CARD;
+        switch_draw_rounded_rect(b0_x, by, bw, bh, 6.0f, b0_bg);
+        if (choice == 0) switch_draw_rounded_rect_outline(b0_x, by, bw, bh, 6.0f, 2.0f, SWITCH_COLOR_FOCUS_BORDER);
+        else switch_draw_rounded_rect_outline(b0_x, by, bw, bh, 6.0f, 1.0f, SWITCH_COLOR_CARD_BORDER);
+        float b0_w = 28.0f + (float)switch_get_text_width(0.85f, "Change Folder");
+        float b0_gx = b0_x + (bw - b0_w) * 0.5f;
+        switch_draw_button_glyph(b0_gx, by + 10.0f, SWITCH_GLYPH_A);
+        switch_draw_text(b0_gx + 28.0f, by + 12.0f, SWITCH_COLOR_TEXT_WHITE, 0.85f, "Change Folder");
+
+        unsigned int b1_bg = (choice == 1) ? SWITCH_COLOR_AMIGA_BLUE : SWITCH_COLOR_CARD;
+        switch_draw_rounded_rect(b1_x, by, bw, bh, 6.0f, b1_bg);
+        if (choice == 1) switch_draw_rounded_rect_outline(b1_x, by, bw, bh, 6.0f, 2.0f, SWITCH_COLOR_FOCUS_BORDER);
+        else switch_draw_rounded_rect_outline(b1_x, by, bw, bh, 6.0f, 1.0f, SWITCH_COLOR_CARD_BORDER);
+        float b1_w = 28.0f + (float)switch_get_text_width(0.85f, "Rescan Games");
+        float b1_gx = b1_x + (bw - b1_w) * 0.5f;
+        switch_draw_button_glyph(b1_gx, by + 10.0f, SWITCH_GLYPH_A);
+        switch_draw_text(b1_gx + 28.0f, by + 12.0f, SWITCH_COLOR_TEXT_WHITE, 0.85f, "Rescan Games");
+
+        unsigned int b2_bg = (choice == 2) ? SWITCH_COLOR_AMIGA_ORANGE : SWITCH_COLOR_CARD;
+        switch_draw_rounded_rect(b2_x, by, bw, bh, 6.0f, b2_bg);
+        if (choice == 2) switch_draw_rounded_rect_outline(b2_x, by, bw, bh, 6.0f, 2.0f, SWITCH_COLOR_FOCUS_BORDER);
+        else switch_draw_rounded_rect_outline(b2_x, by, bw, bh, 6.0f, 1.0f, SWITCH_COLOR_CARD_BORDER);
+        float b2_w = 28.0f + (float)switch_get_text_width(0.85f, "Download Cover");
+        float b2_gx = b2_x + (bw - b2_w) * 0.5f;
+        switch_draw_button_glyph(b2_gx, by + 10.0f, SWITCH_GLYPH_A);
+        switch_draw_text(b2_gx + 28.0f, by + 12.0f, SWITCH_COLOR_TEXT_WHITE, 0.85f, "Download Cover");
+
+        unsigned int b3_bg = (choice == 3) ? SWITCH_COLOR_AMIGA_RED : SWITCH_COLOR_CARD;
+        switch_draw_rounded_rect(b3_x, by, bw, bh, 6.0f, b3_bg);
+        if (choice == 3) switch_draw_rounded_rect_outline(b3_x, by, bw, bh, 6.0f, 2.0f, SWITCH_COLOR_FOCUS_BORDER);
+        else switch_draw_rounded_rect_outline(b3_x, by, bw, bh, 6.0f, 1.0f, SWITCH_COLOR_CARD_BORDER);
+        float b3_w = 28.0f + (float)switch_get_text_width(0.85f, "Cancel");
+        float b3_gx = b3_x + (bw - b3_w) * 0.5f;
+        switch_draw_button_glyph(b3_gx, by + 10.0f, SWITCH_GLYPH_B);
+        switch_draw_text(b3_gx + 28.0f, by + 12.0f, SWITCH_COLOR_TEXT_WHITE, 0.85f, "Cancel");
+
+        SDL_Flip(prSDLScreen);
+        SDL_Delay(20);
+    }
+    return 0;
+}
+
 void switch_draw_boing_ball_icon(float cx, float cy, float radius, float rot_angle)
 {
-    (void)rot_angle;
     if (!prSDLScreen || radius < 2.0f) return;
 
     Uint32 white_col  = to_sdl_color(RGBA8(240, 240, 240, 255));
@@ -1651,8 +1869,11 @@ void switch_draw_boing_ball_icon(float cx, float cy, float radius, float rot_ang
         SDL_FillRect(prSDLScreen, &seg, border_col);
     }
 
-    int grid = 4;
+    int grid = (radius > 50.0f) ? 6 : 4;
     float cell = (radius * 2.0f) / (float)grid;
+    float rot_offset = fmodf(rot_angle * cell * 2.0f, cell * 2.0f);
+    if (rot_offset < 0.0f) rot_offset += cell * 2.0f;
+
     for (int row = -ri; row <= ri; row++) {
         float chord = sqrtf(r2 - (float)(row * row));
         int half = (int)(chord + 0.5f);
@@ -1664,13 +1885,13 @@ void switch_draw_boing_ball_icon(float cx, float cy, float radius, float rot_ang
 
         int col = -half;
         while (col < half) {
-            int gx = (int)(((float)col + radius) / cell);
-            if (gx < 0) gx = 0;
-            if (gx >= grid) gx = grid - 1;
+            float shift_x = (float)col + radius + rot_offset;
+            int gx = (int)(shift_x / cell);
 
             bool is_red = ((gx + gy) & 1) != 0;
 
-            int next_x = (int)((float)(gx + 1) * cell) - ri;
+            float next_cell_x = ((float)(gx + 1) * cell) - radius - rot_offset;
+            int next_x = (int)(next_cell_x + 0.5f);
             if (next_x > half) next_x = half;
             if (next_x <= col) next_x = col + 1;
 
@@ -1679,6 +1900,76 @@ void switch_draw_boing_ball_icon(float cx, float cy, float radius, float rot_ang
             col = next_x;
         }
     }
+}
+
+// ---- splash decorations ----
+
+void switch_gui_draw_splash_progress(float progress, const char *status_text, float ball_angle, float bounce)
+{
+    switch_gui_init();
+    static int s_splash_frames = 0;
+    s_splash_frames++;
+
+    SDL_FillRect(prSDLScreen, NULL, to_sdl_color(SWITCH_COLOR_BG));
+
+    float header_y = 56.0f;
+    // Title with drop shadow
+    switch_draw_text_centered(SWITCH_SCREEN_W * 0.5f + 2.0f, header_y + 2.0f, RGBA8(8, 10, 16, 255), 1.45f, "UAE4ALL2 HD");
+    switch_draw_text_centered(SWITCH_SCREEN_W * 0.5f, header_y, SWITCH_COLOR_AMIGA_RED, 1.45f, "UAE4ALL2 HD");
+
+    // Subtitle fades in after a few frames
+    if (s_splash_frames > 12)
+        switch_draw_text_centered(SWITCH_SCREEN_W * 0.5f, header_y + 36.0f, SWITCH_COLOR_TEXT_MUTED, 0.85f, "AMIGA EMULATOR FOR NINTENDO SWITCH");
+
+    // Boing ball (clean, no decorations behind)
+    float ball_radius = 58.0f;
+    float base_y = 290.0f;
+    float ball_y = base_y - (bounce * 70.0f);
+    float ball_cx = SWITCH_SCREEN_W * 0.5f;
+
+    switch_draw_boing_ball_icon(ball_cx, ball_y, ball_radius, ball_angle);
+
+    float text_y = 398.0f;
+    switch_draw_text_centered(SWITCH_SCREEN_W * 0.5f, text_y, SWITCH_COLOR_TEXT_WHITE, 1.15f, "LOADING...");
+    if (s_splash_frames > 12)
+        switch_draw_text_centered(SWITCH_SCREEN_W * 0.5f, text_y + 30.0f, SWITCH_COLOR_TEXT_DIM, 0.80f, status_text ? status_text : "Initializing system and game library...");
+
+    if (progress < 0.0f) progress = 0.0f;
+    if (progress > 1.0f) progress = 1.0f;
+
+    // Progress bar: dark track + outlined border + two-tone fill + percentage
+    float bar_w = 380.0f;
+    float bar_h = 10.0f;
+    float bar_x = (SWITCH_SCREEN_W - bar_w) * 0.5f;
+    float bar_y = text_y + 62.0f;
+
+    switch_draw_rounded_rect(bar_x, bar_y, bar_w, bar_h, 5.0f, RGBA8(20, 24, 36, 255));
+    switch_draw_rounded_rect_outline(bar_x, bar_y, bar_w, bar_h, 5.0f, 1.0f, SWITCH_COLOR_CARD_BORDER);
+
+    float fill_w = bar_w * progress;
+    if (fill_w > 5.0f) {
+        switch_draw_rounded_rect(bar_x, bar_y, fill_w, bar_h, 5.0f, SWITCH_COLOR_AMIGA_RED);
+        int shine_x0 = (int)bar_x + 1;
+        int shine_x1 = (int)(bar_x + fill_w) - 1;
+        if (shine_x1 > shine_x0) {
+            SDL_Rect shine = { (Sint16)shine_x0, (Sint16)(bar_y + 1.0f), (Uint16)(shine_x1 - shine_x0), (Uint16)(bar_h / 2) };
+            SDL_FillRect(prSDLScreen, &shine, to_sdl_color(RGBA8(255, 96, 88, 255)));
+        }
+    }
+
+    char pct_buf[16];
+    snprintf(pct_buf, sizeof(pct_buf), "%d%%", (int)(progress * 100.0f + 0.5f));
+    switch_draw_text(bar_x + bar_w + 14.0f, bar_y - 4.0f, SWITCH_COLOR_ACCENT_GOLD, 0.85f, pct_buf);
+
+    if (s_splash_frames > 30)
+        switch_draw_text_centered(SWITCH_SCREEN_W * 0.5f, bar_y + 32.0f, RGBA8(90, 110, 140, 255), 0.74f, "Commodore-Amiga Tribute Edition");
+
+    SDL_Flip(prSDLScreen);
+}
+
+void switch_gui_show_splash(void)
+{
+    switch_library_initial_load();
 }
 
 int run_overlay_switch(void)
@@ -1901,6 +2192,12 @@ int run_mainMenu_switch(void)
     write_log("[SWITCH] run_mainMenu_switch: enter menu\n");
     inside_menu = 1;
 
+    static bool s_splash_shown = false;
+    if (!s_splash_shown && !resetOnStartingApp) {
+        s_splash_shown = true;
+        switch_gui_show_splash();
+    }
+
     SwitchInputState input;
     memset(&input, 0, sizeof(input));
     SwitchSystemInfo sysinfo;
@@ -1914,6 +2211,15 @@ int run_mainMenu_switch(void)
         resetOnStartingApp = false;
         mainMenu_case = MAIN_MENU_CASE_RESET;
     }
+
+    while (1) {
+        switch_gui_update_input(&input);
+        if (!(input.pad.buttons & (SWITCH_BTN_MINUS | SWITCH_BTN_PLUS)))
+            break;
+        SDL_Delay(10);
+    }
+    input.pressed = 0;
+    input.held = 0;
 
     while (mainMenu_case < 0) {
         menu_frame++;
@@ -2006,6 +2312,9 @@ int run_mainMenu_switch(void)
 
         int *cur_sel = &s_tab_selected_item[s_active_tab];
         switch (s_active_tab) {
+            case SWITCH_TAB_LIBRARY:
+                switch_view_library(&input, cur_sel);
+                break;
             case SWITCH_TAB_FLOPPY:
                 switch_view_floppy(&input, cur_sel);
                 break;
