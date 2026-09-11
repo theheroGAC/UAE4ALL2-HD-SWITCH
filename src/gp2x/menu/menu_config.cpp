@@ -838,6 +838,12 @@ void SetPresetMode(int mode)
         strcpy(presetMode, "320x256 5:4");
         break;
 
+    case 9:
+        mainMenu_displayedLines = 240;
+        screenWidth = 640;
+        strcpy(presetMode, "320x240 16:10");
+        break;
+
     case 10:
         mainMenu_displayedLines = 200;
         screenWidth = 768;
@@ -890,6 +896,12 @@ void SetPresetMode(int mode)
         mainMenu_displayedLines = 256;
         screenWidth = 600;
         strcpy(presetMode, "640x256 5:4");
+        break;
+
+    case 19:
+        mainMenu_displayedLines = 240;
+        screenWidth = 640;
+        strcpy(presetMode, "640x240 16:10");
         break;
 
     case 20:
@@ -946,6 +958,12 @@ void SetPresetMode(int mode)
         strcpy(presetMode, "352x256 5:4");
         break;
 
+    case 29:
+        mainMenu_displayedLines = 240;
+        screenWidth = 704;
+        strcpy(presetMode, "352x240 16:10");
+        break;
+
     case 30:
         mainMenu_displayedLines = 200;
         screenWidth = 800;
@@ -998,6 +1016,12 @@ void SetPresetMode(int mode)
         mainMenu_displayedLines = 256;
         screenWidth = 660;
         strcpy(presetMode, "704x256 5:4");
+        break;
+
+    case 39:
+        mainMenu_displayedLines = 240;
+        screenWidth = 704;
+        strcpy(presetMode, "704x240 16:10");
         break;
 
     case 40:
@@ -1054,6 +1078,12 @@ void SetPresetMode(int mode)
         strcpy(presetMode, "384x256 5:4");
         break;
 
+    case 49:
+        mainMenu_displayedLines = 240;
+        screenWidth = 768;
+        strcpy(presetMode, "384x240 16:10");
+        break;
+
     case 50:
         mainMenu_displayedLines = 200;
         screenWidth = 800;
@@ -1106,6 +1136,12 @@ void SetPresetMode(int mode)
         mainMenu_displayedLines = 256;
         screenWidth = 720;
         strcpy(presetMode, "768x256 5:4");
+        break;
+
+    case 59:
+        mainMenu_displayedLines = 240;
+        screenWidth = 768;
+        strcpy(presetMode, "768x240 16:10");
         break;
 
     default:
@@ -1830,7 +1866,7 @@ void loadconfig(int general)
 #if defined(__PSP2__) || defined(__SWITCH__)
         fscanf(f,"shader=%d\n",&mainMenu_shader);
 #if defined(__SWITCH__)
-        if (mainMenu_shader > 3) mainMenu_shader = 1;
+        if (mainMenu_shader > 8) mainMenu_shader = 1;
 #endif
         fscanf(f,"leftstickmouse=%d\n",&mainMenu_leftStickMouse);
         fscanf(f,"touchcontrols=%d\n",&mainMenu_touchControls);

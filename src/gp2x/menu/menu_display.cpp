@@ -101,7 +101,12 @@ enum {
 	SHADER_SHARP_BILINEAR_SIMPLE,
 	SHADER_BILINEAR,
 	SHADER_POINT,
-	NUM_SHADERS, //NUM_SHADERS - 1 is the max allowed number in mainMenu_shader
+	SHADER_CRT_LOTTES,
+	SHADER_CRT_EASYMODE,
+	SHADER_SCANLINES,
+	SHADER_SCALE2X,
+	SHADER_INTEGER_PIXEL_PERFECT,
+	NUM_SHADERS
 };
 #endif
 
@@ -289,13 +294,28 @@ static void draw_displayMenu(int c)
 			snprintf((char*)value, 25, "NONE (auto 2x/3x/4x)");
 			break;
 		case SHADER_SHARP_BILINEAR_SIMPLE:
-			snprintf((char*)value, 25, "SHARP_BILINEAR_SIMPLE");
+			snprintf((char*)value, 25, "SHARP_BILINEAR");
 			break;		
 		case SHADER_BILINEAR:
 			snprintf((char*)value, 25, "BILINEAR");
 			break;
 		case SHADER_POINT:
 			snprintf((char*)value, 25, "POINT");
+			break;
+		case SHADER_CRT_LOTTES:
+			snprintf((char*)value, 25, "CRT-LOTTES");
+			break;
+		case SHADER_CRT_EASYMODE:
+			snprintf((char*)value, 25, "CRT-EASYMODE");
+			break;
+		case SHADER_SCANLINES:
+			snprintf((char*)value, 25, "SCANLINES (50%%)");
+			break;
+		case SHADER_SCALE2X:
+			snprintf((char*)value, 25, "SCALE2X");
+			break;
+		case SHADER_INTEGER_PIXEL_PERFECT:
+			snprintf((char*)value, 25, "PIXEL-PERFECT");
 			break;
 #else
 		case SHADER_NONE:

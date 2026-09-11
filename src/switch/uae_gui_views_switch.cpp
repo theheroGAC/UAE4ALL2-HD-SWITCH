@@ -41,13 +41,18 @@ static const char *switch_shader_label(int s) {
         case 1: return "Sharp Bilinear";
         case 2: return "Bilinear";
         case 3: return "Point (Nearest)";
+        case 4: return "CRT-Lottes";
+        case 5: return "CRT-Easymode";
+        case 6: return "Scanlines (50%)";
+        case 7: return "Scale2x";
+        case 8: return "Pixel-Perfect Integer";
         default: return "None";
     }
 }
 static int switch_shader_cycle(int s, int dir) {
     int res = s + dir;
-    if (res < 0) res = 3;
-    if (res > 3) res = 0;
+    if (res < 0) res = 8;
+    if (res > 8) res = 0;
     return res;
 }
 #include <sys/socket.h>
@@ -4402,7 +4407,7 @@ void switch_view_display(SwitchInputState *input, int *selected_item)
             }
             case 4: {
                 int width_group = (presetModeId / 10) * 10;
-                int height_mode = (presetModeId % 10 + dir + 9) % 9;
+                int height_mode = (presetModeId % 10 + dir + 10) % 10;
                 SetPresetMode(width_group + height_mode);
                 break;
             }
@@ -4467,6 +4472,8 @@ void switch_view_display(SwitchInputState *input, int *selected_item)
         snprintf(aspect_mode, sizeof(aspect_mode), "Fullscreen 16:9 - %s", presetMode);
     else if (presetModeId % 10 == 8)
         snprintf(aspect_mode, sizeof(aspect_mode), "5:4 Correct - %s", presetMode);
+    else if (presetModeId % 10 == 9)
+        snprintf(aspect_mode, sizeof(aspect_mode), "16:10 Wide - %s", presetMode);
     else
         snprintf(aspect_mode, sizeof(aspect_mode), "4:3 Correct - %s", presetMode);
 

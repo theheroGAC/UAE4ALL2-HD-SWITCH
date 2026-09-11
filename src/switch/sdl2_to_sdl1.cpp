@@ -3,11 +3,18 @@
 #include <SDL_ttf.h>
 #include <switch.h>
 #include <sdl2_to_sdl1.h>
+#include <math.h>
+#include <stdlib.h>
 
 static SDL_Window* window = NULL;
 static SDL_Texture* texture = NULL;
 static SDL_Texture* prescaled = NULL;
 static SDL_Renderer* renderer = NULL;
+static SDL_Texture* s_mask_texture = NULL;
+static int s_mask_type = -1;
+static int s_mask_w = 0;
+static int s_mask_h = 0;
+static SDL_Surface* s_scale2x_surf = NULL;
 static int prescaled_width = 320;
 static int prescaled_height = 240;
 static int surface_width = 320;
@@ -301,13 +308,118 @@ SDL_Surface *SDL_SetVideoMode(int w, int h, int bpp, int flags) {
 	return surface;
 }
 
+static void switch_update_crt_mask(int shader_type, int w, int h, int base_h) {
+	if (!renderer || w <= 0 || h <= 0) return;
+	if (s_mask_texture && s_mask_type == shader_type && s_mask_w == w && s_mask_h == h) return;
+	if (s_mask_texture) {
+		SDL_DestroyTexture(s_mask_texture);
+		s_mask_texture = NULL;
+	}
+	s_mask_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STATIC, w, h);
+	if (!s_mask_texture) return;
+	SDL_SetTextureBlendMode(s_mask_texture, SDL_BLENDMODE_MOD);
+
+	Uint32 *pixels = (Uint32 *)malloc((size_t)w * (size_t)h * sizeof(Uint32));
+	if (!pixels) return;
+
+	int line_h = (base_h > 0) ? (h / base_h) : 2;
+	if (line_h < 1) line_h = 1;
+
+	if (shader_type == 4) {
+		float center_x = (float)w * 0.5f;
+		float center_y = (float)h * 0.5f;
+		float max_dist_sq = center_x * center_x + center_y * center_y;
+		if (max_dist_sq < 1.0f) max_dist_sq = 1.0f;
+		for (int y = 0; y < h; y++) {
+			float v = ((float)(y % line_h) + 0.5f) / (float)line_h;
+			float dy = fabsf(v - 0.5f) * 2.0f;
+			float scan = 0.40f + 0.60f * expf(-dy * dy * 2.5f);
+			float ny = (float)y - center_y;
+			for (int x = 0; x < w; x++) {
+				float nx = (float)x - center_x;
+				float d_sq = (nx * nx + ny * ny) / max_dist_sq;
+				float vig = 1.0f - 0.15f * d_sq;
+				if (vig < 0.75f) vig = 0.75f;
+				int triad = x % 3;
+				float r = (triad == 0) ? 1.0f : 0.65f;
+				float g = (triad == 1) ? 1.0f : 0.65f;
+				float b = (triad == 2) ? 1.0f : 0.65f;
+				Uint32 cr = (Uint32)(fminf(255.0f, 255.0f * r * scan * vig));
+				Uint32 cg = (Uint32)(fminf(255.0f, 255.0f * g * scan * vig));
+				Uint32 cb = (Uint32)(fminf(255.0f, 255.0f * b * scan * vig));
+				pixels[y * w + x] = (0xFF << 24) | (cb << 16) | (cg << 8) | cr;
+			}
+		}
+	} else if (shader_type == 5) {
+		for (int y = 0; y < h; y++) {
+			float v = ((float)(y % line_h) + 0.5f) / (float)line_h;
+			float dy = fabsf(v - 0.5f) * 2.0f;
+			float scan = 0.60f + 0.40f * (1.0f - dy * dy);
+			for (int x = 0; x < w; x++) {
+				int triad = x % 2;
+				float mask = (triad == 0) ? 1.0f : 0.85f;
+				Uint32 c = (Uint32)(fminf(255.0f, 255.0f * mask * scan));
+				pixels[y * w + x] = (0xFF << 24) | (c << 16) | (c << 8) | c;
+			}
+		}
+	} else if (shader_type == 6) {
+		for (int y = 0; y < h; y++) {
+			int pos = y % line_h;
+			Uint32 c = (pos >= (line_h / 2)) ? 130 : 255;
+			Uint32 val = (0xFF << 24) | (c << 16) | (c << 8) | c;
+			for (int x = 0; x < w; x++) {
+				pixels[y * w + x] = val;
+			}
+		}
+	}
+	SDL_UpdateTexture(s_mask_texture, NULL, pixels, w * (int)sizeof(Uint32));
+	free(pixels);
+	s_mask_type = shader_type;
+	s_mask_w = w;
+	s_mask_h = h;
+}
+
+static void scale2x_rgb565(const Uint16 *src, int src_pitch, Uint16 *dst, int dst_pitch, int w, int h) {
+	src_pitch /= (int)sizeof(Uint16);
+	dst_pitch /= (int)sizeof(Uint16);
+	for (int y = 0; y < h; y++) {
+		int ym1 = (y > 0) ? y - 1 : 0;
+		int yp1 = (y < h - 1) ? y + 1 : h - 1;
+		const Uint16 *row_mid = src + y * src_pitch;
+		const Uint16 *row_top = src + ym1 * src_pitch;
+		const Uint16 *row_bot = src + yp1 * src_pitch;
+		Uint16 *out0 = dst + (y * 2) * dst_pitch;
+		Uint16 *out1 = dst + (y * 2 + 1) * dst_pitch;
+		for (int x = 0; x < w; x++) {
+			int xm1 = (x > 0) ? x - 1 : 0;
+			int xp1 = (x < w - 1) ? x + 1 : w - 1;
+			Uint16 B = row_top[x];
+			Uint16 D = row_mid[xm1];
+			Uint16 E = row_mid[x];
+			Uint16 F = row_mid[xp1];
+			Uint16 H = row_bot[x];
+
+			Uint16 E0 = (D == B && B != F && D != H) ? D : E;
+			Uint16 E1 = (B == F && B != D && F != H) ? F : E;
+			Uint16 E2 = (D == H && D != B && H != F) ? D : E;
+			Uint16 E3 = (H == F && D != H && B != F) ? F : E;
+
+			out0[x * 2]     = E0;
+			out0[x * 2 + 1] = E1;
+			out1[x * 2]     = E2;
+			out1[x * 2 + 1] = E3;
+		}
+	}
+}
+
 void SDL_SetVideoModeScaling(int x, int y, float sw, float sh) {
 	if (!displaying_menu) {
 		int aspect_variant = presetModeId % 10;
 		bool is_fullscreen = (aspect_variant == 7);
 		bool is_five_four = (aspect_variant == 8);
+		bool is_sixteen_ten = (aspect_variant == 9);
 
-		if (mainMenu_shader == 0 && mainMenu_autoCrop == 0) {
+		if (mainMenu_shader == 8 || (mainMenu_shader == 0 && mainMenu_autoCrop == 0)) {
 			int screen_width = visibleAreaWidth;
 			int screen_height = mainMenu_displayHires ? (2 * mainMenu_displayedLines) : mainMenu_displayedLines;
 			if (screen_height <= 0) screen_height = 240;
@@ -322,13 +434,16 @@ void SDL_SetVideoModeScaling(int x, int y, float sw, float sh) {
 		} else if (is_five_four) {
 			scaled_height = display_height;
 			scaled_width = (display_height * 5) / 4;
+		} else if (is_sixteen_ten) {
+			scaled_height = display_height;
+			scaled_width = (display_height * 16) / 10;
 		} else {
 			scaled_height = display_height;
 			scaled_width = (display_height * 4) / 3;
 		}
 		x_offset = (display_width - scaled_width) / 2;
 		y_offset = (display_height - scaled_height) / 2;
-		if (mainMenu_shader == 1) {
+		if (mainMenu_shader == 1 || mainMenu_shader == 4 || mainMenu_shader == 5 || mainMenu_shader == 6) {
 			int base_w = surface_width > 0 ? surface_width : 320;
 			int base_h = surface_height > 0 ? surface_height : 240;
 			int prescale_factor_x = scaled_width / base_w;
@@ -357,14 +472,14 @@ void SDL_SetVideoModeScaling(int x, int y, float sw, float sh) {
 		SDL_DestroyTexture(prescaled);
 		prescaled = NULL;
 	}
-	if (mainMenu_shader == 1 || displaying_menu) {
+	if (mainMenu_shader == 1 || mainMenu_shader == 4 || mainMenu_shader == 5 || mainMenu_shader == 6 || displaying_menu) {
 		SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
 		prescaled = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, prescaled_width, prescaled_height);
 	}
 }
 
 void SDL_SetVideoModeBilinear(int value) {
-	if (value && (mainMenu_shader != 3))
+	if (value && (mainMenu_shader != 3) && (mainMenu_shader != 8) && (mainMenu_shader != 0))
 		SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
 	else
 		SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
@@ -514,13 +629,22 @@ void SDL_Flip(SDL_Surface *surface) {
 
 		SDL_Rect dst_rect = { x_offset + eff_off_x, y_offset + eff_off_y, scaled_width, scaled_height };
 
-		if (mainMenu_shader == 1 || displaying_menu) {
+		if (mainMenu_shader == 1 || mainMenu_shader == 4 || mainMenu_shader == 5 || mainMenu_shader == 6 || displaying_menu) {
 			SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
 			texture = SDL_CreateTextureFromSurface(renderer, surface);
 			
 			SDL_SetRenderTarget(renderer, prescaled);
 			SDL_Rect dst_rect_prescale = { 0, 0, prescaled_width, prescaled_height };
 			SDL_RenderCopy(renderer, texture, displaying_menu ? NULL : &src_rect, &dst_rect_prescale);
+
+			if (!displaying_menu && (mainMenu_shader == 4 || mainMenu_shader == 5 || mainMenu_shader == 6)) {
+				int base_lines = mainMenu_displayHires ? (2 * mainMenu_displayedLines) : mainMenu_displayedLines;
+				if (base_lines <= 0) base_lines = 240;
+				switch_update_crt_mask(mainMenu_shader, prescaled_width, prescaled_height, base_lines);
+				if (s_mask_texture) {
+					SDL_RenderCopy(renderer, s_mask_texture, NULL, &dst_rect_prescale);
+				}
+			}
 
 			SDL_SetRenderTarget(renderer, NULL);
 			SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
@@ -529,7 +653,28 @@ void SDL_Flip(SDL_Surface *surface) {
 			SDL_RenderCopy(renderer, prescaled, NULL, &dst_rect);
 			switch_render_osd_overlays(renderer, display_width, display_height);
 			SDL_RenderPresent(renderer);
+		} else if (mainMenu_shader == 7 && surface && !displaying_menu) {
+			int target_w = surface->w * 2;
+			int target_h = surface->h * 2;
+			if (!s_scale2x_surf || s_scale2x_surf->w != target_w || s_scale2x_surf->h != target_h) {
+				if (s_scale2x_surf) SDL_FreeSurface(s_scale2x_surf);
+				s_scale2x_surf = SDL_CreateRGBSurfaceWithFormat(0, target_w, target_h, 16, SDL_PIXELFORMAT_RGB565);
+			}
+			if (s_scale2x_surf && surface->pixels && s_scale2x_surf->pixels) {
+				scale2x_rgb565((const Uint16 *)surface->pixels, surface->pitch,
+				               (Uint16 *)s_scale2x_surf->pixels, s_scale2x_surf->pitch,
+				               surface->w, surface->h);
+				SDL_Rect scaled_src = { src_rect.x * 2, src_rect.y * 2, src_rect.w * 2, src_rect.h * 2 };
+				SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
+				texture = SDL_CreateTextureFromSurface(renderer, s_scale2x_surf);
+				SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+				SDL_RenderClear(renderer);
+				SDL_RenderCopy(renderer, texture, &scaled_src, &dst_rect);
+				switch_render_osd_overlays(renderer, display_width, display_height);
+				SDL_RenderPresent(renderer);
+			}
 		} else {
+			SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, (mainMenu_shader == 2) ? "linear" : "nearest");
 			SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
 			SDL_RenderClear(renderer);
 			texture = SDL_CreateTextureFromSurface(renderer, surface);
