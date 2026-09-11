@@ -2159,7 +2159,7 @@ static void whdload_install_flow(int *selected_item)
 
                             strncpy(uae4all_hard_dir, switch_whdload_root(), 255);
                             uae4all_hard_dir[255] = '\0';
-                            ApplyAutomaticGamePreset(2);
+                            ApplyWHDLoadPreset(folder);
                             switch_set_kickstart(kickstart, 0);
 
                             switch_whdload_prepare_launch(folder);
@@ -2202,7 +2202,7 @@ void switch_view_whdload(SwitchInputState *input, int *selected_item)
             vis_index[vis_count++] = k;
     }
 
-    const int total_items = 5 + vis_count;
+    const int total_items = 6 + vis_count;
     if (*selected_item < 0) *selected_item = 0;
     if (*selected_item >= total_items) *selected_item = total_items - 1;
     if (total_items <= 0) return;
@@ -2217,18 +2217,18 @@ void switch_view_whdload(SwitchInputState *input, int *selected_item)
     }
 
     if (vis_count > 0 && (input->pressed & (SWITCH_BTN_L | SWITCH_BTN_R | SWITCH_BTN_LEFT | SWITCH_BTN_RIGHT))) {
-        if (*selected_item >= 5) {
-            int cur_vis = *selected_item - 5;
+        if (*selected_item >= 6) {
+            int cur_vis = *selected_item - 6;
             int dir = (input->pressed & (SWITCH_BTN_R | SWITCH_BTN_RIGHT)) ? 1 : -1;
             int next_vis = whdload_find_next_letter_index(games, vis_index, vis_count, cur_vis, dir);
-            *selected_item = 5 + next_vis;
-        } else if (*selected_item < 5 && (input->pressed & (SWITCH_BTN_L | SWITCH_BTN_R))) {
-            *selected_item = 5;
+            *selected_item = 6 + next_vis;
+        } else if (*selected_item < 6 && (input->pressed & (SWITCH_BTN_L | SWITCH_BTN_R))) {
+            *selected_item = 6;
         }
     }
 
-    if (*selected_item >= 5) {
-        const char *game = games[vis_index[*selected_item - 5]];
+    if (*selected_item >= 6) {
+        const char *game = games[vis_index[*selected_item - 6]];
         strncpy(s_whdload_last_game, game, sizeof(s_whdload_last_game) - 1);
         s_whdload_last_game[sizeof(s_whdload_last_game) - 1] = '\0';
         whdload_cover_load(game);
@@ -2236,7 +2236,11 @@ void switch_view_whdload(SwitchInputState *input, int *selected_item)
         whdload_cover_unload();
     }
 
-    if ((input->pressed & (SWITCH_BTN_LEFT | SWITCH_BTN_RIGHT)) && *selected_item == 4) {
+    if ((input->pressed & (SWITCH_BTN_LEFT | SWITCH_BTN_RIGHT)) && *selected_item == 3) {
+        mainMenu_whdload_mode = (mainMenu_whdload_mode + ((input->pressed & SWITCH_BTN_RIGHT) ? 1 : 2)) % 3;
+    }
+
+    if ((input->pressed & (SWITCH_BTN_LEFT | SWITCH_BTN_RIGHT)) && *selected_item == 5) {
         s_whdload_filter = (s_whdload_filter + ((input->pressed & SWITCH_BTN_RIGHT) ? 1 : -1) + 3) % 3;
     }
 
@@ -2270,6 +2274,8 @@ void switch_view_whdload(SwitchInputState *input, int *selected_item)
                     switch_show_message_box("WHDLoad Arguments", "Arguments cleared. Using default.", "OK (A)");
             }
         } else if (*selected_item == 3) {
+            mainMenu_whdload_mode = (mainMenu_whdload_mode + 1) % 3;
+        } else if (*selected_item == 4) {
             strncpy(uae4all_hard_dir, switch_whdload_root(), 255);
             uae4all_hard_dir[255] = '\0';
             mainMenu_bootHD = 1;
@@ -2277,10 +2283,10 @@ void switch_view_whdload(SwitchInputState *input, int *selected_item)
             gui_update();
             mainMenu_whdload_game[0] = '\0';
             switch_show_message_box("WHDLoad Directory", "The WHDLoad library is selected as the HD directory. A Workbench environment is required.", "OK (A)");
-        } else if (*selected_item == 4) {
+        } else if (*selected_item == 5) {
             s_whdload_filter = (s_whdload_filter + 1) % 3;
         } else {
-            const char *game_name = games[vis_index[*selected_item - 5]];
+            const char *game_name = games[vis_index[*selected_item - 6]];
             if (switch_whdload_can_launch(game_name)) {
                 if (!vita_confirm_eject_for_whdload_launch())
                     return;
@@ -2295,7 +2301,7 @@ void switch_view_whdload(SwitchInputState *input, int *selected_item)
 
                 strncpy(uae4all_hard_dir, switch_whdload_root(), 255);
                 uae4all_hard_dir[255] = '\0';
-                ApplyAutomaticGamePreset(2);
+                ApplyWHDLoadPreset(game_name);
                 switch_set_kickstart(kickstart, 0);
 
                 switch_whdload_prepare_launch(game_name);
@@ -2316,8 +2322,8 @@ void switch_view_whdload(SwitchInputState *input, int *selected_item)
         mainMenu_case = MAIN_MENU_CASE_RESET;
     }
 
-    if ((input->pressed & SWITCH_BTN_MINUS) && *selected_item >= 5) {
-        whdload_toggle_favorite(games[vis_index[*selected_item - 5]]);
+    if ((input->pressed & SWITCH_BTN_MINUS) && *selected_item >= 6) {
+        whdload_toggle_favorite(games[vis_index[*selected_item - 6]]);
     }
 
     float card_x = 20.0f;
@@ -2352,16 +2358,21 @@ void switch_view_whdload(SwitchInputState *input, int *selected_item)
             badge = mainMenu_whdload_args[0] ? "ARGS" : "DEFAULT";
             badge_col = mainMenu_whdload_args[0] ? SWITCH_COLOR_AMIGA_BLUE : SWITCH_COLOR_TEXT_MUTED;
         } else if (item == 3) {
+            title = "WHDLoad Hardware";
+            subtitle = (mainMenu_whdload_mode == 1) ? "Force A500: 68000 CPU + OCS/ECS (Best for classic games)" : (mainMenu_whdload_mode == 2) ? "Force A1200: 68020 CPU + AGA (Required for AGA games)" : "Auto: A500 for classic games, A1200 for AGA games";
+            badge = (mainMenu_whdload_mode == 1) ? "FORCE A500" : (mainMenu_whdload_mode == 2) ? "FORCE A1200" : "AUTO";
+            badge_col = (mainMenu_whdload_mode == 1) ? SWITCH_COLOR_AMIGA_ORANGE : (mainMenu_whdload_mode == 2) ? SWITCH_COLOR_AMIGA_BLUE : SWITCH_COLOR_AMIGA_GREEN;
+        } else if (item == 4) {
             title = "Use WHDLoad Directory";
             subtitle = "Select the library as the Amiga HD directory";
             badge = "HD DIR";
-        } else if (item == 4) {
+        } else if (item == 5) {
             title = "Library Filter";
             subtitle = "All games / favorites only / recently played";
             badge = (s_whdload_filter == 1) ? "FAVORITES" : (s_whdload_filter == 2) ? "RECENT" : "ALL GAMES";
             badge_col = SWITCH_COLOR_AMIGA_ORANGE;
         } else {
-            int orig = vis_index[item - 5];
+            int orig = vis_index[item - 6];
             bool fav = whdload_is_favorite(games[orig]);
             bool rec = whdload_is_recent(games[orig]);
             title = games[orig];
@@ -2465,11 +2476,27 @@ void switch_view_whdload(SwitchInputState *input, int *selected_item)
 
     switch_draw_text(preview_x + 16.0f, preview_y + 338.0f, SWITCH_COLOR_TEXT_DIM, 0.72f, "RECOMMENDED HARDWARE");
     if (is_game) {
-        switch_draw_badge(preview_x + 16.0f, preview_y + 356.0f, "A1200 AGA", SWITCH_COLOR_AMIGA_ORANGE, RGBA8(20, 24, 34, 255));
-        switch_draw_hint_item(preview_x + preview_w - 150.0f, preview_y + 356.0f, SWITCH_GLYPH_A, "LAUNCH");
-        char hw_buf[128];
-        switch_truncate_text("68020 14MHz | Kickstart 3.1 | 2MB Chip + 4MB Fast", preview_w - 32.0f, 0.76f, hw_buf, sizeof(hw_buf));
-        switch_draw_text(preview_x + 16.0f, preview_y + 384.0f, SWITCH_COLOR_TEXT_MUTED, 0.76f, hw_buf);
+        int is_aga = 0;
+        if (mainMenu_whdload_mode == 1) {
+            is_aga = 0;
+        } else if (mainMenu_whdload_mode == 2) {
+            is_aga = 1;
+        } else {
+            is_aga = switch_whdload_is_aga(preview_title);
+        }
+        if (is_aga) {
+            switch_draw_badge(preview_x + 16.0f, preview_y + 356.0f, "A1200 AGA", SWITCH_COLOR_AMIGA_ORANGE, RGBA8(20, 24, 34, 255));
+            switch_draw_hint_item(preview_x + preview_w - 150.0f, preview_y + 356.0f, SWITCH_GLYPH_A, "LAUNCH");
+            char hw_buf[128];
+            switch_truncate_text("68020 14MHz | Kickstart 3.1 | 2MB Chip + 4MB Fast", preview_w - 32.0f, 0.76f, hw_buf, sizeof(hw_buf));
+            switch_draw_text(preview_x + 16.0f, preview_y + 384.0f, SWITCH_COLOR_TEXT_MUTED, 0.76f, hw_buf);
+        } else {
+            switch_draw_badge(preview_x + 16.0f, preview_y + 356.0f, "A500 OCS", SWITCH_COLOR_AMIGA_GREEN, RGBA8(20, 24, 34, 255));
+            switch_draw_hint_item(preview_x + preview_w - 150.0f, preview_y + 356.0f, SWITCH_GLYPH_A, "LAUNCH");
+            char hw_buf[128];
+            switch_truncate_text("68000 7MHz | Kickstart 3.1 | 2MB Chip + 4MB Fast", preview_w - 32.0f, 0.76f, hw_buf, sizeof(hw_buf));
+            switch_draw_text(preview_x + 16.0f, preview_y + 384.0f, SWITCH_COLOR_TEXT_MUTED, 0.76f, hw_buf);
+        }
     } else {
         char hw_buf[128];
         switch_truncate_text("WHDLoad slave games run best on an A1200 AGA setup", preview_w - 190.0f, 0.80f, hw_buf, sizeof(hw_buf));
@@ -2950,7 +2977,7 @@ static void lib_rescan_internal(bool is_splash)
     for (int i = 0; i < whd_count && s_lib_game_count < 4096; i++) {
         SwitchLibGame *g = &s_lib_games[s_lib_game_count];
         g->type = SWITCH_LIB_WHDLOAD;
-        g->model = 2;
+        g->model = switch_whdload_is_aga(whd_names[i]) ? 2 : 0;
         strncpy(g->title, whd_names[i], sizeof(g->title) - 1);
         g->title[sizeof(g->title) - 1] = '\0';
         snprintf(g->path, sizeof(g->path), "%s/%s", whd_root, whd_names[i]);
@@ -3204,7 +3231,7 @@ void switch_library_initial_load(void)
             continue;
         SwitchLibGame *g = &s_lib_games[s_lib_game_count];
         g->type = SWITCH_LIB_WHDLOAD;
-        g->model = 2;
+        g->model = switch_whdload_is_aga(whd_names[i]) ? 2 : 0;
         strncpy(g->title, whd_names[i], sizeof(g->title) - 1);
         g->title[sizeof(g->title) - 1] = '\0';
         strncpy(g->path, full_whd, sizeof(g->path) - 1);
@@ -3668,7 +3695,7 @@ void switch_view_library(SwitchInputState *input, int *selected_item)
                         whdload_mark_recent(folder);
                         strncpy(uae4all_hard_dir, switch_whdload_root(), 255);
                         uae4all_hard_dir[255] = '\0';
-                        ApplyAutomaticGamePreset(2);
+                        ApplyWHDLoadPreset(folder);
                         switch_set_kickstart(kickstart, 0);
                         switch_whdload_prepare_launch(folder);
                         gui_update();
@@ -3688,7 +3715,7 @@ void switch_view_library(SwitchInputState *input, int *selected_item)
                     whdload_mark_recent(game->title);
                     strncpy(uae4all_hard_dir, switch_whdload_root(), 255);
                     uae4all_hard_dir[255] = '\0';
-                    ApplyAutomaticGamePreset(2);
+                    ApplyWHDLoadPreset(game->title);
                     switch_set_kickstart(kickstart, 0);
                     switch_whdload_prepare_launch(game->title);
                     gui_update();
@@ -3910,9 +3937,25 @@ void switch_view_library(SwitchInputState *input, int *selected_item)
         switch_draw_text(preview_x + 16.0f, preview_y + 338.0f, SWITCH_COLOR_TEXT_DIM, 0.72f, "AUTODETECTED PROFILE");
         const char *prof_badge = "AMIGA 500";
         const char *prof_desc = "Amiga 500 (Kickstart 1.3 | OCS/ECS | 512K Chip + 512K Slow)";
+        Uint32 prof_badge_color = SWITCH_COLOR_AMIGA_ORANGE;
         if (g->type == SWITCH_LIB_WHDLOAD) {
-            prof_badge = "A1200 AGA";
-            prof_desc = "68020 14MHz | Kickstart 3.1 | 2MB Chip + 8MB Fast";
+            int is_aga = 0;
+            if (mainMenu_whdload_mode == 1) {
+                is_aga = 0;
+            } else if (mainMenu_whdload_mode == 2) {
+                is_aga = 1;
+            } else {
+                is_aga = switch_whdload_is_aga(g->title);
+            }
+            if (is_aga) {
+                prof_badge = "A1200 AGA";
+                prof_desc = "68020 14MHz | Kickstart 3.1 | 2MB Chip + 4MB Fast";
+                prof_badge_color = SWITCH_COLOR_AMIGA_ORANGE;
+            } else {
+                prof_badge = "A500 OCS";
+                prof_desc = "68000 7MHz | Kickstart 3.1 | 2MB Chip + 4MB Fast";
+                prof_badge_color = SWITCH_COLOR_AMIGA_GREEN;
+            }
         } else if (g->type == SWITCH_LIB_LHA) {
             prof_badge = "WHDLOAD LHA";
             prof_desc = "Auto-extracts and installs to WHDLoad games directory";
@@ -3946,7 +3989,7 @@ void switch_view_library(SwitchInputState *input, int *selected_item)
             prof_desc = "Amiga 1200 (Boot HD | Kickstart 3.1 | Fast RAM)";
         }
 
-        switch_draw_badge(preview_x + 16.0f, preview_y + 356.0f, prof_badge, SWITCH_COLOR_AMIGA_ORANGE, RGBA8(20, 24, 34, 255));
+        switch_draw_badge(preview_x + 16.0f, preview_y + 356.0f, prof_badge, prof_badge_color, RGBA8(20, 24, 34, 255));
         bool can_swap = (emulating && uae4all_image_file0[0] != '\0' && (g->type == SWITCH_LIB_FLOPPY || g->type == SWITCH_LIB_M3U || g->type == SWITCH_LIB_ZIP));
         switch_draw_hint_item(preview_x + preview_w - (can_swap ? 190.0f : 150.0f), preview_y + 356.0f, SWITCH_GLYPH_A, can_swap ? "SWAP / BOOT" : "LAUNCH");
         char hw_buf[128];

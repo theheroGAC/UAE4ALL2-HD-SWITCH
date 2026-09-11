@@ -1456,4 +1456,64 @@ int switch_whdload_list(char names[][128], int max_names)
     return count;
 }
 
+int switch_whdload_is_aga(const char *game_name)
+{
+    if (!game_name || game_name[0] == '\0')
+        return 0;
+
+    char lower_name[256];
+    size_t i = 0;
+    for (; game_name[i] && i < sizeof(lower_name) - 1; i++) {
+        lower_name[i] = (char)tolower((unsigned char)game_name[i]);
+    }
+    lower_name[i] = '\0';
+
+    if (strstr(lower_name, "cd32") != NULL)
+        return 1;
+
+    const char *p = lower_name;
+    while ((p = strstr(p, "aga")) != NULL) {
+        bool left_ok = (p == lower_name) || (!isalnum((unsigned char)*(p - 1)));
+        bool right_ok = (!isalnum((unsigned char)*(p + 3)));
+        if (left_ok && right_ok)
+            return 1;
+        p += 3;
+    }
+
+    char game_root[512];
+    char slave_relative[384];
+    snprintf(game_root, sizeof(game_root), "%s/%s", SWITCH_WHDLOAD_ROOT, game_name);
+    if (!find_slave_recursive(game_root, "", slave_relative, sizeof(slave_relative), 0))
+        return 0;
+
+    char full_slave[512];
+    snprintf(full_slave, sizeof(full_slave), "%s/%s", game_root, slave_relative);
+    FILE *f = fopen(full_slave, "rb");
+    if (!f)
+        return 0;
+
+    unsigned char buf[4096];
+    size_t n = fread(buf, 1, sizeof(buf), f);
+    fclose(f);
+
+    if (n >= 16) {
+        for (size_t k = 0; k + 12 <= n; k++) {
+            if (memcmp(buf + k, "WHDLOADS", 8) == 0) {
+                unsigned short flags = (unsigned short)((buf[k + 10] << 8) | buf[k + 11]);
+                if (flags & 0x0018)
+                    return 1;
+                return 0;
+            }
+            if (memcmp(buf + k, "SLAV", 4) == 0) {
+                unsigned short flags = (unsigned short)((buf[k + 6] << 8) | buf[k + 7]);
+                if (flags & 0x0018)
+                    return 1;
+                return 0;
+            }
+        }
+    }
+
+    return 0;
+}
+
 #endif

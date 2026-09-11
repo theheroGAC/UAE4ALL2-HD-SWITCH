@@ -17,6 +17,7 @@ int switch_whdload_prepare_launch(const char *game_name);
 int switch_whdload_can_launch(const char *game_name);
 const char *switch_whdload_root(void);
 const char *switch_whdload_get_last_error(void);
+int switch_whdload_is_aga(const char *game_name);
 
 #ifdef __cplusplus
 }

@@ -32,6 +32,7 @@ extern int moveY;
 
 #ifdef __SWITCH__
 #include "switch_kbd.h"
+#include "switch/whdload_manager_switch.h"
 #endif
 
 #ifdef __PSP2__
@@ -182,6 +183,7 @@ int mainMenu_midiSynth = 0;
 int mainMenu_pinballMode = 0;
 char mainMenu_whdload_game[128] = "";
 char mainMenu_whdload_args[256] = "";
+int mainMenu_whdload_mode = 0;
 int mainMenu_floppyWriteProtect[4] = { 0, 0, 0, 0 };
 int mainMenu_cycleExact = 0;
 #endif
@@ -724,16 +726,56 @@ void ApplyCd32Profile(void)
     bReloadKickstart = 1;
 }
 
+void ApplyWHDLoadA500Profile(void)
+{
+    kickstart = 3;
+    extfile[0] = '\0';
+    mainMenu_CPU_model = 0;
+    mainMenu_chipset = 0x100;
+    mainMenu_chipMemory = 2;
+    mainMenu_slowMemory = 0;
+    mainMenu_fastMemory = 3;
+    mainMenu_bootHD = 1;
+    UpdateCPUModelSettings();
+    UpdateMemorySettings();
+    UpdateChipsetSettings();
+    reset_hdConf();
+    bReloadKickstart = 1;
+}
+
+void ApplyWHDLoadPreset(const char *game_name)
+{
+    int is_aga = 0;
+    if (mainMenu_whdload_mode == 1) {
+        is_aga = 0;
+    } else if (mainMenu_whdload_mode == 2) {
+        is_aga = 1;
+    } else {
+#ifdef __SWITCH__
+        is_aga = switch_whdload_is_aga(game_name);
+#else
+        is_aga = 0;
+#endif
+    }
+
+    if (is_aga) {
+        ApplyA1200Profile();
+    } else {
+        ApplyWHDLoadA500Profile();
+    }
+
+    if (uae4all_hard_dir[0] != '\0') {
+        mainMenu_bootHD = 1;
+        reset_hdConf();
+    }
+}
+
 void ApplyAutomaticGamePreset(int media_type)
 {
     if (media_type == 3) {
         ApplyCd32Profile();
     } else if (media_type == 2) {
-        ApplyA1200Profile();
-        if (uae4all_hard_dir[0] != '\0') {
-            mainMenu_bootHD = 1;
-            reset_hdConf();
-        }
+        ApplyWHDLoadPreset(mainMenu_whdload_game[0] ? mainMenu_whdload_game : NULL);
     } else if (media_type == 1) {
         ApplyA1200Profile();
     } else {
@@ -1458,6 +1500,8 @@ int saveconfig(int general)
 #if defined(__PSP2__) || defined(__SWITCH__)
     snprintf((char*)buffer, 255, "whdload_args=%s\n",mainMenu_whdload_args);
     fputs(buffer,f);
+    snprintf((char*)buffer, 255, "whdload_mode=%d\n",mainMenu_whdload_mode);
+    fputs(buffer,f);
     for (int i = 0; i < 4; i++) {
         snprintf((char*)buffer, 255, "floppyWriteProtect%d=%d\n", i, mainMenu_floppyWriteProtect[i]);
         fputs(buffer, f);
@@ -1926,6 +1970,7 @@ void loadconfig(int general)
         fscanf(f,"autofireMode=%d\n",&mainMenu_autofireMode);
 #if defined(__PSP2__) || defined(__SWITCH__)
         fscanf(f,"whdload_args=%255[^\n]\n", mainMenu_whdload_args);
+        fscanf(f,"whdload_mode=%d\n", &mainMenu_whdload_mode);
         for (int i = 0; i < 4; i++)
             fscanf(f,"floppyWriteProtect%d=%d\n", i, &mainMenu_floppyWriteProtect[i]);
         fscanf(f,"cycleExact=%d\n", &mainMenu_cycleExact);
