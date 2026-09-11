@@ -2,6 +2,15 @@
 
 All notable features, quality-of-life enhancements, and bug fixes for **UAE4ALL2 HD** on Nintendo Switch.
 
+## Version 1.04
+- **1-Click Game Library**: Added a unified Game Library as the default tab, featuring automatic detection and 1-click launch for WHDLoad, ADF floppies, M3U playlists, HDF, and CD32 games with boxart previews and quick filtering.
+- **Game Library Cover Artwork**: Integrated unified cover manager supporting multi-path search (7 directories including RomFS and SD card) with single-surface RAM caching.
+- **Game Metadata Display**: Real-time display of Title, Year, Developer, Publisher, Genre, and Players in both Game Library and WHDLoad preview panels.
+- **Built-in Offline Amiga Database**: Embedded database containing **2,599 games** with fuzzy matching tolerant to dump tags, disk numbers, and naming variations.
+- **In-App Cover Downloader (libcurl)**: Added real HTTP/HTTPS cover art downloading directly from the console into `./data/covers/` with server URL configuration (`source.txt`).
+- **Library Options Dialog Integration**: Added "Download Cover" directly into the **(Y)** Library Options menu without altering controller button bindings.
+- **Engine Memory Expansion**: Expanded metadata engine capacity up to 10,000 games concurrently.
+
 ## Version 1.03
 
 - **CPU Core Accuracy**: Improved Motorola 68000/68020 emulation accuracy, fixing SR/CCR flag normalization, shift & rotate boundaries, and 68020 PC-relative CMPI flag formulas.
