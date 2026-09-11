@@ -6,7 +6,7 @@
 ;
 
 ;ButtonWait			;wait for button pressed (Slave must support this)
-;ChipNoCache			;disable cachebility of Chip-Memory
+ChipNoCache			;disable cachebility of Chip-Memory
 ;ConfigDelay=400		;wait to select options in splash window (1/50 seconds)
 ;CoreDumpPath=T:		;path to store coredump files
 ;DebugKey=$5b			;rawkey code to quit with coredump (debug)
@@ -19,7 +19,7 @@
 ;FullChip			;save/restore complete chip memory
 ;LogBuffer=$40000		;buffer size for logging facility
 ;MMU				;use MMU (on 68030)
-;NoAutoVec			;ignore unwanted autovector interrupts
+NoAutoVec			;ignore unwanted autovector interrupts
 ;NoFilter			;disable audio filter
 ;NoFlushMem			;do not flush memory
 ;NoMemReverse			;do not allocate memory reverse
