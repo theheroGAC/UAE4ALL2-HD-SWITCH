@@ -963,6 +963,7 @@ static int load_kickstart (void)
     if (!read_kickstart (f, kickmemory, kickmem_size, 1, &cloanto_rom))
 	return 0;
 
+    ersatzkickfile = 0;
     return 1;
 }
 
@@ -1070,6 +1071,8 @@ static void reload_kickstart(void)
    if (!load_kickstart ()) {
       init_ersatz_rom (kickmemory);
       ersatzkickfile = 1;
+   } else {
+      ersatzkickfile = 0;
    }
    swab_memory(kickmemory, kickmem_size);
    kickmem_checksum=get_kickmem_checksum();
