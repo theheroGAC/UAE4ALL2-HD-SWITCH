@@ -495,7 +495,6 @@ void setSystem()
 		kickstart=3;
 		mainMenu_CPU_model=1;
 		mainMenu_chipset=2;
-		mainMenu_chipset|=0x100;//set blitter to "immediate"
 		mainMenu_CPU_speed=1;
 	}
 	else
@@ -506,7 +505,6 @@ void setSystem()
 		kickstart=1;
 		mainMenu_CPU_model=0;
 		mainMenu_chipset=0;
-		mainMenu_chipset|=0x100;//set blitter to "immediate"
 		mainMenu_CPU_speed=0;
 	}
 	UpdateMemorySettings();

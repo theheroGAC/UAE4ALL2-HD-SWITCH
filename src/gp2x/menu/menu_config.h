@@ -187,6 +187,7 @@ extern int mainMenu_customPreset_L3[MAX_NUM_CUSTOM_PRESETS][MAX_NUM_CONTROLLERS]
 extern int mainMenu_customPreset_R3[MAX_NUM_CUSTOM_PRESETS][MAX_NUM_CONTROLLERS];
 extern int mainMenu_swapAB;
 extern int mainMenu_singleJoycons;
+extern int mainMenu_numPlayers;
 #endif
 
 #endif // defined(__PSP2__) || defined(__SWITCH__)

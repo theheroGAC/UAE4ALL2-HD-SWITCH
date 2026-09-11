@@ -188,6 +188,7 @@ int mainMenu_cycleExact = 0;
 #ifdef __SWITCH__
 int mainMenu_swapAB = DEFAULT_SWAPAB;
 int mainMenu_singleJoycons = DEFAULT_SINGLEJOYCONS;
+int mainMenu_numPlayers = 1;
 #endif
 
 // The following params in use, but can't be changed with gui
@@ -599,6 +600,7 @@ void SetDefaultMenuSettings(int general)
 #ifdef __SWITCH__
     mainMenu_swapAB = DEFAULT_SWAPAB;
     mainMenu_singleJoycons = DEFAULT_SINGLEJOYCONS;
+    mainMenu_numPlayers = 1;
 #endif
     // The following params can't be changed in gui
     skipintro = DEFAULT_SKIPINTRO;
@@ -676,7 +678,7 @@ void ApplyA500Profile(void)
     kickstart = 1;
     extfile[0] = '\0';
     mainMenu_CPU_model = 0;
-    mainMenu_chipset = 0x100;
+    mainMenu_chipset = 0;
     mainMenu_chipMemory = 0;
     mainMenu_slowMemory = 1;
     mainMenu_fastMemory = 0;
@@ -693,7 +695,7 @@ void ApplyA1200Profile(void)
     kickstart = 3;
     extfile[0] = '\0';
     mainMenu_CPU_model = 1;
-    mainMenu_chipset = 2 | 0x100;
+    mainMenu_chipset = 2;
     mainMenu_chipMemory = 2;
     mainMenu_slowMemory = 0;
     mainMenu_fastMemory = 3;
