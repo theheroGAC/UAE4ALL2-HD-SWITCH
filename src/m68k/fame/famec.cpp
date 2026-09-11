@@ -320,19 +320,19 @@ M68K_CONTEXT m68kcontext;
      GET_CCR)
 
 #define SET_CCR(A)                              \
-    flag_C = (A) << (M68K_SR_C_SFT - 0);   \
-    flag_V = (A) << (M68K_SR_V_SFT - 1);   \
-    flag_NotZ = ~(A) & 4;                  \
-    flag_N = (A) << (M68K_SR_N_SFT - 3);   \
-    flag_X = (A) << (M68K_SR_X_SFT - 4);
+    flag_C = ((A) & 0x01) << M68K_SR_C_SFT; \
+    flag_V = ((A) & 0x02) << (M68K_SR_V_SFT - 1); \
+    flag_NotZ = !((A) & 0x04);              \
+    flag_N = ((A) & 0x08) << (M68K_SR_N_SFT - 3); \
+    flag_X = ((A) & 0x10) << (M68K_SR_X_SFT - 4);
 
 
 #define SET_SR(A)                      \
     SET_CCR(A)                         \
-    flag_T = ((A) >> 15) & 1;          \
-    flag_S = ((A) >> 13) & 1;          \
+    flag_T = ((A) >> M68K_SR_T_SFT) & 1; \
+    flag_S = ((A) >> M68K_SR_S_SFT) & 1; \
     flag_I = ((A) >> 8) & 7;           \
-    flag_M = (prefs_cpu_model >= M68020 ? (((A) >> 12) & 1) : 0);
+    flag_M = (prefs_cpu_model >= M68020 ? (((A) >> M68K_SR_M_SFT) & 1) : 0);
 
 extern "C" void MakeSR(void)
 {
