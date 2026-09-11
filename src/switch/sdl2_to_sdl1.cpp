@@ -5,6 +5,7 @@
 #include <sdl2_to_sdl1.h>
 #include <math.h>
 #include <stdlib.h>
+#include <GLES2/gl2.h>
 
 static SDL_Window* window = NULL;
 static SDL_Texture* texture = NULL;
@@ -297,7 +298,7 @@ SDL_Surface *SDL_SetVideoMode(int w, int h, int bpp, int flags) {
 	}
 
 	if (!renderer) {
-		window = SDL_CreateWindow("uae4all2", 0, 0, display_width, display_height, 0);
+		window = SDL_CreateWindow("uae4all2", 0, 0, display_width, display_height, SDL_WINDOW_OPENGL);
 		renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_TARGETTEXTURE | SDL_RENDERER_PRESENTVSYNC);
 		SDL_RenderClear(renderer);
 	}
@@ -306,6 +307,277 @@ SDL_Surface *SDL_SetVideoMode(int w, int h, int bpp, int flags) {
 	surface_width = w;
 	surface_height = h;
 	return surface;
+}
+
+static GLuint s_lottes_prog = 0;
+static GLint s_u_tex = -1;
+static GLint s_u_tex_size = -1;
+static GLint s_u_in_size = -1;
+static GLint s_u_src_off = -1;
+static GLint s_u_out_size = -1;
+static GLint s_a_pos = -1;
+static GLint s_a_texcoord = -1;
+static GLuint s_lottes_tex = 0;
+static int s_lottes_tex_w = 0;
+static int s_lottes_tex_h = 0;
+
+static const char *s_lottes_vs =
+"attribute vec2 a_pos;\n"
+"attribute vec2 a_texcoord;\n"
+"varying vec2 v_texcoord;\n"
+"void main() {\n"
+"    v_texcoord = a_texcoord;\n"
+"    gl_Position = vec4(a_pos, 0.0, 1.0);\n"
+"}\n";
+
+static const char *s_lottes_fs =
+"precision mediump float;\n"
+"uniform sampler2D s_texture;\n"
+"uniform vec2 u_texture_size;\n"
+"uniform vec2 u_input_size;\n"
+"uniform vec2 u_src_offset;\n"
+"uniform vec2 u_output_size;\n"
+"varying vec2 v_texcoord;\n"
+"#define hardScan -8.0\n"
+"#define hardPix -3.0\n"
+"#define warpX 0.031\n"
+"#define warpY 0.041\n"
+"#define maskDark 0.5\n"
+"#define maskLight 1.5\n"
+"vec2 Warp(vec2 pos) {\n"
+"    pos = pos * 2.0 - 1.0;\n"
+"    pos *= vec2(1.0 + (pos.y * pos.y) * warpX, 1.0 + (pos.x * pos.x) * warpY);\n"
+"    return pos * 0.5 + 0.5;\n"
+"}\n"
+"float ToLinear1(float c) {\n"
+"    return (c <= 0.04045) ? c / 12.92 : pow(max(0.0, (c + 0.055) / 1.055), 2.4);\n"
+"}\n"
+"vec3 ToLinear(vec3 c) {\n"
+"    return vec3(ToLinear1(c.r), ToLinear1(c.g), ToLinear1(c.b));\n"
+"}\n"
+"float ToSrgb1(float c) {\n"
+"    return (c < 0.0031308) ? c * 12.92 : 1.055 * pow(max(0.0, c), 0.41666) - 0.055;\n"
+"}\n"
+"vec3 ToSrgb(vec3 c) {\n"
+"    return vec3(ToSrgb1(c.r), ToSrgb1(c.g), ToSrgb1(c.b));\n"
+"}\n"
+"vec3 Fetch(vec2 pos, vec2 off) {\n"
+"    vec2 p = floor(pos * u_input_size) + off;\n"
+"    if (p.x < 0.0 || p.x >= u_input_size.x || p.y < 0.0 || p.y >= u_input_size.y) return vec3(0.0);\n"
+"    vec2 uv = (u_src_offset + p + vec2(0.5, 0.5)) / u_texture_size;\n"
+"    return ToLinear(texture2D(s_texture, uv).rgb);\n"
+"}\n"
+"vec2 Dist(vec2 pos) {\n"
+"    vec2 p = pos * u_input_size;\n"
+"    return -((p - floor(p)) - vec2(0.5, 0.5));\n"
+"}\n"
+"float Gaus(float pos, float scale) {\n"
+"    return exp2(scale * pos * pos);\n"
+"}\n"
+"vec3 Horz3(vec2 pos, float off) {\n"
+"    vec3 b = Fetch(pos, vec2(-1.0, off));\n"
+"    vec3 c = Fetch(pos, vec2( 0.0, off));\n"
+"    vec3 d = Fetch(pos, vec2( 1.0, off));\n"
+"    float dst = Dist(pos).x;\n"
+"    float scale = hardPix;\n"
+"    float wb = Gaus(dst - 1.0, scale);\n"
+"    float wc = Gaus(dst + 0.0, scale);\n"
+"    float wd = Gaus(dst + 1.0, scale);\n"
+"    return (b * wb + c * wc + d * wd) / (wb + wc + wd);\n"
+"}\n"
+"vec3 Horz5(vec2 pos, float off) {\n"
+"    vec3 a = Fetch(pos, vec2(-2.0, off));\n"
+"    vec3 b = Fetch(pos, vec2(-1.0, off));\n"
+"    vec3 c = Fetch(pos, vec2( 0.0, off));\n"
+"    vec3 d = Fetch(pos, vec2( 1.0, off));\n"
+"    vec3 e = Fetch(pos, vec2( 2.0, off));\n"
+"    float dst = Dist(pos).x;\n"
+"    float scale = hardPix;\n"
+"    float wa = Gaus(dst - 2.0, scale);\n"
+"    float wb = Gaus(dst - 1.0, scale);\n"
+"    float wc = Gaus(dst + 0.0, scale);\n"
+"    float wd = Gaus(dst + 1.0, scale);\n"
+"    float we = Gaus(dst + 2.0, scale);\n"
+"    return (a * wa + b * wb + c * wc + d * wd + e * we) / (wa + wb + wc + wd + we);\n"
+"}\n"
+"float Scan(vec2 pos, float off) {\n"
+"    float dst = Dist(pos).y;\n"
+"    return Gaus(dst + off, hardScan);\n"
+"}\n"
+"vec3 Tri(vec2 pos) {\n"
+"    vec3 a = Horz3(pos, -1.0);\n"
+"    vec3 b = Horz5(pos,  0.0);\n"
+"    vec3 c = Horz3(pos,  1.0);\n"
+"    float wa = Scan(pos, -1.0);\n"
+"    float wb = Scan(pos,  0.0);\n"
+"    float wc = Scan(pos,  1.0);\n"
+"    return a * wa + b * wb + c * wc;\n"
+"}\n"
+"vec3 Mask(vec2 pos) {\n"
+"    vec3 mask = vec3(maskDark, maskDark, maskDark);\n"
+"    pos.x += pos.y * 3.0;\n"
+"    pos.x = fract(pos.x * 0.166666666);\n"
+"    if (pos.x < 0.333) mask.r = maskLight;\n"
+"    else if (pos.x < 0.666) mask.g = maskLight;\n"
+"    else mask.b = maskLight;\n"
+"    return mask;\n"
+"}\n"
+"void main() {\n"
+"    vec2 pos = Warp(v_texcoord);\n"
+"    if (pos.x < 0.0 || pos.x > 1.0 || pos.y < 0.0 || pos.y > 1.0) {\n"
+"        gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);\n"
+"        return;\n"
+"    }\n"
+"    vec3 col = Tri(pos);\n"
+"    col *= Mask(gl_FragCoord.xy * 1.000001);\n"
+"    gl_FragColor = vec4(ToSrgb(col), 1.0);\n"
+"}\n";
+
+static bool switch_init_lottes_gl(void) {
+	if (s_lottes_prog != 0) return true;
+	GLuint vs = glCreateShader(GL_VERTEX_SHADER);
+	glShaderSource(vs, 1, &s_lottes_vs, NULL);
+	glCompileShader(vs);
+	GLint ok = 0;
+	glGetShaderiv(vs, GL_COMPILE_STATUS, &ok);
+	if (!ok) {
+		glDeleteShader(vs);
+		return false;
+	}
+	GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
+	glShaderSource(fs, 1, &s_lottes_fs, NULL);
+	glCompileShader(fs);
+	glGetShaderiv(fs, GL_COMPILE_STATUS, &ok);
+	if (!ok) {
+		glDeleteShader(vs);
+		glDeleteShader(fs);
+		return false;
+	}
+	s_lottes_prog = glCreateProgram();
+	glAttachShader(s_lottes_prog, vs);
+	glAttachShader(s_lottes_prog, fs);
+	glLinkProgram(s_lottes_prog);
+	glDeleteShader(vs);
+	glDeleteShader(fs);
+	glGetProgramiv(s_lottes_prog, GL_LINK_STATUS, &ok);
+	if (!ok) {
+		glDeleteProgram(s_lottes_prog);
+		s_lottes_prog = 0;
+		return false;
+	}
+	s_u_tex = glGetUniformLocation(s_lottes_prog, "s_texture");
+	s_u_tex_size = glGetUniformLocation(s_lottes_prog, "u_texture_size");
+	s_u_in_size = glGetUniformLocation(s_lottes_prog, "u_input_size");
+	s_u_src_off = glGetUniformLocation(s_lottes_prog, "u_src_offset");
+	s_u_out_size = glGetUniformLocation(s_lottes_prog, "u_output_size");
+	s_a_pos = glGetAttribLocation(s_lottes_prog, "a_pos");
+	s_a_texcoord = glGetAttribLocation(s_lottes_prog, "a_texcoord");
+	return true;
+}
+
+static void switch_render_lottes_gl(SDL_Surface *surface, const SDL_Rect *src_rect, const SDL_Rect *dst_rect, int sw, int sh) {
+	if (!surface || !surface->pixels || !switch_init_lottes_gl()) return;
+
+	GLint prev_prog = 0;
+	glGetIntegerv(GL_CURRENT_PROGRAM, &prev_prog);
+	GLint prev_vbo = 0;
+	glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &prev_vbo);
+	GLint prev_active_tex = 0;
+	glGetIntegerv(GL_ACTIVE_TEXTURE, &prev_active_tex);
+	GLint prev_tex = 0;
+	glGetIntegerv(GL_TEXTURE_BINDING_2D, &prev_tex);
+	GLint prev_fbo = 0;
+	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prev_fbo);
+	GLint prev_vp[4] = {0, 0, sw, sh};
+	glGetIntegerv(GL_VIEWPORT, prev_vp);
+	GLboolean prev_scissor = glIsEnabled(GL_SCISSOR_TEST);
+	GLboolean prev_blend = glIsEnabled(GL_BLEND);
+	GLboolean prev_depth = glIsEnabled(GL_DEPTH_TEST);
+	GLboolean prev_cull = glIsEnabled(GL_CULL_FACE);
+
+	if (!s_lottes_tex) {
+		glGenTextures(1, &s_lottes_tex);
+		glBindTexture(GL_TEXTURE_2D, s_lottes_tex);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		s_lottes_tex_w = 0;
+		s_lottes_tex_h = 0;
+	} else {
+		glBindTexture(GL_TEXTURE_2D, s_lottes_tex);
+	}
+
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	if (s_lottes_tex_w != surface->w || s_lottes_tex_h != surface->h) {
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, surface->w, surface->h, 0, GL_RGB, GL_UNSIGNED_SHORT_5_6_5, surface->pixels);
+		s_lottes_tex_w = surface->w;
+		s_lottes_tex_h = surface->h;
+	} else {
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, surface->w, surface->h, GL_RGB, GL_UNSIGNED_SHORT_5_6_5, surface->pixels);
+	}
+
+	int vp_x = dst_rect->x;
+	int vp_y = sh - (dst_rect->y + dst_rect->h);
+	int vp_w = dst_rect->w;
+	int vp_h = dst_rect->h;
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glDisable(GL_SCISSOR_TEST);
+	glDisable(GL_DEPTH_TEST);
+	glDisable(GL_CULL_FACE);
+	glDisable(GL_BLEND);
+
+	glViewport(0, 0, sw, sh);
+	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT);
+
+	glViewport(vp_x, vp_y, vp_w, vp_h);
+	glUseProgram(s_lottes_prog);
+
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, s_lottes_tex);
+	glUniform1i(s_u_tex, 0);
+	glUniform2f(s_u_tex_size, (float)surface->w, (float)surface->h);
+	glUniform2f(s_u_in_size, (float)src_rect->w, (float)src_rect->h);
+	glUniform2f(s_u_src_off, (float)src_rect->x, (float)src_rect->y);
+	glUniform2f(s_u_out_size, (float)vp_w, (float)vp_h);
+
+	float quad_data[16] = {
+		-1.0f, -1.0f,  0.0f, 1.0f,
+		 1.0f, -1.0f,  1.0f, 1.0f,
+		-1.0f,  1.0f,  0.0f, 0.0f,
+		 1.0f,  1.0f,  1.0f, 0.0f
+	};
+
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	if (s_a_pos >= 0) {
+		glEnableVertexAttribArray((GLuint)s_a_pos);
+		glVertexAttribPointer((GLuint)s_a_pos, 2, GL_FLOAT, GL_FALSE, 4 * (GLsizei)sizeof(float), &quad_data[0]);
+	}
+	if (s_a_texcoord >= 0) {
+		glEnableVertexAttribArray((GLuint)s_a_texcoord);
+		glVertexAttribPointer((GLuint)s_a_texcoord, 2, GL_FLOAT, GL_FALSE, 4 * (GLsizei)sizeof(float), &quad_data[2]);
+	}
+
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+	if (s_a_pos >= 0 && s_a_pos > 1) glDisableVertexAttribArray((GLuint)s_a_pos);
+	if (s_a_texcoord >= 0 && s_a_texcoord > 1) glDisableVertexAttribArray((GLuint)s_a_texcoord);
+
+	glEnableVertexAttribArray(0);
+	glEnableVertexAttribArray(1);
+
+	glUseProgram(prev_prog);
+	glBindBuffer(GL_ARRAY_BUFFER, prev_vbo);
+	glActiveTexture(prev_active_tex);
+	glBindTexture(GL_TEXTURE_2D, prev_tex);
+	glBindFramebuffer(GL_FRAMEBUFFER, prev_fbo);
+	glViewport(prev_vp[0], prev_vp[1], prev_vp[2], prev_vp[3]);
+	if (prev_scissor) glEnable(GL_SCISSOR_TEST);
+	if (prev_blend) glEnable(GL_BLEND);
+	if (prev_depth) glEnable(GL_DEPTH_TEST);
+	if (prev_cull) glEnable(GL_CULL_FACE);
 }
 
 static void switch_update_crt_mask(int shader_type, int w, int h, int base_h) {
@@ -629,7 +901,11 @@ void SDL_Flip(SDL_Surface *surface) {
 
 		SDL_Rect dst_rect = { x_offset + eff_off_x, y_offset + eff_off_y, scaled_width, scaled_height };
 
-		if (mainMenu_shader == 1 || mainMenu_shader == 4 || mainMenu_shader == 5 || mainMenu_shader == 6 || displaying_menu) {
+		if (!displaying_menu && mainMenu_shader == 4) {
+			switch_render_lottes_gl(surface, &src_rect, &dst_rect, display_width, display_height);
+			switch_render_osd_overlays(renderer, display_width, display_height);
+			SDL_RenderPresent(renderer);
+		} else if (mainMenu_shader == 1 || mainMenu_shader == 5 || mainMenu_shader == 6 || displaying_menu) {
 			SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
 			texture = SDL_CreateTextureFromSurface(renderer, surface);
 			
@@ -637,7 +913,7 @@ void SDL_Flip(SDL_Surface *surface) {
 			SDL_Rect dst_rect_prescale = { 0, 0, prescaled_width, prescaled_height };
 			SDL_RenderCopy(renderer, texture, displaying_menu ? NULL : &src_rect, &dst_rect_prescale);
 
-			if (!displaying_menu && (mainMenu_shader == 4 || mainMenu_shader == 5 || mainMenu_shader == 6)) {
+			if (!displaying_menu && (mainMenu_shader == 5 || mainMenu_shader == 6)) {
 				int base_lines = mainMenu_displayHires ? (2 * mainMenu_displayedLines) : mainMenu_displayedLines;
 				if (base_lines <= 0) base_lines = 240;
 				switch_update_crt_mask(mainMenu_shader, prescaled_width, prescaled_height, base_lines);
