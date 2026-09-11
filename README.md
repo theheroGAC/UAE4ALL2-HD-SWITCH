@@ -1,4 +1,4 @@
-# UAE4ALL2 HD — Nintendo Switch Edition v1.03
+# UAE4ALL2 HD — Nintendo Switch Edition v1.04
 
 A modern, high-performance Nintendo Switch release of **UAE4ALL2 HD**, the Amiga emulator for OCS, ECS, and AGA chipsets.
 
@@ -17,6 +17,13 @@ This repository contains the complete Nintendo Switch source tree and ready-to-r
 
 ## Features in this Nintendo Switch Release
 
+- **Enhanced Game Library with Boxart & Metadata (v1.04)**:
+  - Unified library browser with support for ADF, ADZ, DMS, IPF, LHA, WHDLoad, M3U, ZIP, and HDF games with 1-click launch (**A**), filter selection (**X**), and options (**Y**).
+  - High-definition cover artwork rendering in the preview panel with aspect ratio preservation and single-surface RAM caching.
+  - Multi-path artwork search across 7 standard directory locations (`./data/covers/`, `./covers/`, `sdmc:/...`, RomFS).
+  - Built-in offline Amiga metadata database containing **2,599 games** (Title, Year, Developer, Publisher, Genre, Players) with smart fuzzy search tolerant to dump tags and disk suffixes.
+  - In-app Cover Downloader powered by `libcurl`: download boxart directly on console via **(Y) -> Download Cover** in the Library or the WHDLoad menu.
+  - Configurable cover download server URL in `./data/covers/source.txt`.
 - **Full Amiga Emulation**: Amiga 500, 500+, 600, 1200 and CD32 hardware emulation (OCS, ECS, and AGA).
 - **High-Performance CPU Cores**: Optimized Motorola 68000 and 68020 processor emulation with advanced condition code accuracy, normalized status register flags, corrected shift/rotate limits, and full 32-bit arithmetic.
 - **Floppy Disk Support**: ADF, ADZ, DMS, IPF, FDI, and ZIP floppy disk images across DF0-DF3.
@@ -83,7 +90,8 @@ sdmc:/switch/uae4all2/
 └── data/                        # UI assets, fonts, sounds and base tools
     ├── whdload_base/            # Pre-bundled Amiga WHDLoad system tools (C/ and S/)
     ├── sounds/                  # Authentic floppy and hard disk OGG samples
-    ├── covers/                  # Downloaded and custom game boxart
+    ├── covers/                  # Downloaded and custom game boxart (.png, .jpg) & source.txt
+    ├── gameinfo/                # Offline game metadata database (games.json)
     └── font.ttf                 # TrueType UI font
 ```
 
@@ -117,6 +125,51 @@ UAE4All2 HD includes a built-in FTP server on Nintendo Switch:
 
 ---
 
+## Game Covers & Metadata Guide (v1.04)
+
+UAE4All2 HD v1.04 includes a unified cover artwork loader, live metadata display, and an in-app cover downloader.
+
+### How Game Covers Work
+When browsing games in the **Game Library** or **WHDLoad** tabs, the emulator automatically displays matching boxart and metadata in the right-hand preview panel:
+- **Aspect Ratio Preserved**: Covers are rendered crisply without distortion.
+- **Memory Optimized**: Only the currently selected game's cover is loaded into RAM (single-surface engine).
+- **Metadata Database**: Built-in offline database with **2,599 Amiga games** showing Year, Genre, Developer, Publisher, and Number of Players.
+
+### 1. Adding Covers Manually (SD Card or FTP)
+You can copy your own boxart images directly to your microSD card (via a PC card reader or the built-in FTP server):
+
+1. Place `.png` or `.jpg` image files into:
+   ```text
+   sdmc:/switch/uae4all2/data/covers/
+   ```
+   *(Alternative: you can also place the image directly inside the same folder as the game ROM).*
+2. **File Naming Rules**:
+   - Match the game title: `Turrican II.png`
+   - Or match the ROM filename: `Turrican II (Disk 1).adf.png`
+   - Common dump tags and suffixes (e.g. `(Disk 1 of 2)`, `[AGA]`, `(v1.2)`) are ignored automatically when matching.
+
+### 2. Downloading Covers Directly on Switch (Wi-Fi)
+With your Nintendo Switch connected to Wi-Fi, you can download boxart directly without leaving the emulator:
+
+1. Open the **Game Library** or **WHDLoad** tab.
+2. Highlight the game you want a cover for.
+3. Press **(Y)** on your controller to open the **Options Dialog**.
+4. Select **"Download Cover"**.
+5. The emulator connects via HTTP/HTTPS, downloads the cover, saves it to `data/covers/`, and immediately refreshes the preview.
+
+### 3. Configuring the Cover Server URL
+The download server URL is configurable via a simple text file:
+```text
+sdmc:/switch/uae4all2/data/covers/source.txt
+```
+Enter your preferred HTTP or HTTPS base URL on the first line:
+```text
+https://my-server.example.com/amiga/covers
+```
+The downloader appends `/<game_title>.png` (and falls back to `.jpg`) with URL percent-encoding.
+
+---
+
 ## Controls
 
 ### Menu & File Browser Navigation
@@ -139,8 +192,8 @@ UAE4All2 HD includes a built-in FTP server on Nintendo Switch:
 | Button | Action |
 |---|---|
 | **Left Stick / D-Pad** | Amiga Joystick (Port 2 / Port 1) |
-| **A** | Fire Button 1 |
-| **B** | Fire Button 2 / Jump |
+| **B** | Fire Button 1 |
+| **A** | Fire Button 2 / Jump |
 | **X / Y** | Configurable Custom Buttons (Space, Return, Autofire) |
 | **L Shoulder** | Quick Menu (Resume, Savestate, Turbo, Stereo, M3U Swap, Eject, Screenshot) |
 | **ZR (Hold)** | Fast-Forward / Turbo Mode |
@@ -184,6 +237,28 @@ Play Amiga co-op and versus classics (e.g. *Sensible Soccer*, *Speedball 2*, *Lo
   - **Analog Stick**: 8-way digital Amiga joystick movement.
   - **+ / - buttons**: Open menu / pause emulation.
   - Joy-Con 1 is assigned to Amiga Port 1 (Player 1); Joy-Con 2 is assigned to Amiga Port 0 (Player 2).
+
+### 2-Player Mode with Separate Controllers (Detached Joy-Cons / Pro Controllers)
+Play two-player games (e.g. *Golden Axe*, *Speedball 2*, *Lotus 2*) with **each player on their own controller** — including the two Joy-Cons detached from the console and held horizontally:
+
+1. **Detach both Joy-Cons** from the console (or use two Pro Controllers / any combination of controllers). Once detached and held horizontally, the system sees them as **two separate controllers**.
+2. Open the menu (**- (Minus)**) and go to the **Controls** tab, then set:
+   - **Joystick Port** = `Amiga Port 1 (Joystick Port)`
+   - **Single Joy-Con Mode (2 Players)** = **OFF** — with it OFF, each detached Joy-Con counts as an individual controller; leave it ON only for the paired single-controller mode described above.
+   - **Number of Players** = **2** — required, otherwise Player 2 stays disabled.
+   - **Custom Button Remapping** = OFF (default mapping).
+3. Boot the game. In the game's title screen select the **2 PLAYER** option using Player 1's joystick and confirm with Fire.
+4. Player assignments:
+   - **Player 1** = controller index 0 → Amiga Port 1 (full button mapping: **B** = Fire 1, **A** = Fire 2, Left Stick / D-Pad = movement).
+   - **Player 2** = controller index 1 → Amiga Port 0 (D-Pad / arrows = movement, **B**-equivalent button = Fire 1, **A**-equivalent button = Fire 2).
+   - To find out which physical Joy-Con is Player 1, move the D-Pad on one of them at the title screen and see which player responds.
+
+> [!TIP]
+> A detached **left** Joy-Con has no dedicated face buttons; if Player 2 can move but not fire, give the **right** Joy-Con to Player 2 (it has the full A / B / X / Y button set).
+
+> [!NOTE]
+> With **Number of Players = 1** (default), the second Amiga port is reserved for mouse emulation and Player 2 input is ignored — this is the recommended setup for single-player games.
+
 
 ### Multi-Disk Playlist (`.m3u`)
 Effortless disk swapping for multi-floppy games (e.g. *Monkey Island*, *Beneath a Steel Sky*):

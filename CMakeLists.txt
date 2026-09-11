@@ -264,6 +264,8 @@ if(BUILD_NX)
     src/switch/whdload_manager_switch.cpp
     src/switch/hdf_manager_switch.cpp
     src/switch/m3u_manager.cpp
+    src/switch/cover_manager_switch.cpp
+    src/switch/game_metadata_switch.cpp
     src/stb_vorbis.c
   )
   set(SRC_FILES ${NX_SRC_FILES} ${SRC_FILES})
@@ -340,6 +342,7 @@ if(BUILD_NX)
     SDL2_image
     SDL2_gfx
     SDL2_ttf
+    curl
     freetype
     harfbuzz
     EGL
@@ -378,7 +381,7 @@ if(BUILD_NX)
   target_link_libraries(${PROJECT_NAME}.elf PRIVATE ${LIBS})
   add_custom_target(${PROJECT_NAME}.nro
     DEPENDS ${PROJECT_NAME}.elf
-    COMMAND ${DEVKITPRO}/tools/bin/nacptool --create "UAE4All2 HD" "theheroGAC" "v1.03" ${PROJECT_NAME}.nacp
+    COMMAND ${DEVKITPRO}/tools/bin/nacptool --create "UAE4All2 HD" "theheroGAC" "v1.04" ${PROJECT_NAME}.nacp
     COMMAND ${DEVKITPRO}/tools/bin/elf2nro ${PROJECT_NAME}.elf uae4all2hd.nro --icon=${CMAKE_SOURCE_DIR}/switchdata/icon0.jpg --nacp=${PROJECT_NAME}.nacp --romfsdir=${CMAKE_SOURCE_DIR}/switchdata
   )
   add_custom_target(${PROJECT_NAME}_switch.zip
