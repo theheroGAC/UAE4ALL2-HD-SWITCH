@@ -67,6 +67,8 @@ This repository contains the complete Nintendo Switch source tree and ready-to-r
 - **Fast-Forward (Turbo Mode)**: Hold **ZR** or toggle via Quick Menu to skip disk loading screens and slow Amiga sequences.
 - **5-Level Stereo Separation**: Customizable panning profiles (0% Mono, 25%, 50% Headphones, 75%, 100% Original Amiga).
 - **Single Joy-Con Mode (Instant 2-Player Co-op / VS)**: Detach both Joy-Cons and play Amiga multiplayer classics (e.g. Sensible World of Soccer, Speedball 2, Lotus 2, Worms, Micro Machines) horizontally in Tabletop or TV Docked mode with SL/SR shoulder and face button fire support.
+- **Advanced Display Filters & Shaders**: Complete suite of visual rendering modes including **CRT-Lottes** (simulated CRT shadow mask, Gaussian scanlines, and subtle vignette), **CRT-Easymode** (high-visibility aperture grille scanlines), **Scanlines (50%)**, **Scale2x** (pixel-art vectorized edge smoothing), **Sharp Bilinear** (pixel-perfect integer prescale with smooth interpolation), **Bilinear**, **Point (Nearest)**, and **Pixel-Perfect Integer** scaling.
+- **Expanded Aspect Ratios**: Full support for authentic **4:3**, classic European monitor **5:4**, widescreen **16:9**, and **16:10 Wide** display aspect ratios.
 - **Auto Crop & Screen Offsets**: Real-time black border detection (Both, Vertical, Horizontal) and fine X/Y positioning.
 - **Quick Save & Quick Load**: On-the-fly savestates with native on-screen toast notifications (`ZL + R`, `ZL + L`, `ZL + Up/Down`).
 - **Screenshots**: High-resolution PNG captures saved directly to `./screenshots/`.
@@ -294,6 +296,28 @@ Save and reload game states in real-time without leaving gameplay:
 - **ZL + D-Pad Up / Down**: Cycle active save slot (1 through 5).
 - On-screen toast notifications confirm each save, load, and slot change.
 
+### Video Filters & Display Scaling
+Customize your display presentation via the **Display** menu tab:
+
+| Filter / Shader | Description |
+|---|---|
+| **None** | Default nearest-neighbor scaling (auto 2x / 3x / 4x integer scaling when auto-crop is disabled). |
+| **Sharp Bilinear** | Prescales to the highest integer multiple with nearest-neighbor, then scales to target display size with bilinear filtering to prevent pixel shimmering and uneven pixel sizes. |
+| **Bilinear** | Full bilinear interpolation for a soft, smoothed image. |
+| **Point (Nearest)** | Direct nearest-neighbor scaling preserving sharp square pixels at any resolution. |
+| **CRT-Lottes** | Authentic cathode-ray tube emulation featuring an RGB triad phosphor aperture mask, non-linear Gaussian beam scanlines, and subtle vignette corner falloff. |
+| **CRT-Easymode** | Clean, high-visibility CRT simulation combining an aperture grille subpixel pattern with beam scanline boost. |
+| **Scanlines (50%)** | Classic horizontal scanlines at 50% opacity for a retro arcade monitor aesthetic. |
+| **Scale2x** | Vectorized pixel-art smoothing algorithm that rounds corner edges while maintaining razor-sharp diagonal clarity without blur. |
+| **Pixel-Perfect Integer** | Clamps display scaling to exact integer factors (e.g. 2x, 3x, 4x) for absolute geometric fidelity. |
+
+#### Aspect Ratio Options
+Under **Vertical Lines & Aspect**, choose how the Amiga image fills the Nintendo Switch display:
+- **Upscaled (4:3)**: Standard authentic Amiga TV / monitor aspect ratio.
+- **5:4**: Matches classic European Commodore 1084 / Microvitec CRT monitors.
+- **16:9 Fullscreen**: Stretches video to completely fill the 16:9 Switch display (720p handheld / 1080p docked).
+- **16:10 Wide**: Proportional wide aspect ratio delivering larger active playfield area with balanced geometry.
+
 ---
 
 ## Kickstart ROM Compatibility Table
@@ -367,6 +391,9 @@ This project is a derivative work and would not exist without the original UAE4A
 - **The VitaSDK Team** for VitaSDK toolchain and libraries
 - **Bert Jahn (Wepl)** for WHDLoad (http://www.whdload.de)
 - **Aminet** for the Amiga software and WHDLoad game archive (https://aminet.net)
+- **Timothy Lottes** for the CRT-Lottes shadow mask & CRT emulation shader
+- **aliaspider** for the CRT-Easymode aperture grille shader
+- **Andrea Mazzoleni** for the Scale2x pixel-art scaling algorithm
 - **SPS (Software Preservation Society)** for CAPS / IPF image decoding support
 - **Romain Tisserand (rtissera)** for libchdr (CHD image decompression library), and **Aaron Giles / The MAME Team** for the original CHD format and compression code
 
