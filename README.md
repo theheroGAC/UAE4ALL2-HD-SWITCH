@@ -32,11 +32,48 @@ sdmc:/switch/uae4all2/kickstarts/
 > The two essential Kickstart files that boot the vast majority of games are:
 > - `kick13.rom` (Kickstart 1.3 for Amiga 500 games)
 > - `kick31.rom` (Kickstart 3.1 for Amiga 1200 AGA games)
+> For CD32 games, also add `kick40060.CD32` and `kick40060.CD32.ext`.
 
 ### 3. Add Games and Launch
-- Copy your game files (`.lha`, `.adf`, `.hdf`, `.iso`, `.chd`) into the `roms/` or `WHDLoad/` folder.
+- Copy your game files (`.lha`, `.adf`, `.hdf`, `.iso`, `.chd`, `.cue`) into the `roms/` or `WHDLoad/` folder.
 - Boot your Nintendo Switch into the Homebrew Menu and launch **UAE4All2 HD**.
 - Select your game in the **Game Library** and press **A** to launch with 1 click.
+
+---
+
+## Supported Systems and File Formats
+
+UAE4ALL2 HD supports the complete spectrum of Amiga computer and console hardware, along with all standard retro disk and storage formats:
+
+### Supported Amiga Systems
+- **Amiga 500 & 500+**: OCS and ECS chipsets, Motorola 68000 CPU (7 MHz), 512 KB to 1 MB Chip RAM + Slow/Fast expansion RAM.
+- **Amiga 600**: ECS chipset, Motorola 68000 CPU, IDE hard disk support, 2 MB Chip RAM + up to 8 MB Fast RAM.
+- **Amiga 1200 (AGA)**: AGA 256-color chipset, Motorola 68020 CPU (14 MHz), 2 MB Chip RAM + up to 8 MB Fast RAM.
+- **Amiga CD32**: Dedicated 32-bit CD-ROM console, Motorola 68020 CPU, AGA chipset, and custom Akiko chip emulation (Chunky-to-Planar converter and CD-ROM sub-system).
+
+### Supported File Formats
+- **Floppy Disk Images**:
+  - **ADF & ADZ**: Standard Amiga Disk File format and gzipped ADF images across 4 virtual drives (DF0 to DF3).
+  - **IPF (CAPS)**: Software Preservation Society format for original commercial copy-protected floppy dumps.
+  - **DMS**: Disk Masher System compressed floppy archives.
+  - **FDI**: Formatted Disk Image files.
+  - **ZIP**: Direct loading of floppy disk images compressed inside `.zip` archives.
+- **WHDLoad Games (Hard Drive Installed)**:
+  - **LHA Archives (`.lha`)**: Native high-speed decompressor (`-lh5-`, `-lh4-`, `-lh0-`) with automatic Kickstart mapping, post-install confirmation, and automatic hardware profile assignment.
+  - **Installed WHDLoad Folders**: Direct 1-click execution from the `WHDLoad/` directory.
+- **Amiga CD32 & CD-ROM Media**:
+  - **ISO**: Standard ISO-9660 CD-ROM disc images.
+  - **BIN / CUE**: Raw CD images with multi-track support and redbook CDDA digital audio soundtrack streaming.
+  - **Compressed CHD (`.chd`)**: Real-time decoding of compressed CD-ROM images, reducing storage footprint by 50% to 70% with zero RAM or SD card decompression overhead.
+- **Hard Disks & Hardfiles**:
+  - **HDF Images**: Fast File System (FFS) hard disk files across up to 4 mounted drives.
+  - **Compressed CHD Hardfiles**: Direct mounting of compressed `.chd` hard disk images.
+  - **Directory Mounting (`DH0:`)**: Mount any folder on your microSD card directly as an Amiga hard drive volume.
+  - **Integrated HDF Manager**: Create, format, and backup custom hard disk files (from 50 MB to 4000 MB) directly within the interface.
+- **Multi-Disk Playlists**:
+  - **M3U Playlists (`.m3u`)**: Seamless in-game disk swapping for multi-floppy games (up to 16 disks) via hotkeys (`ZL + D-Pad Left/Right`) or Quick Menu.
+- **Save States**:
+  - **ASF Savestates (`.asf`)**: Real-time snapshot saves across 5 independent slots per game, complete with screenshot preview thumbnails (`.png`).
 
 ---
 
@@ -125,6 +162,8 @@ Perform common actions during gameplay without entering the configuration menu:
 
 - **1-Click Game Library with Artwork & Metadata**:
   Browse all your installed games (WHDLoad, ADF floppies, HDF hardfiles, CD32 images, M3U playlists) in one unified screen with high-resolution boxart, release year, developer, publisher, genre, and player count. Select any game and press **A** to launch immediately.
+- **Full Amiga CD32 Console Emulation**:
+  Play original CD32 games directly from ISO, BIN/CUE, or compressed CHD images. Full Akiko custom chip emulation delivers hardware Chunky-to-Planar conversion and CD audio playback with authentic CD32 joypad controls.
 - **In-App Cover Downloader (Wi-Fi)**:
   Download official boxart directly onto the console without a PC. Highlight any game, press **(Y)** to open the Options dialog, and select **"Download Cover"**.
 - **Smooth 60 FPS Menus without Slowdowns (v1.05)**:
@@ -152,7 +191,7 @@ All files reside inside `sdmc:/switch/uae4all2/`:
 sdmc:/switch/uae4all2/
 ├── uae4all2hd.nro               # Main application binary
 ├── kickstarts/                  # Amiga Kickstart ROM files (BIOS)
-├── roms/                        # Game images (.adf, .ipf, .hdf, .lha, .chd)
+├── roms/                        # Game images (.adf, .ipf, .hdf, .lha, .iso, .cue, .chd)
 ├── WHDLoad/                     # Extracted WHDLoad game folders
 ├── saves/                       # In-game save states (.asf)
 ├── conf/                        # Saved custom game configurations (.conf)
@@ -187,14 +226,19 @@ Place your Kickstart ROM files into `sdmc:/switch/uae4all2/kickstarts/` using th
 - Ensure you have placed `kick13.rom` (for Amiga 500 games) and `kick31.rom` (for Amiga 1200 AGA games) inside `sdmc:/switch/uae4all2/kickstarts/`.
 - If the game is a WHDLoad title, verify if it requires Amiga 500 or Amiga 1200 hardware. You can force the desired hardware model under the **WHDLoad** menu tab using **WHDLoad Hardware**.
 
-### 2. How do I connect to the Switch from my PC via Wi-Fi (FTP)?
+### 2. How do I play Amiga CD32 games?
+1. Ensure both `kick40060.CD32` and `kick40060.CD32.ext` are placed into `sdmc:/switch/uae4all2/kickstarts/`.
+2. Copy your CD32 game image (`.iso`, `.chd`, or `.cue` with `.bin`) into `sdmc:/switch/uae4all2/roms/`.
+3. Launch the game from the **Game Library** or select the **Amiga CD32** preset from the **Presets** menu tab.
+
+### 3. How do I connect to the Switch from my PC via Wi-Fi (FTP)?
 1. Ensure your Nintendo Switch and PC are connected to the same local Wi-Fi network.
 2. In UAE4ALL2, open the **System** tab and select **FTP File Transfer**.
 3. Note the displayed IP address and port (e.g. `ftp://192.168.1.15:5000`).
 4. On your PC, open **FileZilla** or **WinSCP**, enter the IP address into the Host field and `5000` into the Port field, and connect as an Anonymous user.
 5. You can copy games, manage files, and upload covers directly over Wi-Fi.
 
-### 3. How do multi-disk games work (.m3u)?
+### 4. How do multi-disk games work (.m3u)?
 Create a plain text file named with an `.m3u` extension containing the names of your floppy disk images in order, one per line:
 ```text
 Monkey_Island_Disk1.adf
@@ -204,7 +248,7 @@ Monkey_Island_Disk4.adf
 ```
 Load the `.m3u` file into drive DF0. When prompted by the game to change disks, press **`ZL + D-Pad Right`** to switch to the next disk.
 
-### 4. How do I install WHDLoad games (.lha)?
+### 5. How do I install WHDLoad games (.lha)?
 1. Copy the `.lha` file into `sdmc:/switch/uae4all2/roms/`.
 2. In the emulator's **WHDLoad** tab, press **X** on the file to install it. The archive is automatically extracted to `WHDLoad/`, and a prompt will ask if you want to boot the game immediately.
 
