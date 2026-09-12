@@ -166,6 +166,7 @@ extern int mainMenu_pinballMode;
 extern char mainMenu_whdload_game[128];
 extern char mainMenu_whdload_args[256];
 extern int mainMenu_whdload_mode;
+extern int mainMenu_whdload_blitter;
 extern int mainMenu_floppyWriteProtect[4];
 extern int mainMenu_cycleExact;
 extern int mainMenu_custom_controlSet;

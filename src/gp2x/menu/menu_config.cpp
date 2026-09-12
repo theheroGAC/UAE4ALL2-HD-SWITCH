@@ -184,6 +184,7 @@ int mainMenu_pinballMode = 0;
 char mainMenu_whdload_game[128] = "";
 char mainMenu_whdload_args[256] = "";
 int mainMenu_whdload_mode = 0;
+int mainMenu_whdload_blitter = 0;
 int mainMenu_floppyWriteProtect[4] = { 0, 0, 0, 0 };
 int mainMenu_cycleExact = 0;
 #endif
@@ -731,7 +732,7 @@ void ApplyWHDLoadA500Profile(void)
     kickstart = 3;
     extfile[0] = '\0';
     mainMenu_CPU_model = 0;
-    mainMenu_chipset = 0x100;
+    mainMenu_chipset = 0;
     mainMenu_chipMemory = 2;
     mainMenu_slowMemory = 0;
     mainMenu_fastMemory = 3;
@@ -763,6 +764,27 @@ void ApplyWHDLoadPreset(const char *game_name)
     } else {
         ApplyWHDLoadA500Profile();
     }
+
+    int blit_mode = 0;
+    if (mainMenu_whdload_blitter == 1) {
+        blit_mode = 0x000;
+    } else if (mainMenu_whdload_blitter == 2) {
+        blit_mode = 0x100;
+    } else if (mainMenu_whdload_blitter == 3) {
+        blit_mode = 0x200;
+    } else {
+#ifdef __SWITCH__
+        if (switch_whdload_needs_immediate_blitter(game_name)) {
+            blit_mode = 0x100;
+        } else {
+            blit_mode = 0x000;
+        }
+#else
+        blit_mode = 0x000;
+#endif
+    }
+    mainMenu_chipset = (mainMenu_chipset & 0x00ff) | blit_mode;
+    UpdateChipsetSettings();
 
     if (uae4all_hard_dir[0] != '\0') {
         mainMenu_bootHD = 1;
@@ -1502,6 +1524,8 @@ int saveconfig(int general)
     fputs(buffer,f);
     snprintf((char*)buffer, 255, "whdload_mode=%d\n",mainMenu_whdload_mode);
     fputs(buffer,f);
+    snprintf((char*)buffer, 255, "whdload_blitter=%d\n",mainMenu_whdload_blitter);
+    fputs(buffer,f);
     for (int i = 0; i < 4; i++) {
         snprintf((char*)buffer, 255, "floppyWriteProtect%d=%d\n", i, mainMenu_floppyWriteProtect[i]);
         fputs(buffer, f);
@@ -1807,6 +1831,8 @@ int saveconfig(int general)
     fputs(buffer,f);
     snprintf((char*)buffer, 255, "mouseSwapButtons=%d\n",mainMenu_mouseSwapButtons);
     fputs(buffer,f);
+    snprintf((char*)buffer, 255, "pinballMode=%d\n", mainMenu_pinballMode);
+    fputs(buffer,f);
 #endif
 #ifdef __PSP2__
     snprintf((char*)buffer, 255, "cdimage=%s\n", current_cd_image);
@@ -1971,6 +1997,7 @@ void loadconfig(int general)
 #if defined(__PSP2__) || defined(__SWITCH__)
         fscanf(f,"whdload_args=%255[^\n]\n", mainMenu_whdload_args);
         fscanf(f,"whdload_mode=%d\n", &mainMenu_whdload_mode);
+        fscanf(f,"whdload_blitter=%d\n", &mainMenu_whdload_blitter);
         for (int i = 0; i < 4; i++)
             fscanf(f,"floppyWriteProtect%d=%d\n", i, &mainMenu_floppyWriteProtect[i]);
         fscanf(f,"cycleExact=%d\n", &mainMenu_cycleExact);
@@ -2283,6 +2310,7 @@ void loadconfig(int general)
         if (fscanf(f,"mouseFastFactor=%d\n",&mainMenu_mouseFastFactor) != 1) mainMenu_mouseFastFactor = 2;
         if (fscanf(f,"mouseFastButton=%d\n",&mainMenu_mouseFastButton) != 1) mainMenu_mouseFastButton = 2;
         if (fscanf(f,"mouseSwapButtons=%d\n",&mainMenu_mouseSwapButtons) != 1) mainMenu_mouseSwapButtons = 0;
+        if (fscanf(f,"pinballMode=%d\n",&mainMenu_pinballMode) != 1) mainMenu_pinballMode = 0;
 #endif
 #ifdef __PSP2__
         memset(filebuffer, 0, 256);
