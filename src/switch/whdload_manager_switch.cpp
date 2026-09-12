@@ -1456,11 +1456,16 @@ int switch_whdload_list(char names[][128], int max_names)
     return count;
 }
 
-int switch_whdload_is_aga(const char *game_name)
-{
-    if (!game_name || game_name[0] == '\0')
-        return 0;
+typedef struct {
+    char name[128];
+    int is_aga;
+} SwitchAgaCacheEntry;
 
+static SwitchAgaCacheEntry s_switch_aga_cache[512];
+static int s_switch_aga_cache_count = 0;
+
+static int detect_whdload_is_aga_uncached(const char *game_name)
+{
     char lower_name[256];
     size_t i = 0;
     for (; game_name[i] && i < sizeof(lower_name) - 1; i++) {
@@ -1512,6 +1517,48 @@ int switch_whdload_is_aga(const char *game_name)
             }
         }
     }
+
+    return 0;
+}
+
+int switch_whdload_is_aga(const char *game_name)
+{
+    if (!game_name || game_name[0] == '\0')
+        return 0;
+
+    for (int c = 0; c < s_switch_aga_cache_count; c++) {
+        if (strcmp(s_switch_aga_cache[c].name, game_name) == 0)
+            return s_switch_aga_cache[c].is_aga;
+    }
+
+    int res = detect_whdload_is_aga_uncached(game_name);
+
+    if (s_switch_aga_cache_count < 512) {
+        strncpy(s_switch_aga_cache[s_switch_aga_cache_count].name, game_name, 127);
+        s_switch_aga_cache[s_switch_aga_cache_count].name[127] = '\0';
+        s_switch_aga_cache[s_switch_aga_cache_count].is_aga = res;
+        s_switch_aga_cache_count++;
+    }
+
+    return res;
+}
+
+int switch_whdload_needs_immediate_blitter(const char *game_name)
+{
+    if (!game_name || game_name[0] == '\0')
+        return 0;
+
+    char lower_name[256];
+    size_t i = 0;
+    for (; game_name[i] && i < sizeof(lower_name) - 1; i++) {
+        lower_name[i] = (char)tolower((unsigned char)game_name[i]);
+    }
+    lower_name[i] = '\0';
+
+    if (strstr(lower_name, "shadowdancer") != NULL ||
+        strstr(lower_name, "shadow dancer") != NULL ||
+        strstr(lower_name, "shadow_dancer") != NULL)
+        return 1;
 
     return 0;
 }

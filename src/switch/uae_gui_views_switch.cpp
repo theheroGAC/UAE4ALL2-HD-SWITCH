@@ -282,6 +282,8 @@ static void* switch_ftp_client_session(void *arg) {
     size_t pending_len = 0;
     int pasv_fd = -1;
     char v_cwd[512] = "/";
+    char rnfr_path[768] = "";
+    off_t rest_offset = 0;
 
     while (s_switch_ftp_running) {
         size_t line_len = 0;
@@ -362,23 +364,48 @@ static void* switch_ftp_client_session(void *arg) {
             const char *res = "215 UNIX Type: L8\r\n";
             send(client_fd, res, strlen(res), 0);
         } else if (strcasecmp(cmd, "FEAT") == 0) {
-            const char *res = "211-Features:\r\n PASV\r\n EPSV\r\n UTF8\r\n SIZE\r\n MDTM\r\n REST STREAM\r\n211 End\r\n";
+            const char *res = "211-Features:\r\n PASV\r\n EPSV\r\n UTF8\r\n SIZE\r\n MDTM\r\n MLST type*;size*;modify*;\r\n REST STREAM\r\n211 End\r\n";
             send(client_fd, res, strlen(res), 0);
         } else if (strcasecmp(cmd, "OPTS") == 0) {
-            const char *res = "200 UTF8 enabled.\r\n";
+            const char *res = "200 OPTS command successful.\r\n";
             send(client_fd, res, strlen(res), 0);
         } else if (strcasecmp(cmd, "NOOP") == 0) {
             const char *res = "200 OK.\r\n";
             send(client_fd, res, strlen(res), 0);
-        } else if (strcasecmp(cmd, "PWD") == 0) {
+        } else if (strcasecmp(cmd, "PWD") == 0 || strcasecmp(cmd, "XPWD") == 0) {
             char res[256];
             snprintf(res, sizeof(res), "257 \"%s\" is current directory\r\n", v_cwd);
             send(client_fd, res, strlen(res), 0);
         } else if (strcasecmp(cmd, "TYPE") == 0) {
             const char *res = "200 Type set to I.\r\n";
             send(client_fd, res, strlen(res), 0);
+        } else if (strcasecmp(cmd, "MODE") == 0) {
+            const char *res = "200 Mode set to S.\r\n";
+            send(client_fd, res, strlen(res), 0);
+        } else if (strcasecmp(cmd, "STRU") == 0) {
+            const char *res = "200 Structure set to F.\r\n";
+            send(client_fd, res, strlen(res), 0);
+        } else if (strcasecmp(cmd, "ABOR") == 0) {
+            const char *res = "226 ABOR command successful.\r\n";
+            send(client_fd, res, strlen(res), 0);
+        } else if (strcasecmp(cmd, "ALLO") == 0) {
+            const char *res = "200 OK.\r\n";
+            send(client_fd, res, strlen(res), 0);
+        } else if (strcasecmp(cmd, "STAT") == 0) {
+            const char *res = "211 UAE4All2 Switch FTP Server status OK.\r\n";
+            send(client_fd, res, strlen(res), 0);
+        } else if (strcasecmp(cmd, "SITE") == 0) {
+            const char *res = "200 Command OK.\r\n";
+            send(client_fd, res, strlen(res), 0);
         } else if (strcasecmp(cmd, "REST") == 0) {
-            const char *res = "350 Restart position accepted (0).\r\n";
+            if (arg_val) {
+                rest_offset = (off_t)strtoll(arg_val, NULL, 10);
+                if (rest_offset < 0) rest_offset = 0;
+            } else {
+                rest_offset = 0;
+            }
+            char res[128];
+            snprintf(res, sizeof(res), "350 Restart position accepted (%lld).\r\n", (long long)rest_offset);
             send(client_fd, res, strlen(res), 0);
         } else if (strcasecmp(cmd, "PASV") == 0) {
             if (pasv_fd >= 0) close(pasv_fd);
@@ -433,14 +460,16 @@ static void* switch_ftp_client_session(void *arg) {
             char epsv_res[128];
             snprintf(epsv_res, sizeof(epsv_res), "229 Entering Extended Passive Mode (|||%d|)\r\n", assigned_port);
             send(client_fd, epsv_res, strlen(epsv_res), 0);
-        } else if (strcasecmp(cmd, "LIST") == 0 || strcasecmp(cmd, "NLST") == 0) {
+        } else if (strcasecmp(cmd, "LIST") == 0) {
             const char *res = "150 Opening data connection for directory list.\r\n";
             send(client_fd, res, strlen(res), 0);
 
             int data_client = ftp_accept_data(&pasv_fd);
             if (data_client >= 0) {
-                char fs_path[768];
+                char virt_check[512];
                 const char *target = (arg_val && arg_val[0] != '-') ? arg_val : "";
+                ftp_normalize_virtual_path(v_cwd, target, virt_check, sizeof(virt_check));
+                char fs_path[768];
                 ftp_resolve_path(v_cwd, target, fs_path, sizeof(fs_path));
                 DIR *d = opendir(fs_path);
                 if (!d) {
@@ -448,12 +477,18 @@ static void* switch_ftp_client_session(void *arg) {
                     snprintf(with_slash, sizeof(with_slash), "%s/", fs_path);
                     d = opendir(with_slash);
                 }
+                if (strcmp(virt_check, "/") == 0) {
+                    const char *sdmc_line = "drwxr-xr-x 1 root root 0 Jan 01 2026 sdmc\r\n";
+                    send(data_client, sdmc_line, strlen(sdmc_line), 0);
+                }
                 if (d) {
+                    static const char *k_ftp_months[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
                     struct dirent *de;
                     size_t plen = strlen(fs_path);
                     bool has_slash = (plen > 0 && fs_path[plen - 1] == '/');
                     while ((de = readdir(d)) != NULL) {
                         if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0) continue;
+                        if (strcmp(virt_check, "/") == 0 && strcmp(de->d_name, "sdmc") == 0) continue;
                         char lbuf[512];
                         char fullp[768];
                         if (has_slash)
@@ -464,8 +499,13 @@ static void* switch_ftp_client_session(void *arg) {
                         memset(&st, 0, sizeof(st));
                         stat(fullp, &st);
                         bool is_d = S_ISDIR(st.st_mode);
-                        snprintf(lbuf, sizeof(lbuf), "%crwxr-xr-x 1 root root %llu Jan 01 2026 %s\r\n",
-                                 is_d ? 'd' : '-', (unsigned long long)st.st_size, de->d_name);
+                        struct tm *gm = gmtime(&st.st_mtime);
+                        int mon = gm ? gm->tm_mon : 0;
+                        int mday = gm ? gm->tm_mday : 1;
+                        int year = gm ? gm->tm_year + 1900 : 2026;
+                        if (mon < 0 || mon > 11) mon = 0;
+                        snprintf(lbuf, sizeof(lbuf), "%crwxr-xr-x 1 root root %llu %s %02d %04d %s\r\n",
+                                 is_d ? 'd' : '-', (unsigned long long)st.st_size, k_ftp_months[mon], mday, year, de->d_name);
                         send(data_client, lbuf, strlen(lbuf), 0);
                     }
                     closedir(d);
@@ -477,11 +517,153 @@ static void* switch_ftp_client_session(void *arg) {
                 const char *err = "425 Can't open data connection.\r\n";
                 send(client_fd, err, strlen(err), 0);
             }
-        } else if (strcasecmp(cmd, "CWD") == 0) {
+        } else if (strcasecmp(cmd, "NLST") == 0) {
+            const char *res = "150 Opening data connection for file list.\r\n";
+            send(client_fd, res, strlen(res), 0);
+
+            int data_client = ftp_accept_data(&pasv_fd);
+            if (data_client >= 0) {
+                char virt_check[512];
+                const char *target = (arg_val && arg_val[0] != '-') ? arg_val : "";
+                ftp_normalize_virtual_path(v_cwd, target, virt_check, sizeof(virt_check));
+                char fs_path[768];
+                ftp_resolve_path(v_cwd, target, fs_path, sizeof(fs_path));
+                DIR *d = opendir(fs_path);
+                if (!d) {
+                    char with_slash[780];
+                    snprintf(with_slash, sizeof(with_slash), "%s/", fs_path);
+                    d = opendir(with_slash);
+                }
+                if (strcmp(virt_check, "/") == 0) {
+                    const char *sdmc_line = "sdmc\r\n";
+                    send(data_client, sdmc_line, strlen(sdmc_line), 0);
+                }
+                if (d) {
+                    struct dirent *de;
+                    while ((de = readdir(d)) != NULL) {
+                        if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0) continue;
+                        if (strcmp(virt_check, "/") == 0 && strcmp(de->d_name, "sdmc") == 0) continue;
+                        char lbuf[512];
+                        snprintf(lbuf, sizeof(lbuf), "%s\r\n", de->d_name);
+                        send(data_client, lbuf, strlen(lbuf), 0);
+                    }
+                    closedir(d);
+                }
+                close(data_client);
+                const char *done = "226 Transfer complete.\r\n";
+                send(client_fd, done, strlen(done), 0);
+            } else {
+                const char *err = "425 Can't open data connection.\r\n";
+                send(client_fd, err, strlen(err), 0);
+            }
+        } else if (strcasecmp(cmd, "MLSD") == 0) {
+            const char *res = "150 Opening BINARY mode data connection for MLSD.\r\n";
+            send(client_fd, res, strlen(res), 0);
+
+            int data_client = ftp_accept_data(&pasv_fd);
+            if (data_client >= 0) {
+                char virt_check[512];
+                const char *target = (arg_val && arg_val[0] != '-') ? arg_val : "";
+                ftp_normalize_virtual_path(v_cwd, target, virt_check, sizeof(virt_check));
+                char fs_path[768];
+                ftp_resolve_path(v_cwd, target, fs_path, sizeof(fs_path));
+                DIR *d = opendir(fs_path);
+                if (!d) {
+                    char with_slash[780];
+                    snprintf(with_slash, sizeof(with_slash), "%s/", fs_path);
+                    d = opendir(with_slash);
+                }
+                if (strcmp(virt_check, "/") == 0) {
+                    const char *sdmc_line = "type=dir;modify=20260101000000; sdmc\r\n";
+                    send(data_client, sdmc_line, strlen(sdmc_line), 0);
+                }
+                if (d) {
+                    struct dirent *de;
+                    size_t plen = strlen(fs_path);
+                    bool has_slash = (plen > 0 && fs_path[plen - 1] == '/');
+                    while ((de = readdir(d)) != NULL) {
+                        if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0) continue;
+                        if (strcmp(virt_check, "/") == 0 && strcmp(de->d_name, "sdmc") == 0) continue;
+                        char lbuf[512];
+                        char fullp[768];
+                        if (has_slash)
+                            snprintf(fullp, sizeof(fullp), "%s%s", fs_path, de->d_name);
+                        else
+                            snprintf(fullp, sizeof(fullp), "%s/%s", fs_path, de->d_name);
+                        struct stat st;
+                        memset(&st, 0, sizeof(st));
+                        stat(fullp, &st);
+                        bool is_d = S_ISDIR(st.st_mode);
+                        struct tm *gm = gmtime(&st.st_mtime);
+                        char time_str[32];
+                        if (gm) {
+                            snprintf(time_str, sizeof(time_str), "%04d%02d%02d%02d%02d%02d",
+                                     gm->tm_year + 1900, gm->tm_mon + 1, gm->tm_mday,
+                                     gm->tm_hour, gm->tm_min, gm->tm_sec);
+                        } else {
+                            snprintf(time_str, sizeof(time_str), "20260101000000");
+                        }
+                        if (is_d) {
+                            snprintf(lbuf, sizeof(lbuf), "type=dir;modify=%s; %s\r\n", time_str, de->d_name);
+                        } else {
+                            snprintf(lbuf, sizeof(lbuf), "type=file;size=%llu;modify=%s; %s\r\n",
+                                     (unsigned long long)st.st_size, time_str, de->d_name);
+                        }
+                        send(data_client, lbuf, strlen(lbuf), 0);
+                    }
+                    closedir(d);
+                }
+                close(data_client);
+                const char *done = "226 MLSD complete.\r\n";
+                send(client_fd, done, strlen(done), 0);
+            } else {
+                const char *err = "425 Can't open data connection.\r\n";
+                send(client_fd, err, strlen(err), 0);
+            }
+        } else if (strcasecmp(cmd, "MLST") == 0) {
+            char virt_path[768];
+            ftp_normalize_virtual_path(v_cwd, arg_val, virt_path, sizeof(virt_path));
+            char fs_path[768];
+            ftp_resolve_path(v_cwd, arg_val, fs_path, sizeof(fs_path));
+            struct stat st;
+            memset(&st, 0, sizeof(st));
+            bool ok = false;
+            bool is_d = false;
+            if (strcmp(virt_path, "/") == 0 || strcmp(virt_path, "/sdmc") == 0) {
+                ok = true;
+                is_d = true;
+            } else if (stat(fs_path, &st) == 0) {
+                ok = true;
+                is_d = S_ISDIR(st.st_mode);
+            }
+            if (!ok) {
+                const char *err = "550 File or directory not found.\r\n";
+                send(client_fd, err, strlen(err), 0);
+            } else {
+                struct tm *gm = gmtime(&st.st_mtime);
+                char time_str[32];
+                if (gm) {
+                    snprintf(time_str, sizeof(time_str), "%04d%02d%02d%02d%02d%02d",
+                             gm->tm_year + 1900, gm->tm_mon + 1, gm->tm_mday,
+                             gm->tm_hour, gm->tm_min, gm->tm_sec);
+                } else {
+                    snprintf(time_str, sizeof(time_str), "20260101000000");
+                }
+                char res[1024];
+                if (is_d) {
+                    snprintf(res, sizeof(res), "250-Listing %s\r\n type=dir;modify=%s; %s\r\n250 End\r\n",
+                             virt_path, time_str, virt_path);
+                } else {
+                    snprintf(res, sizeof(res), "250-Listing %s\r\n type=file;size=%llu;modify=%s; %s\r\n250 End\r\n",
+                             virt_path, (unsigned long long)st.st_size, time_str, virt_path);
+                }
+                send(client_fd, res, strlen(res), 0);
+            }
+        } else if (strcasecmp(cmd, "CWD") == 0 || strcasecmp(cmd, "XCWD") == 0) {
             char new_cwd[512];
             ftp_normalize_virtual_path(v_cwd, arg_val, new_cwd, sizeof(new_cwd));
 
-            if (strcmp(new_cwd, "/") == 0) {
+            if (strcmp(new_cwd, "/") == 0 || strcmp(new_cwd, "/sdmc") == 0) {
                 strncpy(v_cwd, new_cwd, sizeof(v_cwd) - 1);
                 v_cwd[sizeof(v_cwd) - 1] = '\0';
                 const char *res = "250 Directory successfully changed.\r\n";
@@ -507,7 +689,7 @@ static void* switch_ftp_client_session(void *arg) {
                     send(client_fd, err, strlen(err), 0);
                 }
             }
-        } else if (strcasecmp(cmd, "CDUP") == 0) {
+        } else if (strcasecmp(cmd, "CDUP") == 0 || strcasecmp(cmd, "XCUP") == 0) {
             ftp_normalize_virtual_path(v_cwd, "..", v_cwd, sizeof(v_cwd));
             const char *res = "200 Directory changed to parent.\r\n";
             send(client_fd, res, strlen(res), 0);
@@ -534,6 +716,10 @@ static void* switch_ftp_client_session(void *arg) {
             ftp_resolve_path(v_cwd, arg_val, fullp, sizeof(fullp));
             FILE *f = fopen(fullp, "rb");
             if (f) {
+                if (rest_offset > 0) {
+                    fseek(f, (long)rest_offset, SEEK_SET);
+                    rest_offset = 0;
+                }
                 const char *res = "150 Opening BINARY mode data connection.\r\n";
                 send(client_fd, res, strlen(res), 0);
                 int data_client = ftp_accept_data(&pasv_fd);
@@ -555,6 +741,7 @@ static void* switch_ftp_client_session(void *arg) {
                 }
                 fclose(f);
             } else {
+                rest_offset = 0;
                 const char *err = "550 File not found.\r\n";
                 send(client_fd, err, strlen(err), 0);
             }
@@ -567,7 +754,17 @@ static void* switch_ftp_client_session(void *arg) {
                 ftp_ensure_dir(fullp);
                 *sep = '/';
             }
-            FILE *f = fopen(fullp, "wb");
+            FILE *f = NULL;
+            if (rest_offset > 0) {
+                f = fopen(fullp, "r+b");
+                if (f) {
+                    fseek(f, (long)rest_offset, SEEK_SET);
+                }
+            }
+            if (!f) {
+                f = fopen(fullp, "wb");
+            }
+            rest_offset = 0;
             if (!f) {
                 remove(fullp);
                 f = fopen(fullp, "wb");
@@ -605,17 +802,86 @@ static void* switch_ftp_client_session(void *arg) {
                 const char *err = "550 Failed to open file for writing.\r\n";
                 send(client_fd, err, strlen(err), 0);
             }
+        } else if (strcasecmp(cmd, "APPE") == 0) {
+            char fullp[768];
+            ftp_resolve_path(v_cwd, arg_val, fullp, sizeof(fullp));
+            char *sep = strrchr(fullp, '/');
+            if (sep) {
+                *sep = '\0';
+                ftp_ensure_dir(fullp);
+                *sep = '/';
+            }
+            FILE *f = fopen(fullp, "ab");
+            if (f) {
+                const char *res = "150 Ok to send data.\r\n";
+                send(client_fd, res, strlen(res), 0);
+                int data_client = ftp_accept_data(&pasv_fd);
+                if (data_client >= 0) {
+                    char *file_buf = (char*)malloc(64 * 1024);
+                    if (file_buf) {
+                        int rb;
+                        while (s_switch_ftp_running && (rb = recv(data_client, file_buf, 64 * 1024, 0)) > 0) {
+                            fwrite(file_buf, 1, rb, f);
+                        }
+                        free(file_buf);
+                    }
+                    close(data_client);
+                    const char *done = "226 Transfer complete.\r\n";
+                    send(client_fd, done, strlen(done), 0);
+                } else {
+                    const char *err = "425 Can't open data connection.\r\n";
+                    send(client_fd, err, strlen(err), 0);
+                }
+                fclose(f);
+                if (data_client >= 0) {
+                    switch_library_mark_dirty();
+                    write_log("[SWITCH] FTP: library refresh requested after APPE '%s'\\n", fullp);
+                }
+            } else {
+                const char *err = "550 Failed to open file for writing.\r\n";
+                send(client_fd, err, strlen(err), 0);
+            }
+        } else if (strcasecmp(cmd, "RNFR") == 0) {
+            ftp_resolve_path(v_cwd, arg_val, rnfr_path, sizeof(rnfr_path));
+            struct stat st;
+            if (stat(rnfr_path, &st) == 0) {
+                const char *res = "350 File exists, ready for destination name.\r\n";
+                send(client_fd, res, strlen(res), 0);
+            } else {
+                rnfr_path[0] = '\0';
+                const char *err = "550 File not found.\r\n";
+                send(client_fd, err, strlen(err), 0);
+            }
+        } else if (strcasecmp(cmd, "RNTO") == 0) {
+            if (rnfr_path[0] == '\0') {
+                const char *err = "503 Bad sequence of commands.\r\n";
+                send(client_fd, err, strlen(err), 0);
+            } else {
+                char rnto_path[768];
+                ftp_resolve_path(v_cwd, arg_val, rnto_path, sizeof(rnto_path));
+                if (rename(rnfr_path, rnto_path) == 0) {
+                    rnfr_path[0] = '\0';
+                    const char *res = "250 Rename successful.\r\n";
+                    send(client_fd, res, strlen(res), 0);
+                    switch_library_mark_dirty();
+                } else {
+                    rnfr_path[0] = '\0';
+                    const char *err = "550 Rename failed.\r\n";
+                    send(client_fd, err, strlen(err), 0);
+                }
+            }
         } else if (strcasecmp(cmd, "DELE") == 0) {
             char fullp[768];
             ftp_resolve_path(v_cwd, arg_val, fullp, sizeof(fullp));
             if (remove(fullp) == 0) {
                 const char *res = "250 File deleted.\r\n";
                 send(client_fd, res, strlen(res), 0);
+                switch_library_mark_dirty();
             } else {
                 const char *err = "550 Failed to delete file.\r\n";
                 send(client_fd, err, strlen(err), 0);
             }
-        } else if (strcasecmp(cmd, "MKD") == 0) {
+        } else if (strcasecmp(cmd, "MKD") == 0 || strcasecmp(cmd, "XMKD") == 0) {
             char fullp[768];
             ftp_resolve_path(v_cwd, arg_val, fullp, sizeof(fullp));
             if (mkdir(fullp, 0777) == 0) {
@@ -626,7 +892,7 @@ static void* switch_ftp_client_session(void *arg) {
                 const char *err = "550 Failed to create directory.\r\n";
                 send(client_fd, err, strlen(err), 0);
             }
-        } else if (strcasecmp(cmd, "RMD") == 0) {
+        } else if (strcasecmp(cmd, "RMD") == 0 || strcasecmp(cmd, "XRMD") == 0) {
             char fullp[768];
             ftp_resolve_path(v_cwd, arg_val, fullp, sizeof(fullp));
             if (rmdir(fullp) == 0) {
@@ -1893,11 +2159,13 @@ static void whdload_install_flow(int *selected_item);
 
 static int s_whdload_filter = 0;
 static char s_whdload_last_game[128] = "";
+static bool s_whd_games_loaded = false;
 
 static char s_favs[MAX_WHDLOAD_GAMES][128];
 static int s_fav_count = 0;
 static char s_recents[20][128];
 static int s_recent_count = 0;
+static bool s_whdload_meta_loaded = false;
 
 static void whdload_read_name_list(const char *path, char names[][128], int max_names, int *count)
 {
@@ -1917,8 +2185,10 @@ static void whdload_read_name_list(const char *path, char names[][128], int max_
 
 static void whdload_refresh_meta(void)
 {
+    if (s_whdload_meta_loaded) return;
     whdload_read_name_list(WHDLOAD_FAVORITES_FILE, s_favs, MAX_WHDLOAD_GAMES, &s_fav_count);
     whdload_read_name_list(WHDLOAD_RECENT_FILE, s_recents, 20, &s_recent_count);
+    s_whdload_meta_loaded = true;
 }
 
 static bool whdload_is_favorite(const char *game)
@@ -1968,6 +2238,8 @@ static void whdload_toggle_favorite(const char *game)
         for (int i = 0; i < count; i++)
             fprintf(f, "%s\n", lines[i]);
         fclose(f);
+        s_whdload_meta_loaded = false;
+        whdload_refresh_meta();
     }
 }
 
@@ -1994,6 +2266,8 @@ static void whdload_mark_recent(const char *game)
         for (int i = 0; i < count; i++)
             fprintf(f, "%s\n", lines[i]);
         fclose(f);
+        s_whdload_meta_loaded = false;
+        whdload_refresh_meta();
     }
 }
 
@@ -2172,6 +2446,7 @@ static void whdload_install_flow(int *selected_item)
                     return;
                 }
             }
+            s_whd_games_loaded = false;
             switch_show_message_box("Installation Complete", "The LHA archive was extracted to the WHDLoad library.", "OK (A)");
         } else {
             char err_buf[300];
@@ -2184,7 +2459,12 @@ static void whdload_install_flow(int *selected_item)
 void switch_view_whdload(SwitchInputState *input, int *selected_item)
 {
     static char games[MAX_WHDLOAD_GAMES][128];
-    int game_count = switch_whdload_list(games, MAX_WHDLOAD_GAMES);
+    static int s_whd_game_count = 0;
+    if (!s_whd_games_loaded) {
+        s_whd_game_count = switch_whdload_list(games, MAX_WHDLOAD_GAMES);
+        s_whd_games_loaded = true;
+    }
+    int game_count = s_whd_game_count;
 
     whdload_refresh_meta();
 
@@ -2202,10 +2482,13 @@ void switch_view_whdload(SwitchInputState *input, int *selected_item)
             vis_index[vis_count++] = k;
     }
 
-    const int total_items = 6 + vis_count;
+    const int total_items = 7 + vis_count;
     if (*selected_item < 0) *selected_item = 0;
     if (*selected_item >= total_items) *selected_item = total_items - 1;
     if (total_items <= 0) return;
+
+    static int s_whd_hold_up = 0;
+    static int s_whd_hold_down = 0;
 
     if (input->pressed & SWITCH_BTN_UP) {
         (*selected_item)--;
@@ -2216,32 +2499,64 @@ void switch_view_whdload(SwitchInputState *input, int *selected_item)
         if (*selected_item >= total_items) *selected_item = 0;
     }
 
+    if (input->held & SWITCH_BTN_UP && total_items > 0) {
+        s_whd_hold_up++;
+        if (s_whd_hold_up > 12 && (s_whd_hold_up % 3 == 0)) {
+            (*selected_item)--;
+            if (*selected_item < 0) *selected_item = total_items - 1;
+        }
+    } else {
+        s_whd_hold_up = 0;
+    }
+
+    if (input->held & SWITCH_BTN_DOWN && total_items > 0) {
+        s_whd_hold_down++;
+        if (s_whd_hold_down > 12 && (s_whd_hold_down % 3 == 0)) {
+            (*selected_item)++;
+            if (*selected_item >= total_items) *selected_item = 0;
+        }
+    } else {
+        s_whd_hold_down = 0;
+    }
+
     if (vis_count > 0 && (input->pressed & (SWITCH_BTN_L | SWITCH_BTN_R | SWITCH_BTN_LEFT | SWITCH_BTN_RIGHT))) {
-        if (*selected_item >= 6) {
-            int cur_vis = *selected_item - 6;
+        if (*selected_item >= 7) {
+            int cur_vis = *selected_item - 7;
             int dir = (input->pressed & (SWITCH_BTN_R | SWITCH_BTN_RIGHT)) ? 1 : -1;
             int next_vis = whdload_find_next_letter_index(games, vis_index, vis_count, cur_vis, dir);
-            *selected_item = 6 + next_vis;
-        } else if (*selected_item < 6 && (input->pressed & (SWITCH_BTN_L | SWITCH_BTN_R))) {
-            *selected_item = 6;
+            *selected_item = 7 + next_vis;
+        } else if (*selected_item < 7 && (input->pressed & (SWITCH_BTN_L | SWITCH_BTN_R))) {
+            *selected_item = 7;
         }
     }
 
-    if (*selected_item >= 6) {
-        const char *game = games[vis_index[*selected_item - 6]];
-        strncpy(s_whdload_last_game, game, sizeof(s_whdload_last_game) - 1);
-        s_whdload_last_game[sizeof(s_whdload_last_game) - 1] = '\0';
-        whdload_cover_load(game);
+    static int s_last_whd_selected_item = -1;
+    if (*selected_item >= 7) {
+        if (*selected_item != s_last_whd_selected_item) {
+            s_last_whd_selected_item = *selected_item;
+            const char *game = games[vis_index[*selected_item - 7]];
+            strncpy(s_whdload_last_game, game, sizeof(s_whdload_last_game) - 1);
+            s_whdload_last_game[sizeof(s_whdload_last_game) - 1] = '\0';
+            whdload_cover_load(game);
+        }
     } else {
-        whdload_cover_unload();
+        if (s_last_whd_selected_item != -1) {
+            s_last_whd_selected_item = -1;
+            whdload_cover_unload();
+        }
     }
 
     if ((input->pressed & (SWITCH_BTN_LEFT | SWITCH_BTN_RIGHT)) && *selected_item == 3) {
         mainMenu_whdload_mode = (mainMenu_whdload_mode + ((input->pressed & SWITCH_BTN_RIGHT) ? 1 : 2)) % 3;
     }
 
-    if ((input->pressed & (SWITCH_BTN_LEFT | SWITCH_BTN_RIGHT)) && *selected_item == 5) {
+    if ((input->pressed & (SWITCH_BTN_LEFT | SWITCH_BTN_RIGHT)) && *selected_item == 4) {
+        mainMenu_whdload_blitter = (mainMenu_whdload_blitter + ((input->pressed & SWITCH_BTN_RIGHT) ? 1 : 3)) % 4;
+    }
+
+    if ((input->pressed & (SWITCH_BTN_LEFT | SWITCH_BTN_RIGHT)) && *selected_item == 6) {
         s_whdload_filter = (s_whdload_filter + ((input->pressed & SWITCH_BTN_RIGHT) ? 1 : -1) + 3) % 3;
+        s_last_whd_selected_item = -1;
     }
 
     if (input->pressed & SWITCH_BTN_A) {
@@ -2276,6 +2591,8 @@ void switch_view_whdload(SwitchInputState *input, int *selected_item)
         } else if (*selected_item == 3) {
             mainMenu_whdload_mode = (mainMenu_whdload_mode + 1) % 3;
         } else if (*selected_item == 4) {
+            mainMenu_whdload_blitter = (mainMenu_whdload_blitter + 1) % 4;
+        } else if (*selected_item == 5) {
             strncpy(uae4all_hard_dir, switch_whdload_root(), 255);
             uae4all_hard_dir[255] = '\0';
             mainMenu_bootHD = 1;
@@ -2283,10 +2600,11 @@ void switch_view_whdload(SwitchInputState *input, int *selected_item)
             gui_update();
             mainMenu_whdload_game[0] = '\0';
             switch_show_message_box("WHDLoad Directory", "The WHDLoad library is selected as the HD directory. A Workbench environment is required.", "OK (A)");
-        } else if (*selected_item == 5) {
+        } else if (*selected_item == 6) {
             s_whdload_filter = (s_whdload_filter + 1) % 3;
+            s_last_whd_selected_item = -1;
         } else {
-            const char *game_name = games[vis_index[*selected_item - 6]];
+            const char *game_name = games[vis_index[*selected_item - 7]];
             if (switch_whdload_can_launch(game_name)) {
                 if (!vita_confirm_eject_for_whdload_launch())
                     return;
@@ -2322,8 +2640,8 @@ void switch_view_whdload(SwitchInputState *input, int *selected_item)
         mainMenu_case = MAIN_MENU_CASE_RESET;
     }
 
-    if ((input->pressed & SWITCH_BTN_MINUS) && *selected_item >= 6) {
-        whdload_toggle_favorite(games[vis_index[*selected_item - 6]]);
+    if ((input->pressed & SWITCH_BTN_MINUS) && *selected_item >= 7) {
+        whdload_toggle_favorite(games[vis_index[*selected_item - 7]]);
     }
 
     float card_x = 20.0f;
@@ -2363,16 +2681,21 @@ void switch_view_whdload(SwitchInputState *input, int *selected_item)
             badge = (mainMenu_whdload_mode == 1) ? "FORCE A500" : (mainMenu_whdload_mode == 2) ? "FORCE A1200" : "AUTO";
             badge_col = (mainMenu_whdload_mode == 1) ? SWITCH_COLOR_AMIGA_ORANGE : (mainMenu_whdload_mode == 2) ? SWITCH_COLOR_AMIGA_BLUE : SWITCH_COLOR_AMIGA_GREEN;
         } else if (item == 4) {
+            title = "WHDLoad Blitter";
+            subtitle = (mainMenu_whdload_blitter == 1) ? "Force Normal: Accurate timing & speed (Golden Axe)" : (mainMenu_whdload_blitter == 2) ? "Force Immediate: Fast blitter (Shadow Dancer $168CE)" : (mainMenu_whdload_blitter == 3) ? "Force Improved: Partial scanline blitter" : "Auto: Normal for standard games, Immediate for Shadow Dancer";
+            badge = (mainMenu_whdload_blitter == 1) ? "NORMAL" : (mainMenu_whdload_blitter == 2) ? "IMMEDIATE" : (mainMenu_whdload_blitter == 3) ? "IMPROVED" : "AUTO";
+            badge_col = (mainMenu_whdload_blitter == 1) ? SWITCH_COLOR_AMIGA_BLUE : (mainMenu_whdload_blitter == 2) ? SWITCH_COLOR_AMIGA_ORANGE : (mainMenu_whdload_blitter == 3) ? RGBA8(180, 80, 220, 255) : SWITCH_COLOR_AMIGA_GREEN;
+        } else if (item == 5) {
             title = "Use WHDLoad Directory";
             subtitle = "Select the library as the Amiga HD directory";
             badge = "HD DIR";
-        } else if (item == 5) {
+        } else if (item == 6) {
             title = "Library Filter";
             subtitle = "All games / favorites only / recently played";
             badge = (s_whdload_filter == 1) ? "FAVORITES" : (s_whdload_filter == 2) ? "RECENT" : "ALL GAMES";
             badge_col = SWITCH_COLOR_AMIGA_ORANGE;
         } else {
-            int orig = vis_index[item - 6];
+            int orig = vis_index[item - 7];
             bool fav = whdload_is_favorite(games[orig]);
             bool rec = whdload_is_recent(games[orig]);
             title = games[orig];
@@ -2397,13 +2720,15 @@ void switch_view_whdload(SwitchInputState *input, int *selected_item)
     float preview_h = SWITCH_LIST_BOTTOM_Y - preview_y;
     switch_draw_card_custom(preview_x, preview_y, preview_w, preview_h, SWITCH_COLOR_CARD, SWITCH_COLOR_CARD_BORDER);
 
-    bool is_game = (*selected_item >= 5);
-    const char *preview_title = is_game ? games[vis_index[*selected_item - 5]]
+    bool is_game = (*selected_item >= 7);
+    const char *preview_title = is_game ? games[vis_index[*selected_item - 7]]
                               : (*selected_item == 0 ? "Download Cover Art"
                                   : (*selected_item == 1 ? "Install Game from LHA"
                                       : (*selected_item == 2 ? "WHDLoad Arguments"
-                                          : (*selected_item == 3 ? "Use WHDLoad Directory" : "Library Filter"))));
-    bool preview_fav = is_game && whdload_is_favorite(games[vis_index[*selected_item - 5]]);
+                                          : (*selected_item == 3 ? "WHDLoad Hardware"
+                                              : (*selected_item == 4 ? "WHDLoad Blitter"
+                                                  : (*selected_item == 5 ? "Use WHDLoad Directory" : "Library Filter"))))));
+    bool preview_fav = is_game && whdload_is_favorite(games[vis_index[*selected_item - 7]]);
 
     switch_draw_badge(preview_x + 14.0f, preview_y + 12.0f,
         is_game ? "WHDLOAD GAME" : "WHDLOAD LIBRARY",
@@ -2491,10 +2816,17 @@ void switch_view_whdload(SwitchInputState *input, int *selected_item)
             switch_truncate_text("68020 14MHz | Kickstart 3.1 | 2MB Chip + 4MB Fast", preview_w - 32.0f, 0.76f, hw_buf, sizeof(hw_buf));
             switch_draw_text(preview_x + 16.0f, preview_y + 384.0f, SWITCH_COLOR_TEXT_MUTED, 0.76f, hw_buf);
         } else {
+            int needs_imm = switch_whdload_needs_immediate_blitter(preview_title);
+            if (mainMenu_whdload_blitter == 2) needs_imm = 1;
+            else if (mainMenu_whdload_blitter == 1) needs_imm = 0;
             switch_draw_badge(preview_x + 16.0f, preview_y + 356.0f, "A500 OCS", SWITCH_COLOR_AMIGA_GREEN, RGBA8(20, 24, 34, 255));
             switch_draw_hint_item(preview_x + preview_w - 150.0f, preview_y + 356.0f, SWITCH_GLYPH_A, "LAUNCH");
             char hw_buf[128];
-            switch_truncate_text("68000 7MHz | Kickstart 3.1 | 2MB Chip + 4MB Fast", preview_w - 32.0f, 0.76f, hw_buf, sizeof(hw_buf));
+            if (needs_imm) {
+                switch_truncate_text("68000 7MHz | Immediate Blitter | 2MB Chip + 4MB Fast", preview_w - 32.0f, 0.76f, hw_buf, sizeof(hw_buf));
+            } else {
+                switch_truncate_text("68000 7MHz | Normal Blitter | 2MB Chip + 4MB Fast", preview_w - 32.0f, 0.76f, hw_buf, sizeof(hw_buf));
+            }
             switch_draw_text(preview_x + 16.0f, preview_y + 384.0f, SWITCH_COLOR_TEXT_MUTED, 0.76f, hw_buf);
         }
     } else {
@@ -3347,6 +3679,8 @@ static int lib_find_next_letter_index(const int *vis_index, int vis_count, int c
     }
 }
 
+static int s_last_lib_selected_item = -1;
+
 void switch_view_library(SwitchInputState *input, int *selected_item)
 {
     if (!s_lib_scanned || s_lib_refresh_requested) {
@@ -3387,6 +3721,9 @@ void switch_view_library(SwitchInputState *input, int *selected_item)
     if (*selected_item < 0) *selected_item = 0;
     if (vis_count > 0 && *selected_item >= vis_count) *selected_item = vis_count - 1;
 
+    static int s_lib_hold_up = 0;
+    static int s_lib_hold_down = 0;
+
     if (input->pressed & SWITCH_BTN_UP) {
         (*selected_item)--;
         if (*selected_item < 0) *selected_item = (vis_count > 0) ? (vis_count - 1) : 0;
@@ -3394,6 +3731,26 @@ void switch_view_library(SwitchInputState *input, int *selected_item)
     if (input->pressed & SWITCH_BTN_DOWN) {
         (*selected_item)++;
         if (vis_count > 0 && *selected_item >= vis_count) *selected_item = 0;
+    }
+
+    if (input->held & SWITCH_BTN_UP && vis_count > 0) {
+        s_lib_hold_up++;
+        if (s_lib_hold_up > 12 && (s_lib_hold_up % 3 == 0)) {
+            (*selected_item)--;
+            if (*selected_item < 0) *selected_item = vis_count - 1;
+        }
+    } else {
+        s_lib_hold_up = 0;
+    }
+
+    if (input->held & SWITCH_BTN_DOWN && vis_count > 0) {
+        s_lib_hold_down++;
+        if (s_lib_hold_down > 12 && (s_lib_hold_down % 3 == 0)) {
+            (*selected_item)++;
+            if (*selected_item >= vis_count) *selected_item = 0;
+        }
+    } else {
+        s_lib_hold_down = 0;
     }
 
     if (vis_count > 0 && *selected_item >= 0 && *selected_item < vis_count) {
@@ -3458,6 +3815,7 @@ void switch_view_library(SwitchInputState *input, int *selected_item)
     if (input->pressed & SWITCH_BTN_X) {
         s_lib_filter = (s_lib_filter + 1) % 9;
         *selected_item = 0;
+        s_last_lib_selected_item = -1;
         const char *fnames[9] = {
             "ALL GAMES", "FLOPPY (ADF)", "ZIP ARCHIVES", "M3U PLAYLISTS",
             "WHDLOAD INSTALLED", "LHA ARCHIVES", "CD32 IMAGES",
@@ -3490,6 +3848,7 @@ void switch_view_library(SwitchInputState *input, int *selected_item)
                 lib_cover_unload();
                 lib_rescan();
                 *selected_item = 0;
+                s_last_lib_selected_item = -1;
                 char msg[96];
                 snprintf(msg, sizeof(msg), "ROM DIR UPDATED: %d GAMES", s_lib_game_count);
                 switch_osd_show(msg, 2500);
@@ -3498,6 +3857,7 @@ void switch_view_library(SwitchInputState *input, int *selected_item)
             lib_cover_unload();
             lib_rescan();
             *selected_item = 0;
+            s_last_lib_selected_item = -1;
             char msg[96];
             snprintf(msg, sizeof(msg), "RESCAN COMPLETE: %d GAMES", s_lib_game_count);
             switch_osd_show(msg, 2500);
@@ -3508,6 +3868,7 @@ void switch_view_library(SwitchInputState *input, int *selected_item)
                 if (rc == 0) {
                     lib_cover_unload();
                     lib_cover_load(cur_g->title, cur_g->path);
+                    s_last_lib_selected_item = *selected_item;
                     switch_show_message_box("Cover Downloaded", "Boxart saved to:\n./data/covers/", "OK (A)");
                 } else if (rc == -6) {
                     switch_show_message_box("Cover Not Found", "No boxart found on the server for this title.", "OK (A)");
@@ -3540,10 +3901,16 @@ void switch_view_library(SwitchInputState *input, int *selected_item)
     }
 
     if (vis_count > 0 && *selected_item >= 0 && *selected_item < vis_count) {
-        const SwitchLibGame *cur_g = &s_lib_games[vis_index[*selected_item]];
-        lib_cover_load(cur_g->title, cur_g->path);
+        if (*selected_item != s_last_lib_selected_item) {
+            s_last_lib_selected_item = *selected_item;
+            const SwitchLibGame *cur_g = &s_lib_games[vis_index[*selected_item]];
+            lib_cover_load(cur_g->title, cur_g->path);
+        }
     } else {
-        lib_cover_unload();
+        if (s_last_lib_selected_item != -1) {
+            s_last_lib_selected_item = -1;
+            lib_cover_unload();
+        }
     }
 
     if (input->pressed & SWITCH_BTN_A) {
@@ -3945,15 +4312,22 @@ void switch_view_library(SwitchInputState *input, int *selected_item)
             } else if (mainMenu_whdload_mode == 2) {
                 is_aga = 1;
             } else {
-                is_aga = switch_whdload_is_aga(g->title);
+                is_aga = (g->model == 2) ? 1 : switch_whdload_is_aga(g->title);
             }
             if (is_aga) {
                 prof_badge = "A1200 AGA";
                 prof_desc = "68020 14MHz | Kickstart 3.1 | 2MB Chip + 4MB Fast";
                 prof_badge_color = SWITCH_COLOR_AMIGA_ORANGE;
             } else {
+                int needs_imm = switch_whdload_needs_immediate_blitter(g->title);
+                if (mainMenu_whdload_blitter == 2) needs_imm = 1;
+                else if (mainMenu_whdload_blitter == 1) needs_imm = 0;
                 prof_badge = "A500 OCS";
-                prof_desc = "68000 7MHz | Kickstart 3.1 | 2MB Chip + 4MB Fast";
+                if (needs_imm) {
+                    prof_desc = "68000 7MHz | Immediate Blitter | 2MB Chip + 4MB Fast";
+                } else {
+                    prof_desc = "68000 7MHz | Normal Blitter | 2MB Chip + 4MB Fast";
+                }
                 prof_badge_color = SWITCH_COLOR_AMIGA_GREEN;
             }
         } else if (g->type == SWITCH_LIB_LHA) {
@@ -4318,7 +4692,7 @@ void switch_view_hardware(SwitchInputState *input, int *selected_item)
     const char *cpu_names[2] = { "Motorola 68000 (7 MHz base)", "Motorola 68020 (14 MHz AGA base)" };
     const char *cpu_speeds[4] = { "Standard 7 MHz (1x)", "Turbo 14 MHz (2x - WHDLoad recommended)", "Turbo 28 MHz (4x)", "Max 56 MHz (8x)" };
     const char *chipset_names[3] = { "OCS (Original Chip Set)", "ECS (Enhanced Chip Set)", "AGA (Advanced Graphics)" };
-    const char *blitter_names[3] = { "Normal (Accurate)", "Immediate (Fast / Fixes Golden Axe, Spindizzy...)", "Improved (Partial)" };
+    const char *blitter_names[3] = { "Normal (Accurate / Golden Axe)", "Immediate (Fast / Fixes Shadow Dancer)", "Improved (Partial)" };
     const char *sprite_col_names[2] = { "Disabled (Fast)", "Enabled (Space Taxi 3, etc.)" };
     const char *chip_ram_names[4] = { "512 KB (Standard)", "1 MB", "2 MB (Expanded)", "None" };
     const char *fast_ram_names[5] = { "None", "1 MB", "2 MB", "4 MB (AGA recommended)", "8 MB" };
@@ -4743,7 +5117,7 @@ void switch_view_controls(SwitchInputState *input, int *selected_item)
             "Controller 7 (P7)",
             "Controller 8 (P8)"
         };
-        const char *profile_names[6] = { "Profile 1", "Profile 2", "Profile 3", "Profile 4", "Profile 5", "Profile 6" };
+        const char *profile_names[6] = { "Profile 1", "Profile 2 (Pinball)", "Profile 3", "Profile 4", "Profile 5", "Profile 6" };
 
         switch_draw_rounded_rect(20.0f, 20.0f, SWITCH_SCREEN_W - 40.0f, SWITCH_SCREEN_H - 40.0f, 12.0f, RGBA8(14, 18, 26, 250));
         switch_draw_card_custom(20.0f, 20.0f, SWITCH_SCREEN_W - 40.0f, SWITCH_SCREEN_H - 40.0f, RGBA8(14, 18, 26, 250), SWITCH_COLOR_FOCUS_BORDER);
@@ -4942,7 +5316,7 @@ void switch_view_controls(SwitchInputState *input, int *selected_item)
         return;
     }
 
-    const int total_items = 14;
+    const int total_items = 15;
     if (*selected_item < 0) *selected_item = 0;
     if (*selected_item >= total_items) *selected_item = total_items - 1;
 
@@ -4972,36 +5346,40 @@ void switch_view_controls(SwitchInputState *input, int *selected_item)
                 mainMenu_singleJoycons = 1 - mainMenu_singleJoycons;
                 update_joycon_mode();
                 break;
-            case 3:
-                mainMenu_touchControls = (mainMenu_touchControls + 3 + dir) % 3;
+            case 2:
+                mainMenu_pinballMode = 1 - mainMenu_pinballMode;
+                saveconfig(1);
                 break;
             case 4:
-                mainMenu_vkbdLanguage = (mainMenu_vkbdLanguage + 4 + dir) % 4;
+                mainMenu_touchControls = (mainMenu_touchControls + 3 + dir) % 3;
                 break;
             case 5:
-                mainMenu_vkbdStyle = (mainMenu_vkbdStyle + 4 + dir) % 4;
+                mainMenu_vkbdLanguage = (mainMenu_vkbdLanguage + 4 + dir) % 4;
                 break;
             case 6:
-                mainMenu_vkbdTransparency = (mainMenu_vkbdTransparency + 4 + dir) % 4;
+                mainMenu_vkbdStyle = (mainMenu_vkbdStyle + 4 + dir) % 4;
                 break;
             case 7:
-                mainMenu_vkbdPosition = (mainMenu_vkbdPosition + 3 + dir) % 3;
+                mainMenu_vkbdTransparency = (mainMenu_vkbdTransparency + 4 + dir) % 4;
                 break;
             case 8:
-                mainMenu_autofire = (mainMenu_autofire + 4 + dir) % 4;
+                mainMenu_vkbdPosition = (mainMenu_vkbdPosition + 3 + dir) % 3;
                 break;
             case 9:
-                mainMenu_autofireMode = 1 - mainMenu_autofireMode;
+                mainMenu_autofire = (mainMenu_autofire + 4 + dir) % 4;
                 break;
             case 10:
-                mainMenu_autoEjectFloppy = 1 - mainMenu_autoEjectFloppy;
+                mainMenu_autofireMode = 1 - mainMenu_autofireMode;
                 break;
             case 11:
+                mainMenu_autoEjectFloppy = 1 - mainMenu_autoEjectFloppy;
+                break;
+            case 12:
                 mainMenu_deadZone += dir * 1000;
                 if (mainMenu_deadZone < 1000) mainMenu_deadZone = 1000;
                 if (mainMenu_deadZone > 25000) mainMenu_deadZone = 25000;
                 break;
-            case 12:
+            case 13:
                 mainMenu_numPlayers = (mainMenu_numPlayers + 7 + dir) % 8 + 1;
                 break;
         }
@@ -5017,40 +5395,44 @@ void switch_view_controls(SwitchInputState *input, int *selected_item)
                 update_joycon_mode();
                 break;
             case 2:
+                mainMenu_pinballMode = 1 - mainMenu_pinballMode;
+                saveconfig(1);
+                break;
+            case 3:
                 s_mouse_modal_open = true;
                 s_mouse_modal_selected = 0;
                 break;
-            case 3:
+            case 4:
                 mainMenu_touchControls = (mainMenu_touchControls + 1) % 3;
                 break;
-            case 4:
+            case 5:
                 mainMenu_vkbdLanguage = (mainMenu_vkbdLanguage + 1) % 4;
                 break;
-            case 5:
+            case 6:
                 mainMenu_vkbdStyle = (mainMenu_vkbdStyle + 1) % 4;
                 break;
-            case 6:
+            case 7:
                 mainMenu_vkbdTransparency = (mainMenu_vkbdTransparency + 1) % 4;
                 break;
-            case 7:
+            case 8:
                 mainMenu_vkbdPosition = (mainMenu_vkbdPosition + 1) % 3;
                 break;
-            case 8:
+            case 9:
                 mainMenu_autofire = (mainMenu_autofire + 1) % 4;
                 break;
-            case 9:
+            case 10:
                 mainMenu_autofireMode = 1 - mainMenu_autofireMode;
                 break;
-            case 10:
+            case 11:
                 mainMenu_autoEjectFloppy = 1 - mainMenu_autoEjectFloppy;
                 break;
-            case 11:
+            case 12:
                 mainMenu_deadZone = (mainMenu_deadZone + 1000) > 25000 ? 1000 : mainMenu_deadZone + 1000;
                 break;
-            case 12:
+            case 13:
                 mainMenu_numPlayers = (mainMenu_numPlayers % 8) + 1;
                 break;
-            case 13:
+            case 14:
                 s_custom_controls_modal_open = true;
                 s_custom_modal_selected = 0;
                 break;
@@ -5071,8 +5453,6 @@ void switch_view_controls(SwitchInputState *input, int *selected_item)
     char players_buf[64];
     snprintf(players_buf, sizeof(players_buf), "%d Player%s%s", mainMenu_numPlayers, mainMenu_numPlayers == 1 ? "" : "s", (mainMenu_singleJoycons && mainMenu_numPlayers > 2) ? " (max 2 with Single Joy-Con)" : "");
 
-
-
     for (int i = 0; i < visible_items; i++) {
         int item = first_item + i;
         if (item >= total_items) break;
@@ -5086,39 +5466,42 @@ void switch_view_controls(SwitchInputState *input, int *selected_item)
                 switch_draw_switch_item(card_x, y, card_w, item_h, "Single Joy-Con Mode (2 Players)", mainMenu_singleJoycons == 1, focused);
                 break;
             case 2:
-                switch_draw_button_item(card_x, y, card_w, item_h, "Mouse Configuration...", "Device, Sensitivity, Acceleration, Slow/Fast Mouse, Swap Buttons", "CONFIGURE", focused, false);
+                switch_draw_switch_item(card_x, y, card_w, item_h, "Pinball Mode (L/R Flippers)", mainMenu_pinballMode == 1, focused);
                 break;
             case 3:
-                switch_draw_selector_item(card_x, y, card_w, item_h, "Switch Touchscreen & Mouse Mode", touch_modes[mainMenu_touchControls % 3], focused);
+                switch_draw_button_item(card_x, y, card_w, item_h, "Mouse Configuration...", "Device, Sensitivity, Acceleration, Slow/Fast Mouse, Swap Buttons", "CONFIGURE", focused, false);
                 break;
             case 4:
-                switch_draw_selector_item(card_x, y, card_w, item_h, "Virtual Keyboard Language", vkbd_lang_names[mainMenu_vkbdLanguage % 4], focused);
+                switch_draw_selector_item(card_x, y, card_w, item_h, "Switch Touchscreen & Mouse Mode", touch_modes[mainMenu_touchControls % 3], focused);
                 break;
             case 5:
-                switch_draw_selector_item(card_x, y, card_w, item_h, "Virtual Keyboard Style", vkbd_style_names[mainMenu_vkbdStyle % 4], focused);
+                switch_draw_selector_item(card_x, y, card_w, item_h, "Virtual Keyboard Language", vkbd_lang_names[mainMenu_vkbdLanguage % 4], focused);
                 break;
             case 6:
-                switch_draw_selector_item(card_x, y, card_w, item_h, "Virtual Keyboard Transparency", vkbd_trans_names[mainMenu_vkbdTransparency % 4], focused);
+                switch_draw_selector_item(card_x, y, card_w, item_h, "Virtual Keyboard Style", vkbd_style_names[mainMenu_vkbdStyle % 4], focused);
                 break;
             case 7:
-                switch_draw_selector_item(card_x, y, card_w, item_h, "Virtual Keyboard Position", vkbd_pos_names[mainMenu_vkbdPosition % 3], focused);
+                switch_draw_selector_item(card_x, y, card_w, item_h, "Virtual Keyboard Transparency", vkbd_trans_names[mainMenu_vkbdTransparency % 4], focused);
                 break;
             case 8:
-                switch_draw_selector_item(card_x, y, card_w, item_h, "Autofire Rate", autofire_names[mainMenu_autofire % 4], focused);
+                switch_draw_selector_item(card_x, y, card_w, item_h, "Virtual Keyboard Position", vkbd_pos_names[mainMenu_vkbdPosition % 3], focused);
                 break;
             case 9:
-                switch_draw_selector_item(card_x, y, card_w, item_h, "Autofire Trigger", (mainMenu_autofireMode == 1) ? "Continuous (Automatic / Always-On)" : "Hold Fire Button (A)", focused);
+                switch_draw_selector_item(card_x, y, card_w, item_h, "Autofire Rate", autofire_names[mainMenu_autofire % 4], focused);
                 break;
             case 10:
-                switch_draw_switch_item(card_x, y, card_w, item_h, "WHDLoad Auto-Eject Floppy on Launch", mainMenu_autoEjectFloppy == 1, focused);
+                switch_draw_selector_item(card_x, y, card_w, item_h, "Autofire Trigger", (mainMenu_autofireMode == 1) ? "Continuous (Automatic / Always-On)" : "Hold Fire Button (A)", focused);
                 break;
             case 11:
-                switch_draw_selector_item(card_x, y, card_w, item_h, "Analog Stick Deadzone", deadzone_buf, focused);
+                switch_draw_switch_item(card_x, y, card_w, item_h, "WHDLoad Auto-Eject Floppy on Launch", mainMenu_autoEjectFloppy == 1, focused);
                 break;
             case 12:
-                switch_draw_selector_item(card_x, y, card_w, item_h, "Number of Players", players_buf, focused);
+                switch_draw_selector_item(card_x, y, card_w, item_h, "Analog Stick Deadzone", deadzone_buf, focused);
                 break;
             case 13:
+                switch_draw_selector_item(card_x, y, card_w, item_h, "Number of Players", players_buf, focused);
+                break;
+            case 14:
                 switch_draw_button_item(card_x, y, card_w, item_h, "Custom Button Remapping...", "Configure individual actions for up to 8 Switch controllers", "REMAP", focused, false);
                 break;
         }

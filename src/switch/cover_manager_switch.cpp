@@ -15,6 +15,7 @@
 
 static SDL_Surface *s_cover = NULL;
 static char         s_cover_name[128] = "";
+static char         s_last_requested_title[256] = "";
 
 void cover_mgr_normalize(const char *input, char *out, size_t out_sz)
 {
@@ -102,10 +103,6 @@ void cover_mgr_normalize(const char *input, char *out, size_t out_sz)
 
 static SDL_Surface *try_load(const char *path)
 {
-    FILE *f = fopen(path, "rb");
-    if (!f)
-        return NULL;
-    fclose(f);
     return IMG_Load(path);
 }
 
@@ -116,10 +113,13 @@ void cover_mgr_load(const char *display_title, const char *full_path)
         return;
     }
 
-    if (s_cover && strcmp(s_cover_name, display_title) == 0)
+    if (strcmp(s_last_requested_title, display_title) == 0)
         return;
 
     cover_mgr_unload();
+
+    strncpy(s_last_requested_title, display_title, sizeof(s_last_requested_title) - 1);
+    s_last_requested_title[sizeof(s_last_requested_title) - 1] = '\0';
 
     char key[256];
     cover_mgr_normalize(display_title, key, sizeof(key));
@@ -188,6 +188,7 @@ void cover_mgr_unload(void)
         s_cover = NULL;
     }
     s_cover_name[0] = '\0';
+    s_last_requested_title[0] = '\0';
 }
 
 SDL_Surface *cover_mgr_get(void)

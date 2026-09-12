@@ -1778,7 +1778,7 @@ if(!vkbd_mode)
 			static int justPressedPinRight = 0;
 			static int justPressedPinUp = 0;
 
-			if (triggerL[0] || (dpadLeft[0] && mainMenu_pinballMode == 2))
+			if (triggerL[0] || triggerL2[0] || (dpadLeft[0] && mainMenu_pinballMode == 2))
 			{
 				if (!justPressedPinL)
 				{
@@ -1802,7 +1802,7 @@ if(!vkbd_mode)
 				justPressedPinL = 0;
 			}
 
-			if (triggerR[0] || (buttonB[0] && mainMenu_pinballMode == 2))
+			if (triggerR[0] || triggerR2[0] || (buttonB[0] && mainMenu_pinballMode == 2))
 			{
 				if (!justPressedPinR)
 				{

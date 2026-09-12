@@ -330,6 +330,15 @@ void switch_gui_update_input(SwitchInputState *input)
 
 void switch_gui_update_system_info(SwitchSystemInfo *sysinfo)
 {
+    static int s_sys_throttle = 0;
+    static SwitchSystemInfo s_cached_sysinfo;
+    static bool s_sysinfo_init = false;
+
+    if (s_sysinfo_init && (++s_sys_throttle % 60) != 0) {
+        *sysinfo = s_cached_sysinfo;
+        return;
+    }
+
     time_t t = time(NULL);
     struct tm *tm_info = localtime(&t);
     if (tm_info) {
@@ -346,6 +355,8 @@ void switch_gui_update_system_info(SwitchSystemInfo *sysinfo)
         psmExit();
     }
     sysinfo->battery_percent = (int)battery_pct;
+    s_cached_sysinfo = *sysinfo;
+    s_sysinfo_init = true;
 }
 
 static inline Uint32 to_sdl_color(unsigned int col)
@@ -1344,7 +1355,7 @@ void switch_show_about_box(void)
 {
     static const CreditLine credits[] = {
         { "UAE4ALL2 HD Switch", CR_TITLE },
-        { "Version 1.04 by theheroGAC", CR_SUBTITLE },
+        { "Version 1.05 by theheroGAC", CR_SUBTITLE },
         { "Amiga Emulator for Nintendo Switch", CR_DIM },
         { "", CR_EMPTY },
         { "A high-definition port of the classic UAE4ALL Amiga emulator,", CR_TEXT },

@@ -355,12 +355,22 @@ bool meta_db_load(const char *json_path)
     return s_count > 0;
 }
 
+static char s_last_lookup_key[256] = "";
+static struct GameMetadata s_last_lookup_meta;
+static bool s_last_lookup_result = false;
+
 bool meta_db_lookup(const char *normalized_key, struct GameMetadata *out)
 {
     meta_db_fill_unknown(out);
 
     if (!normalized_key || normalized_key[0] == '\0' || !s_entries || s_count == 0)
         return false;
+
+    if (s_last_lookup_key[0] && strcmp(s_last_lookup_key, normalized_key) == 0) {
+        if (s_last_lookup_result && out)
+            *out = s_last_lookup_meta;
+        return s_last_lookup_result;
+    }
 
     for (int i = 0; i < s_count; i++) {
         if (strcasecmp(s_entries[i].key, normalized_key) == 0) {
@@ -371,6 +381,10 @@ bool meta_db_lookup(const char *normalized_key, struct GameMetadata *out)
             if (e->genre[0])     { strncpy(out->genre,     e->genre,     sizeof(out->genre)     - 1); out->genre[sizeof(out->genre)-1]='\0'; }
             if (e->players[0])   { strncpy(out->players,   e->players,   sizeof(out->players)   - 1); out->players[sizeof(out->players)-1]='\0'; }
             if (e->languages[0]) { strncpy(out->languages, e->languages, sizeof(out->languages) - 1); out->languages[sizeof(out->languages)-1]='\0'; }
+            strncpy(s_last_lookup_key, normalized_key, sizeof(s_last_lookup_key) - 1);
+            s_last_lookup_key[sizeof(s_last_lookup_key) - 1] = '\0';
+            s_last_lookup_result = true;
+            if (out) s_last_lookup_meta = *out;
             return true;
         }
     }
@@ -385,14 +399,24 @@ bool meta_db_lookup(const char *normalized_key, struct GameMetadata *out)
             if (e->genre[0])     { strncpy(out->genre,     e->genre,     sizeof(out->genre)     - 1); out->genre[sizeof(out->genre)-1]='\0'; }
             if (e->players[0])   { strncpy(out->players,   e->players,   sizeof(out->players)   - 1); out->players[sizeof(out->players)-1]='\0'; }
             if (e->languages[0]) { strncpy(out->languages, e->languages, sizeof(out->languages) - 1); out->languages[sizeof(out->languages)-1]='\0'; }
+            strncpy(s_last_lookup_key, normalized_key, sizeof(s_last_lookup_key) - 1);
+            s_last_lookup_key[sizeof(s_last_lookup_key) - 1] = '\0';
+            s_last_lookup_result = true;
+            if (out) s_last_lookup_meta = *out;
             return true;
         }
     }
+
+    strncpy(s_last_lookup_key, normalized_key, sizeof(s_last_lookup_key) - 1);
+    s_last_lookup_key[sizeof(s_last_lookup_key) - 1] = '\0';
+    s_last_lookup_result = false;
     return false;
 }
 
 void meta_db_unload(void)
 {
+    s_last_lookup_key[0] = '\0';
+    s_last_lookup_result = false;
     if (s_entries) {
         free(s_entries);
         s_entries = NULL;
