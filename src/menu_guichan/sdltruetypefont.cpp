@@ -42,7 +42,7 @@
  */
 
 /*
- * For comments regarding functions please see the header file. 
+ * For comments regarding functions please see the header file.
  */
 
 #include "sdltruetypefont.hpp"
@@ -60,28 +60,28 @@ namespace gcn
         {
             mRowSpacing = 0;
             mGlyphSpacing = 0;
-            mAntiAlias = true;        
+            mAntiAlias = true;
             mFilename = filename;
             mFont = NULL;
-        
+
             mFont = TTF_OpenFont(filename.c_str(), size);
-        
+
             if (mFont == NULL)
             {
                 throw GCN_EXCEPTION("SDLTrueTypeFont::SDLTrueTypeFont. "+std::string(TTF_GetError()));
             }
         }
-    
+
         SDLTrueTypeFont::~SDLTrueTypeFont()
         {
             TTF_CloseFont(mFont);
         }
-  
+
         int SDLTrueTypeFont::getWidth(const std::string& text) const
         {
             int w, h;
             TTF_SizeText(mFont, text.c_str(), &w, &h);
-        
+
             return w;
         }
 
@@ -89,14 +89,14 @@ namespace gcn
         {
             return TTF_FontHeight(mFont) + mRowSpacing;
         }
-    
+
         void SDLTrueTypeFont::drawString(gcn::Graphics* graphics, const std::string& text, const int x, const int y)
         {
             if (text == "")
             {
                 return;
             }
-        
+
             gcn::SDLGraphics *sdlGraphics = dynamic_cast<gcn::SDLGraphics *>(graphics);
 
             if (sdlGraphics == NULL)
@@ -104,10 +104,9 @@ namespace gcn
                 throw GCN_EXCEPTION("SDLTrueTypeFont::drawString. Graphics object not an SDL graphics object!");
                 return;
             }
-        
-            // This is needed for drawing the Glyph in the middle if we have spacing
+
             int yoffset = getRowSpacing() / 2;
-        
+
             Color col = sdlGraphics->getColor();
 
             SDL_Color sdlCol;
@@ -124,7 +123,7 @@ namespace gcn
             {
                 textSurface = TTF_RenderText_Solid(mFont, text.c_str(), sdlCol);
             }
-        
+
             SDL_Rect dst, src;
             dst.x = x;
             dst.y = y + yoffset;
@@ -132,11 +131,11 @@ namespace gcn
             src.h = textSurface->h;
             src.x = 0;
             src.y = 0;
-        
+
             sdlGraphics->drawSDLSurface(textSurface, src, dst);
-            SDL_FreeSurface(textSurface);        
+            SDL_FreeSurface(textSurface);
         }
-    
+
         void SDLTrueTypeFont::setRowSpacing(int spacing)
         {
             mRowSpacing = spacing;
@@ -146,12 +145,12 @@ namespace gcn
         {
             return mRowSpacing;
         }
-    
+
         void SDLTrueTypeFont::setGlyphSpacing(int spacing)
         {
             mGlyphSpacing = spacing;
         }
-    
+
         int SDLTrueTypeFont::getGlyphSpacing()
         {
             return mGlyphSpacing;
@@ -164,8 +163,8 @@ namespace gcn
 
         bool SDLTrueTypeFont::isAntiAlias()
         {
-            return mAntiAlias;        
-        }    
+            return mAntiAlias;
+        }
     }
 }
 

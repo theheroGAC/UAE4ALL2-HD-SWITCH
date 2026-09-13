@@ -24,7 +24,6 @@ namespace gcn
 
     UaeRadioButton::~UaeRadioButton()
     {
-        // Remove us from the group list
         setGroup("");
     }
 
@@ -37,7 +36,7 @@ namespace gcn
         drawBox(graphics);
         graphics->popClipArea();
 
-        
+
         graphics->setFont(getFont());
         graphics->setColor(getForegroundColor());
 
@@ -49,7 +48,7 @@ namespace gcn
                                               getWidth(),
                                               getHeight()));
         }
-        
+
         int h = getHeight() + getHeight() / 2;
 
         graphics->drawText(getCaption(), h - 2, 0);

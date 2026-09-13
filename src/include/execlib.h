@@ -27,7 +27,7 @@
 #define NT_LIBRARY  9
 #define NT_SIGNALSEM 15
 
-#ifndef MEMF_PUBLIC /* protection for AmigaDOS */
+#ifndef MEMF_PUBLIC
 #define MEMF_PUBLIC 1
 #define MEMF_CHIP 2
 #define MEMF_FAST 4

@@ -13,7 +13,6 @@ static __inline__ char *raddr(uaecptr p)
 
 extern void gfxlib_install(void);
 
-/* graphics.library */
 
 extern int GFX_WritePixel(uaecptr rp, int x, int y);
 

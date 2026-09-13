@@ -53,7 +53,7 @@ static __inline__ void dbgsum(char *str, void *buff, unsigned len)
 	}
 }
 
-#endif // __PSP2__
+#endif
 #else
 
 #define dbg(TEXTO)

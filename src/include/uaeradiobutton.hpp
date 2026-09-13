@@ -30,4 +30,4 @@ namespace gcn
 }
 
 
-#endif // end GCN_UAERADIOBUTTON_HPP
+#endif

@@ -21,10 +21,10 @@ namespace gcn
                   ListBox *listBox = NULL);
 
       virtual ~UaeDropDown();
-      
+
       virtual void keyPressed(KeyEvent& keyEvent);
   };
 }
 
 
-#endif // end GCN_UAEDROPDOWN_HPP
+#endif

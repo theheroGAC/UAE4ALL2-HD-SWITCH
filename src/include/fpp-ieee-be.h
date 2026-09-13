@@ -60,5 +60,4 @@ static __inline__ void from_double(double src, uae_u32 * wrd1, uae_u32 * wrd2)
 #define HAVE_from_single
 #define HAVE_to_single
 
-/* Get the rest of the conversion functions defined.  */
 #include "fpp-unknown.h"

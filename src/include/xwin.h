@@ -51,6 +51,5 @@ extern void DitherLine (uae_u8 *l, uae_u16 *r4g4b4, int x, int y, uae_s16 len, i
 extern char *gfx_mem;
 extern unsigned gfx_rowbytes;
 
-/* For ports using tui.c, this should be built by graphics_setup(). */
 extern struct bstring *video_mode_menu;
 extern void vidmode_menu_selected(int);

@@ -21,13 +21,13 @@ namespace gcn
     UaeDropDown::~UaeDropDown()
     {
     }
-    
-    
+
+
     void UaeDropDown::keyPressed(KeyEvent& keyEvent)
     {
         if (keyEvent.isConsumed())
             return;
-        
+
         Key key = keyEvent.getKey();
 
         if ((key.getValue() == Key::ENTER || key.getValue() == Key::SPACE)

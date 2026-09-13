@@ -1,4 +1,1 @@
- /*
-  * NO Serial Line Emulation
-  */
 

@@ -93,7 +93,7 @@
 #endif
 
 #if HAVE_DIRENT_H
-#if defined(__PSP2__) // NOT __SWITCH__
+#if defined(__PSP2__)
 # include "psp2-dirent.h"
 #else
 # include <dirent.h>
@@ -135,17 +135,13 @@ struct utimbuf
 #endif
 
 #if defined(__GNUC__) && defined(AMIGA)
-/* gcc on the amiga need that __attribute((regparm)) must */
-/* be defined in function prototypes as well as in        */
-/* function definitions !                                 */
 #define REGPARAM2 REGPARAM
-#else /* not(GCC & AMIGA) */
+#else
 #define REGPARAM2
 #endif
 
-/* sam: some definitions so that SAS/C can compile UAE */
 #if defined(__SASC) && defined(AMIGA)
-#define REGPARAM2 
+#define REGPARAM2
 #define REGPARAM
 #define S_IRUSR S_IREAD
 #define S_IWUSR S_IWRITE
@@ -153,7 +149,7 @@ struct utimbuf
 #define S_ISDIR(val) (S_IFDIR & val)
 #define mkdir(x,y) mkdir(x)
 #define truncate(x,y) 0
-#define creat(x,y) open("T:creat",O_CREAT|O_TEMP|O_RDWR) /* sam: for zfile.c */
+#define creat(x,y) open("T:creat",O_CREAT|O_TEMP|O_RDWR)
 #define strcasecmp stricmp
 #define utime(file,time) 0
 struct utimbuf
@@ -169,12 +165,10 @@ struct utimbuf
 #define REGPARAM
 #define REGPARAM2
 #define RETSIGTYPE
-// #undef USE_ZFILE
 #define strcasecmp stricmp
 #define memcpy q_memcpy
 #define memset q_memset
 #define strdup my_strdup
-// #define random rand
 #define creat(x,y) open("T:creat",O_CREAT|O_RDWR|O_TRUNC,777)
 extern void* q_memset(void*,int,size_t);
 extern void* q_memcpy(void*,const void*,size_t);
@@ -185,7 +179,6 @@ extern void* q_memcpy(void*,const void*,size_t);
 #include <io.h>
 #endif
 
-/* Acorn specific stuff */
 #ifdef ACORN
 
 #define S_IRUSR S_IREAD
@@ -197,17 +190,16 @@ extern void* q_memcpy(void*,const void*,size_t);
 #endif
 
 #ifndef L_tmpnam
-#define L_tmpnam 128 /* ought to be safe */
+#define L_tmpnam 128
 #endif
 
 
-/* If char has more then 8 bits, good night. */
 typedef unsigned char uae_u8;
 typedef signed char uae_s8;
 
 typedef struct { uae_u8 RGB[3]; } RGB;
 
-#ifdef __64BIT__ //used with __SWITCH__ to try to compile on Switch (64bit only Toolchain)
+#ifdef __64BIT__
 typedef uint16_t uae_u16;
 typedef int16_t uae_s16;
 
@@ -224,8 +216,6 @@ typedef int32_t uae_s32;
 
 typedef uae_u32 uaecptr;
 typedef uae_u64 hostptr;
-//another possibility to achieve the same:
-//typedef uintptr_t hostptr;
 
 #else
 
@@ -283,22 +273,13 @@ extern char *my_strdup (const char*s);
 extern void *xmalloc(size_t);
 extern void *xcalloc(size_t, size_t);
 
-/* We can only rely on GNU C getting enums right. Mickeysoft VSC++ is known
- * to have problems, and it's likely that other compilers choke too. */
 #ifdef __GNUC__
 #define ENUMDECL typedef enum
 #define ENUMNAME(name) name
 
-/*
- * Porters to weird systems, look! This is the preferred way to get
- * filesys.c (and other stuff) running on your system. Define the
- * appropriate macros and implement wrappers in a machine-specific file.
- *
- * I guess the Mac port could use this (Ernesto?)
- */
 
 #undef DONT_HAVE_POSIX
-#undef DONT_HAVE_REAL_POSIX /* define if open+delete doesn't do what it should */
+#undef DONT_HAVE_REAL_POSIX
 #undef DONT_HAVE_STDIO
 #undef DONT_HAVE_MALLOC
 
@@ -323,7 +304,7 @@ extern void *xcalloc(size_t, size_t);
 
 #endif
 
-#endif /* _WIN32 */ 
+#endif
 
 #ifdef DONT_HAVE_POSIX
 
@@ -365,9 +346,6 @@ extern struct dirent* readdir (DIR *);
 #define closedir posixemu_closedir
 extern void closedir (DIR *);
 
-/* This isn't the best place for this, but it fits reasonably well. The logic
- * is that you probably don't have POSIX errnos if you don't have the above
- * functions. */
 extern long dos_errno (void);
 
 #endif
@@ -463,7 +441,6 @@ extern void vita_write_log (const char *, ...);
 #define STATIC_INLINE static __inline__
 #endif
 
-/* While we're here, make abort more useful.  */
 #define abort() \
   do { \
     write_log ("Internal error; file %s, line %d\n", __FILE__, __LINE__); \
@@ -477,26 +454,10 @@ extern void vita_write_log (const char *, ...);
 #define ENUMNAME(name) ; typedef int name
 #endif
 
-/* Every Amiga hardware clock cycle takes this many "virtual" cycles.  This
-   used to be hardcoded as 1, but using higher values allows us to time some
-   stuff more precisely.
-   512 is the official value from now on - it can't change, unless we want
-   _another_ config option "finegrain2_m68k_speed".
-
-   We define this value here rather than in events.h so that gencpu.c sees
-   it.  */
 #define CYCLE_UNIT 512
 
-/* This one is used by cfgfile.c.  We could reduce the CYCLE_UNIT back to 1,
-   I'm not 100% sure this code is bug free yet.  */
 #define OFFICIAL_CYCLE_UNIT 512
 
-/*
- * You can specify numbers from 0 to 5 here. It is possible that higher
- * numbers will make the CPU emulation slightly faster, but if the setting
- * is too high, you will run out of memory while compiling.
- * Best to leave this as it is.
- */
 #define CPU_EMU_SIZE 0
 
 #undef REGPARAM

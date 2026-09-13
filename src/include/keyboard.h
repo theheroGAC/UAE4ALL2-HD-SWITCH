@@ -9,7 +9,6 @@
 /* First, two dummies */
 #define AK_mousestuff 0x100
 #define AK_inhibit 0x101
-/* This mutates into AK_CTRL in keybuf.c. */
 #define AK_RCTRL 0x103
 
 #define AK_A 0x20
@@ -103,7 +102,6 @@
 #define AK_RAMI 0x67
 #define AK_HELP 0x5F
 
-/* The following have different mappings on national keyboards */
 
 #define AK_LBRACKET 0x1A
 #define AK_RBRACKET 0x1B

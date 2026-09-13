@@ -86,7 +86,7 @@ public:
         case 2:
             return std::string("Small");
         }
-        return std::string(""); // Keep the compiler happy
+        return std::string("");
     }
 };
 ButtonsizeListModel buttonsizeList;
@@ -310,7 +310,6 @@ void menuTabOnScreen_Init()
     checkBox_FloatingJoystick->setId("FloatJoy");
     checkBox_FloatingJoystick->addActionListener(onScreenCheckBoxActionListener);
 
-    // Size of onscreen-buttons
     label_buttonsize = new gcn::Label("Button Size");
     label_buttonsize->setPosition(4, 2);
     backgrd_buttonsize = new gcn::Container();
@@ -326,8 +325,8 @@ void menuTabOnScreen_Init()
     dropDown_buttonsize->setId("ButtonSize");
     buttonsizeActionListener = new ButtonsizeActionListener();
     dropDown_buttonsize->addActionListener(buttonsizeActionListener);
-    
-    
+
+
     button_onscreen_pos = new gcn::Button("Position Setup");
     button_onscreen_pos->setPosition(170,180);
     button_onscreen_pos->setBaseColor(baseCol);
@@ -554,14 +553,14 @@ void show_settings_TabOnScreen()
         checkBox_FloatingJoystick->setSelected(true);
     else
         checkBox_FloatingJoystick->setSelected(false);
-    
+
     if(mainMenu_button_size == 1.2f)
         dropDown_buttonsize->setSelected(0);
     else if(mainMenu_button_size == 1.0f)
         dropDown_buttonsize->setSelected(1);
     else if(mainMenu_button_size == 0.8f)
         dropDown_buttonsize->setSelected(2);
-    
+
     if (mainMenu_quickSwitch==0) {
         radioButton_quickSwitch_off->setSelected(true);
         label_quickSwitch_1->setCaption("");
