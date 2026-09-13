@@ -78,7 +78,7 @@ UAE4ALL2 HD supports the complete spectrum of Amiga computer and console hardwar
 
 ---
 
-## Picasso96 / RTG Support
+## Picasso96 / RTG Guide & Support
 
 UAE4ALL2 HD includes an **optional UAEGFX-compatible Picasso96/RTG device**. It provides a separate linear RTG VRAM area and exposes it to Amiga software through the emulated Zorro/autoconfig path. This is different from the normal OCS/ECS/AGA chipset: RTG is intended for Workbench, productivity software, and games that explicitly open a Picasso96 screen mode.
 
@@ -88,9 +88,140 @@ RTG does **not** replace the Amiga chipset and is not required for normal softwa
 - RTG **Enabled**: standard Amiga video remains available, and RTG programs can use the additional RTG framebuffer.
 - WHDLoad, ADF, HDF, LHA, DMS, audio, input, reset, and normal non-RTG games do not require Picasso96.
 
+```text
+Normal Amiga video:  CPU -> Chip RAM -> OCS/ECS/AGA -> normal display
+RTG video:          CPU -> UAEGFX/Picasso96 -> RTG VRAM -> Switch framebuffer
+```
+
 The current implementation includes CPU-visible linear VRAM, mode enumeration, palette/CLUT handling, common fill/copy operations, planar-to-chunky conversion, and Switch framebuffer conversion. It is a practical compatibility layer, not a claim of complete hardware Picasso96 compatibility; advanced board-specific features, hardware cursor support, and some accelerated primitives may fall back to software or remain unsupported.
 
-See the complete English setup and usage instructions in [`docs/PICASSO96_RTG_GUIDE.md`](docs/PICASSO96_RTG_GUIDE.md).
+### 1. Requirements
+
+To use Picasso96 / RTG software on Nintendo Switch, you need:
+- A recent UAE4ALL2 HD Nintendo Switch NRO build.
+- A legally obtained Kickstart ROM suitable for the Amiga configuration (e.g. Kickstart 3.1).
+- Amiga software that contains or can access Picasso96/RTG support.
+- Picasso96 or compatible RTG libraries (`rtg.library`, `picasso96.library`, and monitor files) installed on the Amiga boot volume.
+- Sufficient RTG VRAM allocated for the selected resolution and color depth.
+
+> [!NOTE]
+> Enabling RTG VRAM alone does not install Amiga OS libraries (`rtg.library`, `picasso96.library`). Those files must be present on your Amiga HDF, Workbench installation, or WHDLoad package.
+
+### 2. How to Enable RTG VRAM on Nintendo Switch
+
+1. Start UAE4ALL2 HD and open the **Hardware** tab before starting Amiga software.
+2. Find **RTG VRAM (Picasso96)**.
+3. Select the desired VRAM allocation:
+   - **`Disabled`**: RTG is unavailable and no RTG VRAM is allocated (default).
+   - **`2 MB`**: Recommended starting point for 640×480 and 800×600 in 8-bit or 16-bit.
+   - **`4 MB`**: Recommended for 1024×768, 1280×720, 32-bit modes, large Workbench desktops, or multi-window RTG productivity software.
+4. Save or apply the configuration.
+5. **Restart the emulated Amiga** if prompted. A restart is always recommended whenever the RTG VRAM size is changed.
+
+> [!TIP]
+> RTG VRAM is separate from Chip RAM and Fast RAM; configuring it does not reduce your Chip RAM.
+
+### 3. Launching and Using an RTG Program
+
+1. Boot the HDF, floppy, directory-mounted Workbench, or WHDLoad environment containing the RTG software.
+2. Start the RTG-aware application.
+3. Open the application's **Screen / Display Preferences**.
+4. Select a **Picasso96**, **UAEGFX**, or **RTG** screen mode.
+5. Choose the desired resolution, color depth, and refresh rate offered by the application.
+6. Confirm the mode to open the RTG screen.
+
+The emulator exposes common modes including **320×200**, **320×240**, **640×400**, **640×480**, **800×600**, **1024×768**, and **1280×720**, subject to allocated RTG VRAM.
+
+### 4. Recommended First Test
+
+For a reliable initial verification:
+1. Set **RTG VRAM** to **2 MB**.
+2. Boot a Workbench / HDF environment with Picasso96 installed.
+3. Set the Workbench screen mode to **640×480 @ 16-bit** (or **800×600 @ 8/16-bit**).
+4. Verify that windows, text, and mouse pointer render cleanly with crisp chunky graphics.
+5. Once confirmed, test higher resolutions like **1024×768** with **4 MB** RTG VRAM.
+
+### 5. RTG vs Normal Games Behavior Matrix
+
+| Configuration | Game / Software Type | Video Output Path |
+|---|---|---|
+| **RTG Disabled** | ECS / OCS / AGA Game | Normal Amiga chipset video |
+| **RTG Enabled** | ECS / OCS / AGA Game | Normal Amiga chipset video (RTG remains idle) |
+| **RTG Enabled** | Picasso96 / RTG Software | UAEGFX RTG framebuffer on Switch screen |
+| **RTG Disabled** | Picasso96 / RTG Software | Program fails to open RTG screen (reports unavailable device) |
+
+For maximum compatibility with classic games, leave RTG disabled unless it is needed. For Workbench or RTG software, enable it before booting.
+
+### 6. WHDLoad, ADF, and HDF Behavior
+
+RTG is isolated from the normal retro disk and game paths:
+- WHDLoad ECS/OCS/AGA games work with RTG disabled.
+- ADF games work with RTG disabled.
+- HDF boot and filesystem access work with RTG disabled.
+- LHA installation and DMS floppy images do not require RTG.
+- Enabling RTG does not force non-RTG games to use RTG.
+
+### 7. Resolution & Memory Guidance
+
+Approximate framebuffer memory required (`width × height × bytes-per-pixel`):
+
+| Screen Mode | Color Depth | Approximate Framebuffer | Suggested RTG VRAM |
+|---|---|---:|---:|
+| **640×480** | 8-bit (256 colors) | ~300 KB | **2 MB** |
+| **800×600** | 8-bit (256 colors) | ~469 KB | **2 MB** |
+| **800×600** | 16-bit (High Color) | ~938 KB | **2 MB** |
+| **1024×768** | 16-bit (High Color) | ~1.5 MB | **4 MB** |
+| **1024×768** | 32-bit (True Color) | ~3.0 MB | **4 MB** |
+| **1280×720** | 32-bit (True Color) | ~3.5 MB | **4 MB** |
+
+> [!NOTE]
+> Part of the RTG memory aperture is reserved for board registers, mode information, strings, and internal driver structures.
+
+### 8. Supported Pixel Formats & CRT Display
+
+The Switch output path supports all common formats used by Picasso96 software:
+- **8-bit CLUT / indexed palette modes**
+- **15-bit RGB modes**
+- **16-bit RGB modes (RGB565)**
+- **24-bit RGB modes**
+- **32-bit RGB / ARGB modes**
+- **Classic CRT Shader**: Full CRT simulation (curvature, scanlines, phosphor grille, vignette, and subtle RGB separation) natively rendered via inline GLES2.
+
+### 9. Troubleshooting RTG
+
+- **"Could not create screen mode"**:
+  1. Check that **RTG VRAM** is set to `2 MB` or `4 MB`, not `Disabled`.
+  2. Verify that the Amiga environment contains the required Picasso96/RTG libraries and monitor configuration.
+  3. Ensure the selected mode is exposed by the emulator.
+  4. Ensure enough RTG VRAM is allocated for the resolution and depth.
+  5. Restart after changing the RTG VRAM setting.
+  6. Try `640×480` at 16-bit before trying a 32-bit mode.
+- **Screen opens with flat blue or incorrect colors**:
+  1. Ensure you are running the latest `uae4all2hd.nro` build.
+  2. Test `640×480` or `1024×768`.
+  3. Try changing the application's pixel depth.
+  4. Confirm that the selected mode is an RTG screen and not a chipset screen.
+- **Application opens but only normal Amiga display is visible**:
+  - The application is still using an OCS/ECS/AGA screen. Open the application's display preferences and explicitly select a Picasso96, UAEGFX, or RTG screen mode.
+- **Normal game no longer starts after enabling RTG**:
+  - Set **RTG VRAM (Picasso96)** to `Disabled`, save configuration, and restart.
+
+### 10. Implementation Limits
+
+The RTG implementation is a lightweight, practical compatibility layer:
+- Advanced board-specific hardware registers are not emulated.
+- Hardware cursor falls back to software rendering.
+- When an accelerated primitive is not handled in hardware, the Amiga library falls back to software routines.
+
+### 11. Safely Disabling RTG
+
+To return to standard Amiga chipset operation:
+1. Open the **Hardware** tab in UAE4ALL2.
+2. Set **RTG VRAM (Picasso96)** to **`Disabled`**.
+3. Save/apply the configuration.
+4. Restart the emulated machine before launching an ECS/OCS/AGA game.
+
+See also the dedicated guide in [`docs/PICASSO96_RTG_GUIDE.md`](docs/PICASSO96_RTG_GUIDE.md).
 
 ## Controls Guide
 
