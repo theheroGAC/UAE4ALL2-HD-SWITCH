@@ -20,7 +20,6 @@ void write_log_standard (const char *fmt, ...)
 #ifdef HAVE_VFPRINTF
     vfprintf (stdout, fmt, ap);
 #else
-    /* Technique stolen from GCC.  */
     {
 	int x1, x2, x3, x4, x5, x6, x7, x8;
 	x1 = va_arg (ap, int);
@@ -36,7 +35,7 @@ void write_log_standard (const char *fmt, ...)
 #endif
 }
 
-#endif // __PSP2__
+#endif
 
 #endif
 

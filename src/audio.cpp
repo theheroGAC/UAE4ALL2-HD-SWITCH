@@ -277,7 +277,7 @@ void schedule_audio (void)
 	    audio_channel_current_sample[NR] = (sample8_t)(cdp->dat >> 8); \
 	    if (cdp->dmaen && napnav) \
 		cdp->data_written = 2; \
-	} 
+	}
 
 #define AUDIO_HANDLER_CASE_3_1(NR) \
 	struct audio_channel_data *cdp = &audio_channel[NR]; \
@@ -301,7 +301,7 @@ void schedule_audio (void)
 	    if (audav) { \
 		    audio_channel_vol[NR+1]= cdp->dat; \
 	    } \
-	} 
+	}
 
 #define AUDIO_HANDLER_OTHER(NR) \
 	audio_channel_state[NR] = 0;
@@ -540,7 +540,6 @@ void check_prefs_changed_audio (void)
 		} else {
 		    write_log ("Sorry, can't initialize sound.\n");
 		    produce_sound = 0;
-		    /* So we don't do this every frame */
 		    produce_sound = 0;
 		}
 	}
@@ -648,7 +647,6 @@ void AUDxDAT (int nr, uae_u16 v)
     if (audio_channel_state[nr] == 0 && !(INTREQR() & (0x80 << nr))) {
 	audio_channel_state[nr] = 2;
 	INTREQ((uae_u16)(0x8000 | (0x80 << nr)));
-	/* data_written = 2 ???? */
 	audio_channel_evtime[nr] = cdp->per;
 	schedule_audio ();
 	events_schedule ();
@@ -720,8 +718,6 @@ void AUDxVOL (int nr, uae_u16 v)
 int init_audio (void)
 {
     int retval;
-    /* Some backward compatibility hacks until every port initializes
-       scaled_sample_evtime...  */
     scaled_sample_evtime_ok = 0;
     retval = init_sound ();
     if (! scaled_sample_evtime_ok)
@@ -776,7 +772,7 @@ void check_dma_audio(void)
 			} else \
 				cdp->wlen = (cdp->wlen - 1) & 0xFFFF; \
 		} \
-	} 
+	}
 
 
 void fetch_audio(void)
@@ -821,14 +817,12 @@ uae_u8 *restore_audio (uae_u8 *src, int i)
     acd->len = restore_u16 ();
     acd->wlen = restore_u16 ();
     backper = restore_u16 ();
-    restore_u16 (); // wper unused -> removed
+    restore_u16 ();
     acd->lc = restore_u32 ();
     acd->pt = restore_u32 ();
     audio_channel_evtime[i] = restore_u32 ();
-    //AUDxPER(i,backper ? backper * CYCLE_UNIT : PERIOD_MAX);
     acd->per = backper == 0 ? PERIOD_MAX : backper * CYCLE_UNIT;
     audio_channel[i].dmaen = (dmacon & 0x200) && (dmacon & (1 << i));
-    //AUDxDAT(i,0);
 		acd->dat = 0;
 
     return src;
@@ -851,11 +845,11 @@ uae_u8 *save_audio (int *len, int i)
     save_u16 (acd->wlen);
     p = acd->per == PERIOD_MAX ? 0 : acd->per / CYCLE_UNIT;
     save_u16 (p);
-    save_u16 (0); // wper unused -> removed
+    save_u16 (0);
     save_u32 (acd->lc);
     save_u32 (acd->pt);
     save_u32 (audio_channel_evtime[i]);
-    
+
     *len = dst - dstbak;
     return dstbak;
 }

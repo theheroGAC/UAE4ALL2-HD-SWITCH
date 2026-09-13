@@ -62,12 +62,12 @@ static uae_u32 hardfile_beginio (void)
 	uae_u32 retval = m68k_dreg(regs, 0);
 	int unit;
 	struct hardfiledata *hfd;
-	
+
 	tmp1 = m68k_areg(regs, 1);
 	unit = get_long (tmp1 + 24);
 
 	hfd = get_hardfile_data (unit);
-	
+
 	put_byte (tmp1+8, NT_MESSAGE);
 	put_byte (tmp1+31, 0);
 	tmp2 = get_word (tmp1+28);
@@ -80,14 +80,14 @@ static uae_u32 hardfile_beginio (void)
 	switch (tmp2) {
 		case CMD_READ:
 			gui_data.hdled = HDLED_READ;
-			
+
 			dataptr = get_long (tmp1 + 40);
 			offset = get_long (tmp1 + 44);
 			tmp2 = get_long (tmp1 + 36);
 
 			if (dataptr & 1 || offset & 511 || tmp2 & 511 || tmp2 + offset > (uae_u32)hfd->size)
 				goto bad_command;
-			
+
 			put_long (tmp1 + 32, tmp2);
 			if (hfd->chd_handle) {
 				chd_file *chd = (chd_file *)hfd->chd_handle;
@@ -121,7 +121,7 @@ static uae_u32 hardfile_beginio (void)
 				}
 			}
 			break;
-			
+
 		case CMD_WRITE:
 		case 11:
 			if (hfd->chd_handle) {
@@ -129,14 +129,14 @@ static uae_u32 hardfile_beginio (void)
 				break;
 			}
 			gui_data.hdled = HDLED_WRITE;
-			
+
 			dataptr = get_long (tmp1 + 40);
 			offset = get_long (tmp1 + 44);
 			tmp2 = get_long (tmp1 + 36);
 
 			if (dataptr & 1 || offset & 511 || tmp2 & 511 || tmp2 + offset > (uae_u32)hfd->size)
 				goto bad_command;
-			
+
 			put_long (tmp1 + 32, tmp2);
 			fseek (hfd->fd, offset, SEEK_SET);
 			while (tmp2) {
@@ -148,37 +148,35 @@ static uae_u32 hardfile_beginio (void)
 				tmp2 -= 512;
 			}
 			break;
-			
+
 			bad_command:
 			put_byte (tmp1+31, (uae_u8)-3);
 			break;
-			
-		case 18: /* GetDriveType */
+
+		case 18:
 			put_long (tmp1 + 32, 1);
 			break;
-			
-		case 19: /* GetNumTracks */
+
+		case 19:
 			put_long (tmp1 + 32, 0);
 			break;
-			
-			/* Some commands that just do nothing and return zero */
+
 		case CMD_UPDATE:
 		case CMD_CLEAR:
-		case 9: /* Motor */
-		case 10: /* Seek */
-		case 12: /* Remove */
-		case 13: /* ChangeNum */
-		case 14: /* ChangeStatus */
-		case 15: /* ProtStatus */
-		case 20: /* AddChangeInt */
-		case 21: /* RemChangeInt */
-			put_long (tmp1+32, 0); /* io_Actual */
+		case 9:
+		case 10:
+		case 12:
+		case 13:
+		case 14:
+		case 15:
+		case 20:
+		case 21:
+			put_long (tmp1+32, 0);
 			retval = 0;
 			break;
-			
+
 		default:
-			/* Command not understood. */
-			put_byte (tmp1+31, (uae_u8)-3); /* io_Error */
+			put_byte (tmp1+31, (uae_u8)-3);
 			retval = 0;
 			break;
 	}
@@ -199,70 +197,62 @@ void hardfile_install (void)
     ROM_hardfile_resname = ds ("uaehf.device");
     ROM_hardfile_resid = ds ("UAE hardfile.device 0.2");
 
-    /* initcode */
     initcode = filesys_initcode;
 
-    /* Open */
     openfunc = here ();
     calltrap (deftrap (hardfile_open)); dw (RTS);
 
-    /* Close */
     closefunc = here ();
     calltrap (deftrap (hardfile_close)); dw (RTS);
 
-    /* Expunge */
     expungefunc = here ();
     calltrap (deftrap (hardfile_expunge)); dw (RTS);
 
-    /* BeginIO */
     beginiofunc = here ();
     calltrap (deftrap (hardfile_beginio));
-    dw (0x48E7); dw (0x8002); /* movem.l d0/a6,-(a7) */
-    dw (0x0829); dw (0); dw (30); /* btst #0,30(a1) */
-    dw (0x6608); /* bne.b +8 */
-    dw (0x2C78); dw (0x0004); /* move.l 4,a6 */
-    dw (0x4EAE); dw (-378); /* jsr ReplyMsg(a6) */
-    dw (0x4CDF); dw (0x4001); /* movem.l (a7)+,d0/a6 */
+    dw (0x48E7); dw (0x8002);
+    dw (0x0829); dw (0); dw (30);
+    dw (0x6608);
+    dw (0x2C78); dw (0x0004);
+    dw (0x4EAE); dw (-378);
+    dw (0x4CDF); dw (0x4001);
     dw (RTS);
 
-    /* AbortIO */
     abortiofunc = here ();
     calltrap (deftrap (hardfile_abortio)); dw (RTS);
 
-    /* FuncTable */
     functable = here ();
-    dl (openfunc); /* Open */
-    dl (closefunc); /* Close */
-    dl (expungefunc); /* Expunge */
-    dl (EXPANSION_nullfunc); /* Null */
-    dl (beginiofunc); /* BeginIO */
-    dl (abortiofunc); /* AbortIO */
-    dl (0xFFFFFFFFul); /* end of table */
+    dl (openfunc);
+    dl (closefunc);
+    dl (expungefunc);
+    dl (EXPANSION_nullfunc);
+    dl (beginiofunc);
+    dl (abortiofunc);
+    dl (0xFFFFFFFFul);
 
-    /* DataTable */
     datatable = here ();
-    dw (0xE000); /* INITBYTE */
-    dw (0x0008); /* LN_TYPE */
-    dw (0x0300); /* NT_DEVICE */
-    dw (0xC000); /* INITLONG */
-    dw (0x000A); /* LN_NAME */
+    dw (0xE000);
+    dw (0x0008);
+    dw (0x0300);
+    dw (0xC000);
+    dw (0x000A);
     dl (ROM_hardfile_resname);
-    dw (0xE000); /* INITBYTE */
-    dw (0x000E); /* LIB_FLAGS */
-    dw (0x0600); /* LIBF_SUMUSED | LIBF_CHANGED */
-    dw (0xD000); /* INITWORD */
-    dw (0x0014); /* LIB_VERSION */
-    dw (0x0004); /* 0.4 */
+    dw (0xE000);
+    dw (0x000E);
+    dw (0x0600);
     dw (0xD000);
-    dw (0x0016); /* LIB_REVISION */
+    dw (0x0014);
+    dw (0x0004);
+    dw (0xD000);
+    dw (0x0016);
     dw (0x0000);
     dw (0xC000);
-    dw (0x0018); /* LIB_IDSTRING */
+    dw (0x0018);
     dl (ROM_hardfile_resid);
-    dw (0x0000); /* end of table */
+    dw (0x0000);
 
     ROM_hardfile_init = here ();
-    dl (0x00000100); /* ??? */
+    dl (0x00000100);
     dl (functable);
     dl (datatable);
     dl (initcode);

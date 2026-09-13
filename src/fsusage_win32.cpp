@@ -32,9 +32,6 @@
 
 #include "fsusage.h"
 
-/* Return the number of TOSIZE-byte blocks used by
-   BLOCKS FROMSIZE-byte blocks, rounding away from zero.
-   TOSIZE must be positive.  Return -1 if FROMSIZE is not positive.  */
 
 static long
 adjust_blocks (long blocks, int fromsize, int tosize)
@@ -44,11 +41,11 @@ adjust_blocks (long blocks, int fromsize, int tosize)
   if (fromsize <= 0)
     return -1;
 
-  if (fromsize == tosize)	/* e.g., from 512 to 512 */
+  if (fromsize == tosize)
     return blocks;
-  else if (fromsize > tosize)	/* e.g., from 2048 to 512 */
+  else if (fromsize > tosize)
     return blocks * (fromsize / tosize);
-  else				/* e.g., from 256 to 512 */
+  else
     return (blocks + (blocks < 0 ? -1 : 1)) / (tosize / fromsize);
 }
 
@@ -69,11 +66,9 @@ int get_fs_usage (const char *path, const char *disk, struct fs_usage *fsp)
 
     if (!GetDiskFreeSpace (buf2, &SectorsPerCluster, &BytesPerSector,
 			   &NumberOfFreeClusters, &TotalNumberOfClusters)) {
-	/* lasterror = GetLastError ();*/
 	return -1;
     }
 
-    /* HACK ALERT! WinNT returns 0 in TotalNumberOfClusters for an audio-CD, which calls the GURU! */
     if ((TotalNumberOfClusters == 0) && (GetDriveType (buf2) == DRIVE_CDROM))
 	TotalNumberOfClusters = 327680;
 
@@ -84,7 +79,7 @@ int get_fs_usage (const char *path, const char *disk, struct fs_usage *fsp)
     return 0;
 }
 
-#else /* ! _WIN32 */
+#else
 
 #if defined TARGET_AMIGAOS
 
@@ -120,7 +115,7 @@ int get_fs_usage (const char *path, const char *disk, struct fs_usage *fsp)
     return result;
 }
 
-#else /* ! TARGET_AMIGAOS */
+#else
 
 #ifdef __BEOS__
 
@@ -150,9 +145,8 @@ int get_fs_usage (const char *path, const char *disk, struct fs_usage *fsp)
     return result;
 };
 
-#else /* ! __BEOS__ */
+#else
 
-//int statfs ();
 
 #if HAVE_UNISTD_H
 # include <unistd.h>
@@ -170,12 +164,12 @@ int get_fs_usage (const char *path, const char *disk, struct fs_usage *fsp)
 # include <sys/vfs.h>
 #endif
 
-#if HAVE_SYS_FS_S5PARAM_H	/* Fujitsu UXP/V */
+#if HAVE_SYS_FS_S5PARAM_H
 # include <sys/fs/s5param.h>
 #endif
 
 #if defined (HAVE_SYS_FILSYS_H) && !defined (_CRAY)
-# include <sys/filsys.h>	/* SVR2 */
+# include <sys/filsys.h>
 #endif
 
 #if HAVE_FCNTL_H
@@ -186,18 +180,14 @@ int get_fs_usage (const char *path, const char *disk, struct fs_usage *fsp)
 # include <sys/statfs.h>
 #endif
 
-#if HAVE_DUSTAT_H		/* AIX PS/2 */
+#if HAVE_DUSTAT_H
 # include <sys/dustat.h>
 #endif
 
-#if HAVE_SYS_STATVFS_H		/* SVR4 */
+#if HAVE_SYS_STATVFS_H
 # include <sys/statvfs.h>
-//int statvfs ();
 #endif
 
-/* Read LEN bytes at PTR from descriptor DESC, retrying if interrupted.
-   Return the actual number of bytes read, zero for EOF, or negative
-   for an error.  */
 
 static int
 safe_read (int desc, char *ptr, int len)
@@ -220,13 +210,6 @@ safe_read (int desc, char *ptr, int len)
   return n_chars;
 }
 
-/* Fill in the fields of FSP with information about space usage for
-   the filesystem on which PATH resides.
-   DISK is the device on which PATH is mounted, for space-getting
-   methods that need to know it.
-   Return 0 if successful, -1 if not.  When returning -1, ensure that
-   ERRNO is either a system error value, or zero if DISK is NULL
-   on a system that requires a non-NULL value.  */
 int
 get_fs_usage (path, disk, fsp)
      const char *path;
@@ -241,9 +224,9 @@ get_fs_usage (path, disk, fsp)
   if (statfs (path, &fsd, sizeof (struct statfs)) != 0)
     return -1;
 
-#endif /* STAT_STATFS3_OSF1 */
+#endif
 
-#ifdef STAT_STATFS2_FS_DATA	/* Ultrix */
+#ifdef STAT_STATFS2_FS_DATA
 # define CONVERT_BLOCKS(B) adjust_blocks ((B), 1024, 512)
 
   struct fs_data fsd;
@@ -256,9 +239,9 @@ get_fs_usage (path, disk, fsp)
   fsp->fsu_files = fsd.fd_req.gtot;
   fsp->fsu_ffree = fsd.fd_req.gfree;
 
-#endif /* STAT_STATFS2_FS_DATA */
+#endif
 
-#ifdef STAT_READ_FILSYS		/* SVR2 */
+#ifdef STAT_READ_FILSYS
 # ifndef SUPERBOFF
 #  define SUPERBOFF (SUPERB * 512)
 # endif
@@ -290,9 +273,9 @@ get_fs_usage (path, disk, fsp)
   fsp->fsu_files = (fsd.s_isize - 2) * INOPB * (fsd.s_type == Fs2b ? 2 : 1);
   fsp->fsu_ffree = fsd.s_tinode;
 
-#endif /* STAT_READ_FILSYS */
+#endif
 
-#ifdef STAT_STATFS2_BSIZE	/* 4.3BSD, SunOS 4, HP-UX, AIX */
+#ifdef STAT_STATFS2_BSIZE
 # define CONVERT_BLOCKS(B) adjust_blocks ((B), fsd.f_bsize, 512)
 
   struct statfs fsd;
@@ -302,22 +285,17 @@ get_fs_usage (path, disk, fsp)
 
 # ifdef STATFS_TRUNCATES_BLOCK_COUNTS
 
-  /* In SunOS 4.1.2, 4.1.3, and 4.1.3_U1, the block counts in the
-     struct statfs are truncated to 2GB.  These conditions detect that
-     truncation, presumably without botching the 4.1.1 case, in which
-     the values are not truncated.  The correct counts are stored in
-     undocumented spare fields.  */
   if (fsd.f_blocks == 0x1fffff && fsd.f_spare[0] > 0)
     {
       fsd.f_blocks = fsd.f_spare[0];
       fsd.f_bfree = fsd.f_spare[1];
       fsd.f_bavail = fsd.f_spare[2];
     }
-# endif /* STATFS_TRUNCATES_BLOCK_COUNTS */
+# endif
 
-#endif /* STAT_STATFS2_BSIZE */
+#endif
 
-#ifdef STAT_STATFS2_FSIZE	/* 4.4BSD */
+#ifdef STAT_STATFS2_FSIZE
 # define CONVERT_BLOCKS(B) adjust_blocks ((B), fsd.f_fsize, 512)
 
   struct statfs fsd;
@@ -325,9 +303,9 @@ get_fs_usage (path, disk, fsp)
   if (statfs (path, &fsd) < 0)
     return -1;
 
-#endif /* STAT_STATFS2_FSIZE */
+#endif
 
-#ifdef STAT_STATFS4		/* SVR3, Dynix, Irix, AIX */
+#ifdef STAT_STATFS4
 # if _AIX || defined(_CRAY)
 #  define CONVERT_BLOCKS(B) adjust_blocks ((B), fsd.f_bsize, 512)
 #  ifdef _CRAY
@@ -335,8 +313,8 @@ get_fs_usage (path, disk, fsp)
 #  endif
 # else
 #  define CONVERT_BLOCKS(B) (B)
-#  ifndef _SEQUENT_		/* _SEQUENT_ is DYNIX/ptx */
-#   ifndef DOLPHIN		/* DOLPHIN 3.8.alfa/7.18 has f_bavail */
+#  ifndef _SEQUENT_
+#   ifndef DOLPHIN
 #    define f_bavail f_bfree
 #   endif
 #  endif
@@ -346,13 +324,10 @@ get_fs_usage (path, disk, fsp)
 
   if (statfs (path, &fsd, sizeof fsd, 0) < 0)
     return -1;
-  /* Empirically, the block counts on most SVR3 and SVR3-derived
-     systems seem to always be in terms of 512-byte blocks,
-     no matter what value f_bsize has.  */
 
-#endif /* STAT_STATFS4 */
+#endif
 
-#ifdef STAT_STATVFS		/* SVR4 */
+#ifdef STAT_STATVFS
 # define CONVERT_BLOCKS(B) \
     adjust_blocks ((B), fsd.f_frsize ? fsd.f_frsize : fsd.f_bsize, 512)
 
@@ -360,12 +335,10 @@ get_fs_usage (path, disk, fsp)
 
   if (statvfs (path, &fsd) < 0)
     return -1;
-  /* f_frsize isn't guaranteed to be supported.  */
 
-#endif /* STAT_STATVFS */
+#endif
 
 #if !defined(STAT_STATFS2_FS_DATA) && !defined(STAT_READ_FILSYS) && !defined(ANDROID)
-				/* !Ultrix && !SVR2 */
 
   fsp->fsu_blocks = CONVERT_BLOCKS (fsd.f_blocks);
   fsp->fsu_bfree = CONVERT_BLOCKS (fsd.f_bfree);
@@ -373,13 +346,12 @@ get_fs_usage (path, disk, fsp)
   fsp->fsu_files = fsd.f_files;
   fsp->fsu_ffree = fsd.f_ffree;
 
-#endif /* not STAT_STATFS2_FS_DATA && not STAT_READ_FILSYS */
+#endif
 
   return 0;
 }
 
 #if defined(_AIX) && defined(_I386)
-/* AIX PS/2 does not supply statfs.  */
 
 int
 statfs (path, fsb)
@@ -405,8 +377,8 @@ statfs (path, fsb)
   return 0;
 }
 
-#endif /* _AIX && _I386 */
+#endif
 
-#endif /* ! __BEOS__ */
-#endif /* ! TARGET_AMIGAOS */
-#endif /* ! _WIN32 */
+#endif
+#endif
+#endif

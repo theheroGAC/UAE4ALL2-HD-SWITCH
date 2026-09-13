@@ -19,7 +19,6 @@ unsigned savedisk_get_checksum(void *mem, unsigned size)
 }
 
 
-
 void savedisk_apply_changes(void *mem, void *patch, unsigned patch_size)
 {
 	unsigned *src=(unsigned *)patch;

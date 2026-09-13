@@ -1,4 +1,4 @@
- /* 
+ /*
   * UAE - The Un*x Amiga Emulator
   *
   * AutoConfig (tm) Expansions (ZorroII/III)
@@ -22,11 +22,8 @@
 
 #define MAX_EXPANSION_BOARDS	8
 
-/* ********************************************************** */
-/* 00 / 02 */
-/* er_Type */
 
-#define Z2_MEM_8MB	0x00 /* Size of Memory Block */
+#define Z2_MEM_8MB	0x00
 #define Z2_MEM_4MB	0x07
 #define Z2_MEM_2MB	0x06
 #define Z2_MEM_1MB	0x05
@@ -34,7 +31,6 @@
 #define Z2_MEM_256KB	0x03
 #define Z2_MEM_128KB	0x02
 #define Z2_MEM_64KB	0x01
-/* extended definitions */
 #define Z2_MEM_16MB	0x00
 #define Z2_MEM_32MB	0x01
 #define Z2_MEM_64MB	0x02
@@ -43,41 +39,34 @@
 #define Z2_MEM_512MB	0x05
 #define Z2_MEM_1GB	0x06
 
-#define chainedconfig	0x08 /* Next config is part of the same card */
-#define rom_card	0x10 /* ROM vector is valid */
-#define add_memory	0x20 /* Link RAM into free memory list */
+#define chainedconfig	0x08
+#define rom_card	0x10
+#define add_memory	0x20
 
-#define zorroII		0xc0 /* Type of Expansion Card */
+#define zorroII		0xc0
 #define zorroIII	0x80
 
-/* ********************************************************** */
-/* 04 - 06 & 10-16 */
 
-/* Manufacturer */
-#define commodore_g	 513 /* Commodore Braunschweig (Germany) */
-#define commodore	 514 /* Commodore West Chester */
-#define gvp		2017 /* GVP */
-#define ass		2102 /* Advanced Systems & Software */
-#define hackers_id	2011 /* Special ID for test cards */
+#define commodore_g	 513
+#define commodore	 514
+#define gvp		2017
+#define ass		2102
+#define hackers_id	2011
 
-/* Card Type */
-#define commodore_a2091	     3 /* A2091 / A590 Card from C= */
-#define commodore_a2091_ram 10 /* A2091 / A590 Ram on HD-Card */
-#define commodore_a2232	    70 /* A2232 Multiport Expansion */
-#define ass_nexus_scsi	     1 /* Nexus SCSI Controller */
+#define commodore_a2091	     3
+#define commodore_a2091_ram 10
+#define commodore_a2232	    70
+#define ass_nexus_scsi	     1
 
 #define gvp_series_2_scsi   11
 #define gvp_iv_24_gfx	    32
 
-/* ********************************************************** */
-/* 08 - 0A  */
-/* er_Flags */
 #if !( defined(PANDORA) || defined(ANDROIDSDL) )
 #define Z3_MEM_64KB	0x02
 #define Z3_MEM_128KB	0x03
 #define Z3_MEM_256KB	0x04
 #define Z3_MEM_512KB	0x05
-#define Z3_MEM_1MB	0x06 /* Zorro III card subsize */
+#define Z3_MEM_1MB	0x06
 #define Z3_MEM_2MB	0x07
 #define Z3_MEM_4MB	0x08
 #define Z3_MEM_6MB	0x09
@@ -91,76 +80,45 @@
 #define Z3_MEM_defunct2	0x0f
 #endif
 
-#define force_z3	0x10 /* *MUST* be set if card is Z3 */
-#define ext_size	0x20 /* Use extended size table for bits 0-2 of er_Type */
-#define no_shutup	0x40 /* Card cannot receive Shut_up_forever */
-#define care_addr	0x80 /* Adress HAS to be $200000-$9fffff */
+#define force_z3	0x10
+#define ext_size	0x20
+#define no_shutup	0x40
+#define care_addr	0x80
 
-/* ********************************************************** */
-/* 40-42 */
-/* ec_interrupt (unused) */
 
-#define enable_irq	0x01 /* enable Interrupt */
-#define reset_card	0x04 /* Reset of Expansion Card - must be 0 */
-#define card_int2	0x10 /* READ ONLY: IRQ 2 active */
-#define card_irq6	0x20 /* READ ONLY: IRQ 6 active */
-#define card_irq7	0x40 /* READ ONLY: IRQ 7 active */
-#define does_irq	0x80 /* READ ONLY: Card currently throws IRQ */
+#define enable_irq	0x01
+#define reset_card	0x04
+#define card_int2	0x10
+#define card_irq6	0x20
+#define card_irq7	0x40
+#define does_irq	0x80
 
-/* ********************************************************** */
 
-/* ROM defines (DiagVec) */
-
-#define rom_4bit	(0x00<<14) /* ROM width */
+#define rom_4bit	(0x00<<14)
 #define rom_8bit	(0x01<<14)
 #define rom_16bit	(0x02<<14)
 
-#define rom_never	(0x00<<12) /* Never run Boot Code */
-#define rom_install	(0x01<<12) /* run code at install time */
-#define rom_binddrv	(0x02<<12) /* run code with binddrivers */
+#define rom_never	(0x00<<12)
+#define rom_install	(0x01<<12)
+#define rom_binddrv	(0x02<<12)
 
 uaecptr ROM_filesys_resname = 0, ROM_filesys_resid = 0;
 uaecptr ROM_filesys_diagentry = 0;
 uaecptr ROM_hardfile_resname = 0, ROM_hardfile_resid = 0;
 uaecptr ROM_hardfile_init = 0;
 
-/* ********************************************************** */
 
 static void (*card_init[MAX_EXPANSION_BOARDS]) (void);
 static void (*card_map[MAX_EXPANSION_BOARDS]) (void);
 
 static int ecard = 0;
 
-/* ********************************************************** */
 
-/* Please note: ZorroIII implementation seems to work different
- * than described in the HRM. This claims that ZorroIII config
- * address is 0xff000000 while the ZorroII config space starts
- * at 0x00e80000. In reality, both, Z2 and Z3 cards are 
- * configured in the ZorroII config space. Kickstart 3.1 doesn't
- * even do a single read or write access to the ZorroIII space.
- * The original Amiga include files tell the same as the HRM.
- * ZorroIII: If you set ext_size in er_Flags and give a Z2-size
- * in er_Type you can very likely add some ZorroII address space
- * to a ZorroIII card on a real Amiga. This is not implemented
- * yet.
- *  -- Stefan
- * 
- * Surprising that 0xFF000000 isn't used. Maybe it depends on the
- * ROM. Anyway, the HRM says that Z3 cards may appear in Z2 config
- * space, so what we are doing here is correct.
- *  -- Bernd
- */
-
-/* Autoconfig address space at 0xE80000 */
 static uae_u8 expamem[65536];
 
 static uae_u8 expamem_lo;
 static uae_u16 expamem_hi;
 
-/*
- *  Dummy entries to show that there's no card in a slot
- */
 
 static void expamem_map_clear (void)
 {
@@ -292,11 +250,6 @@ static void REGPARAM2 expamem_bput (uaecptr addr, uae_u32 value)
 	}
 }
 
-/* ********************************************************** */
-
-/*
- *  Fast Memory
- */
 
 static uae_u32 fastmem_mask;
 
@@ -309,13 +262,13 @@ static void fastmem_bput (uaecptr, uae_u32) REGPARAM;
 static int fastmem_check (uaecptr addr, uae_u32 size) REGPARAM;
 static uae_u8 *fastmem_xlate (uaecptr addr) REGPARAM;
 
-static uae_u32 fastmem_start; /* Determined by the OS */
+static uae_u32 fastmem_start;
 static uae_u8 *fastmemory = NULL;
 
 uae_u32 REGPARAM2 fastmem_lget (uaecptr addr)
 {
     uae_u32 *m;
-    addr -= fastmem_start /*& fastmem_mask*/;
+    addr -= fastmem_start ;
 #ifdef SAFE_MEMORY_ACCESS
     addr &= fastmem_mask;
 #endif
@@ -326,7 +279,7 @@ uae_u32 REGPARAM2 fastmem_lget (uaecptr addr)
 uae_u32 REGPARAM2 fastmem_wget (uaecptr addr)
 {
     uae_u16 *m;
-    addr -= fastmem_start /*& fastmem_mask*/;
+    addr -= fastmem_start ;
 #ifdef SAFE_MEMORY_ACCESS
     addr &= fastmem_mask;
 #endif
@@ -337,7 +290,7 @@ uae_u32 REGPARAM2 fastmem_wget (uaecptr addr)
 uae_u32 REGPARAM2 fastmem_bget (uaecptr addr)
 {
     uae_u8 *m;
-    addr -= fastmem_start /*& fastmem_mask*/;
+    addr -= fastmem_start ;
 #ifdef SAFE_MEMORY_ACCESS
     addr &= fastmem_mask;
 #endif
@@ -348,7 +301,7 @@ uae_u32 REGPARAM2 fastmem_bget (uaecptr addr)
 void REGPARAM2 fastmem_lput (uaecptr addr, uae_u32 l)
 {
     uae_u32 *m;
-    addr -= fastmem_start /*& fastmem_mask*/;
+    addr -= fastmem_start ;
 #ifdef SAFE_MEMORY_ACCESS
     addr &= fastmem_mask;
 #endif
@@ -359,7 +312,7 @@ void REGPARAM2 fastmem_lput (uaecptr addr, uae_u32 l)
 void REGPARAM2 fastmem_wput (uaecptr addr, uae_u32 w)
 {
     uae_u16 *m;
-    addr -= fastmem_start /*& fastmem_mask*/;
+    addr -= fastmem_start ;
 #ifdef SAFE_MEMORY_ACCESS
     addr &= fastmem_mask;
 #endif
@@ -370,7 +323,7 @@ void REGPARAM2 fastmem_wput (uaecptr addr, uae_u32 w)
 void REGPARAM2 fastmem_bput (uaecptr addr, uae_u32 b)
 {
     uae_u8 *m;
-    addr -= fastmem_start /*& fastmem_mask*/;
+    addr -= fastmem_start ;
 #ifdef SAFE_MEMORY_ACCESS
     addr &= fastmem_mask;
 #endif
@@ -380,7 +333,7 @@ void REGPARAM2 fastmem_bput (uaecptr addr, uae_u32 b)
 
 static int REGPARAM2 fastmem_check (uaecptr addr, uae_u32 size)
 {
-    addr -= fastmem_start /*& fastmem_mask*/;
+    addr -= fastmem_start ;
 #ifdef SAFE_MEMORY_ACCESS
     addr &= fastmem_mask;
 #endif
@@ -389,7 +342,7 @@ static int REGPARAM2 fastmem_check (uaecptr addr, uae_u32 size)
 
 static uae_u8 REGPARAM2 *fastmem_xlate (uaecptr addr)
 {
-    addr -= fastmem_start /*& fastmem_mask*/;
+    addr -= fastmem_start ;
 #ifdef SAFE_MEMORY_ACCESS
     addr &= fastmem_mask;
 #endif
@@ -403,11 +356,6 @@ addrbank fastmem_bank = {
 };
 
 
-/*
- * Filesystem device ROM
- * This is very simple, the Amiga shouldn't be doing things with it.
- */
-
 static uae_u32 filesys_lget (uaecptr) REGPARAM;
 static uae_u32 filesys_wget (uaecptr) REGPARAM;
 static uae_u32 filesys_bget (uaecptr) REGPARAM;
@@ -415,7 +363,7 @@ static void filesys_lput (uaecptr, uae_u32) REGPARAM;
 static void filesys_wput (uaecptr, uae_u32) REGPARAM;
 static void filesys_bput (uaecptr, uae_u32) REGPARAM;
 
-static uae_u32 filesys_start; /* Determined by the OS */
+static uae_u32 filesys_start;
 uae_u8 *filesysory;
 
 uae_u32 REGPARAM2 filesys_lget (uaecptr addr)
@@ -474,9 +422,6 @@ addrbank filesys_bank = {
 };
 
 #if !( defined(PANDORA) || defined(ANDROIDSDL) )
-/*
- *  Z3fastmem Memory
- */
 
 
 static uae_u32 z3fastmem_mask;
@@ -490,7 +435,7 @@ static void z3fastmem_bput (uaecptr, uae_u32) REGPARAM;
 static int z3fastmem_check (uaecptr addr, uae_u32 size) REGPARAM;
 static uae_u8 *z3fastmem_xlate (uaecptr addr) REGPARAM;
 
-static uae_u32 z3fastmem_start; /* Determined by the OS */
+static uae_u32 z3fastmem_start;
 static uae_u8 *z3fastmem = NULL;
 
 uae_u32 REGPARAM2 z3fastmem_lget (uaecptr addr)
@@ -515,7 +460,7 @@ uae_u32 REGPARAM2 z3fastmem_bget (uaecptr addr)
 {
     addr -= z3fastmem_start & z3fastmem_mask;
     addr &= z3fastmem_mask;
-#ifdef USE_FAME_CORE	/* swabbed memory */
+#ifdef USE_FAME_CORE
     return z3fastmem[addr ^ 1];
 #else
     return z3fastmem[addr];
@@ -544,7 +489,7 @@ void REGPARAM2 z3fastmem_bput (uaecptr addr, uae_u32 b)
 {
     addr -= z3fastmem_start & z3fastmem_mask;
     addr &= z3fastmem_mask;
-#ifdef USE_FAME_CORE	/* swabbed memory */
+#ifdef USE_FAME_CORE
     z3fastmem[addr ^ 1] = b;
 #else
     z3fastmem[addr] = b;
@@ -568,21 +513,17 @@ static uae_u8 REGPARAM2 *z3fastmem_xlate (uaecptr addr)
 addrbank z3fastmem_bank = {
     z3fastmem_lget, z3fastmem_wget, z3fastmem_bget,
     z3fastmem_lput, z3fastmem_wput, z3fastmem_bput,
-    z3fastmem_xlate, z3fastmem_check, NULL/*, // WinUAE structure members
-    "z3fastmem", NULL, NULL, 0*/
+    z3fastmem_xlate, z3fastmem_check, NULL
 };
 
-/* Z3-based UAEGFX-card */
-uae_u32 gfxmem_mask; /* for memory.c */
+#endif
+
+#if !( defined(PANDORA) || defined(ANDROIDSDL) ) || defined(PICASSO96)
+uae_u32 gfxmem_mask;
 uae_u8 *gfxmemory;
 uae_u32 gfxmem_start;
 #endif
 
-/* ********************************************************** */
-
-/*
- *     Expansion Card (ZORRO II) for 1/2/4/8 MB of Fast Memory
- */
 
 static void expamem_map_fastcard (void)
 {
@@ -610,22 +551,17 @@ static void expamem_init_fastcard (void)
     expamem_write (0x10, hackers_id >> 8);
     expamem_write (0x14, hackers_id & 0xff);
 
-    expamem_write (0x18, 0x00); /* ser.no. Byte 0 */
-    expamem_write (0x1c, 0x00); /* ser.no. Byte 1 */
-    expamem_write (0x20, 0x00); /* ser.no. Byte 2 */
-    expamem_write (0x24, 0x01); /* ser.no. Byte 3 */
+    expamem_write (0x18, 0x00);
+    expamem_write (0x1c, 0x00);
+    expamem_write (0x20, 0x00);
+    expamem_write (0x24, 0x01);
 
-    expamem_write (0x28, 0x00); /* Rom-Offset hi */
-    expamem_write (0x2c, 0x00); /* ROM-Offset lo */
+    expamem_write (0x28, 0x00);
+    expamem_write (0x2c, 0x00);
 
-    expamem_write (0x40, 0x00); /* Ctrl/Statusreg.*/
+    expamem_write (0x40, 0x00);
 }
 
-/* ********************************************************** */
-
-/* 
- * Filesystem device
- */
 
 static void expamem_map_filesys (void)
 {
@@ -634,7 +570,6 @@ static void expamem_map_filesys (void)
     filesys_start = ((expamem_hi | (expamem_lo >> 4)) << 16);
     map_banks (&filesys_bank, filesys_start >> 16, 1, 0);
     write_log ("Filesystem: mapped memory @$%lx.\n", filesys_start);
-    /* 68k code needs to know this. */
     a = here ();
     org (RTAREA_BASE+0xFFFC);
     dl (filesys_start + 0x2000);
@@ -643,18 +578,16 @@ static void expamem_map_filesys (void)
 
 static void expamem_init_filesys (void)
 {
-    /* struct DiagArea - the size has to be large enough to store several device ROMTags */
-    uae_u8 diagarea[] = { 0x90, 0x00, /* da_Config, da_Flags */
-                          0x02, 0x00, /* da_Size */
-                          0x01, 0x00, /* da_DiagPoint */
-                          0x01, 0x06  /* da_BootPoint */
+    uae_u8 diagarea[] = { 0x90, 0x00,
+                          0x02, 0x00,
+                          0x01, 0x00,
+                          0x01, 0x06
     };
 
 #ifdef USE_FAME_CORE
-    /* swabbed data */
     swab_memory (diagarea, 8);
 #endif
-    
+
     expamem_init_clear();
     expamem_write (0x00, Z2_MEM_64KB | rom_card | zorroII);
 
@@ -664,35 +597,28 @@ static void expamem_init_filesys (void)
     expamem_write (0x10, hackers_id >> 8);
     expamem_write (0x14, hackers_id & 0xff);
 
-    expamem_write (0x18, 0x00); /* ser.no. Byte 0 */
-    expamem_write (0x1c, 0x00); /* ser.no. Byte 1 */
-    expamem_write (0x20, 0x00); /* ser.no. Byte 2 */
-    expamem_write (0x24, 0x01); /* ser.no. Byte 3 */
+    expamem_write (0x18, 0x00);
+    expamem_write (0x1c, 0x00);
+    expamem_write (0x20, 0x00);
+    expamem_write (0x24, 0x01);
 
-    /* er_InitDiagVec */
-    expamem_write (0x28, 0x10); /* Rom-Offset hi */
-    expamem_write (0x2c, 0x00); /* ROM-Offset lo */
+    expamem_write (0x28, 0x10);
+    expamem_write (0x2c, 0x00);
 
-    expamem_write (0x40, 0x00); /* Ctrl/Statusreg.*/
+    expamem_write (0x40, 0x00);
 
-    /* Build a DiagArea */
     memcpy (expamem + 0x1000, diagarea, sizeof diagarea);
 
-    /* Call DiagEntry */
-    do_put_mem_word ((uae_u16 *)(expamem + 0x1100), (0x4EF9)); /* JMP */
+    do_put_mem_word ((uae_u16 *)(expamem + 0x1100), (0x4EF9));
     do_put_mem_long ((uae_u32 *)(expamem + 0x1102), (ROM_filesys_diagentry));
 
-    /* What comes next is a plain bootblock */
-    do_put_mem_word ((uae_u16 *)(expamem + 0x1106), (0x4EF9)); /* JMP */
+    do_put_mem_word ((uae_u16 *)(expamem + 0x1106), (0x4EF9));
     do_put_mem_long ((uae_u32 *)(expamem + 0x1108), (EXPANSION_bootcode));
-    
+
     memcpy (filesysory, expamem, 0x3000);
 }
 
 #if !( defined(PANDORA) || defined(ANDROIDSDL) )
-/*
- * Zorro III expansion memory
- */
 
 static void expamem_map_z3fastmem (void)
 {
@@ -727,69 +653,57 @@ static void expamem_init_z3fastmem (void)
     expamem_write (0x10, hackers_id >> 8);
     expamem_write (0x14, hackers_id & 0xff);
 
-    expamem_write (0x18, 0x00); /* ser.no. Byte 0 */
-    expamem_write (0x1c, 0x00); /* ser.no. Byte 1 */
-    expamem_write (0x20, 0x00); /* ser.no. Byte 2 */
-    expamem_write (0x24, 0x01); /* ser.no. Byte 3 */
+    expamem_write (0x18, 0x00);
+    expamem_write (0x1c, 0x00);
+    expamem_write (0x20, 0x00);
+    expamem_write (0x24, 0x01);
 
-    expamem_write (0x28, 0x00); /* Rom-Offset hi */
-    expamem_write (0x2c, 0x00); /* ROM-Offset lo */
+    expamem_write (0x28, 0x00);
+    expamem_write (0x2c, 0x00);
 
-    expamem_write (0x40, 0x00); /* Ctrl/Statusreg.*/
+    expamem_write (0x40, 0x00);
 }
 
-#ifdef PICASSO96
-/*
- *  Fake Graphics Card (ZORRO III) - BDK
- */
+static long fast_filepos, z3_filepos;
+#else
+static long fast_filepos;
+#endif
 
+#ifdef PICASSO96
 static void expamem_map_gfxcard (void)
 {
     gfxmem_start = ((expamem_hi | (expamem_lo >> 4)) << 16);
     map_banks (&gfxmem_bank, gfxmem_start >> 16, allocated_gfxmem >> 16, allocated_gfxmem);
+    picasso_restore_after_mapping();
     write_log ("UAEGFX-card: mapped @$%lx \n", gfxmem_start);
 }
 
 static void expamem_init_gfxcard (void)
 {
     expamem_init_clear();
-    expamem_write (0x00, zorroIII);
+    if (allocated_gfxmem == 0x100000)
+        expamem_write (0x00, Z2_MEM_1MB + zorroII);
+    else if (allocated_gfxmem == 0x200000)
+        expamem_write (0x00, Z2_MEM_2MB + zorroII);
+    else if (allocated_gfxmem == 0x400000)
+        expamem_write (0x00, Z2_MEM_4MB + zorroII);
+    else if (allocated_gfxmem == 0x800000)
+        expamem_write (0x00, Z2_MEM_8MB + zorroII);
+    else
+        expamem_write (0x00, Z2_MEM_2MB + zorroII);
 
-    switch (allocated_gfxmem) {
-     case 0x00100000:
-	expamem_write (0x08, no_shutup | force_z3 | Z3_MEM_1MB);
-	break;
-     case 0x00200000:
-	expamem_write (0x08, no_shutup | force_z3 | Z3_MEM_2MB);
-	break;
-     case 0x00400000:
-	expamem_write (0x08, no_shutup | force_z3 | Z3_MEM_4MB);
-	break;
-     case 0x00800000:
-	expamem_write (0x08, no_shutup | force_z3 | Z3_MEM_8MB);
-	break;
-    }
-
+    expamem_write (0x08, care_addr);
     expamem_write (0x04, 96);
-
     expamem_write (0x10, hackers_id >> 8);
     expamem_write (0x14, hackers_id & 0xff);
-
-    expamem_write (0x18, 0x00); /* ser.no. Byte 0 */
-    expamem_write (0x1c, 0x00); /* ser.no. Byte 1 */
-    expamem_write (0x20, 0x00); /* ser.no. Byte 2 */
-    expamem_write (0x24, 0x01); /* ser.no. Byte 3 */
-
-    expamem_write (0x28, 0x00); /* Rom-Offset hi */
-    expamem_write (0x2c, 0x00); /* ROM-Offset lo */
-
-    expamem_write (0x40, 0x00); /* Ctrl/Statusreg.*/
+    expamem_write (0x18, 0x00);
+    expamem_write (0x1c, 0x00);
+    expamem_write (0x20, 0x00);
+    expamem_write (0x24, 0x01);
+    expamem_write (0x28, 0x00);
+    expamem_write (0x2c, 0x00);
+    expamem_write (0x40, 0x00);
 }
-#endif
-
-static long fast_filepos, z3_filepos;
-#else
-static long fast_filepos;
 #endif
 
 static void allocate_expamem (void)
@@ -797,8 +711,14 @@ static void allocate_expamem (void)
     currprefs.fastmem_size = changed_prefs.fastmem_size;
 #if !( defined(PANDORA) || defined(ANDROIDSDL) )
     currprefs.z3fastmem_size = changed_prefs.z3fastmem_size;
+#endif
+#if !( defined(PANDORA) || defined(ANDROIDSDL) ) || defined(PICASSO96)
     currprefs.gfxmem_size = changed_prefs.gfxmem_size;
 #endif
+
+    if (currprefs.gfxmem_size > 0 && currprefs.fastmem_size > 0x200000) {
+        currprefs.fastmem_size = 0x200000;
+    }
 
     if (allocated_fastmem != currprefs.fastmem_size) {
     	if (fastmemory)
@@ -808,7 +728,7 @@ static void allocate_expamem (void)
     	fastmem_mask = allocated_fastmem - 1;
 
     	if (allocated_fastmem) {
-    		fastmemory = mapped_malloc (allocated_fastmem, "fast");
+    		fastmemory = (uae_u8 *)mapped_malloc (allocated_fastmem, "fast");
     		if (fastmemory == 0) {
     			write_log ("Out of memory for fastmem card.\n");
     			allocated_fastmem = 0;
@@ -825,31 +745,35 @@ static void allocate_expamem (void)
     	z3fastmem_mask = allocated_z3fastmem - 1;
 
     	if (allocated_z3fastmem) {
-    		z3fastmem = mapped_malloc (allocated_z3fastmem, "z3");
+    		z3fastmem = (uae_u8 *)mapped_malloc (allocated_z3fastmem, "z3");
     		if (z3fastmem == 0) {
     			write_log ("Out of memory for 32 bit fast memory.\n");
     			allocated_z3fastmem = 0;
     		}
     	}
     }
+
+    z3fastmem_bank.baseaddr = z3fastmem;
+#endif
+#if !( defined(PANDORA) || defined(ANDROIDSDL) ) || defined(PICASSO96)
     if (allocated_gfxmem != currprefs.gfxmem_size) {
+        picasso_memory_reset();
     	if (gfxmemory)
     		mapped_free (gfxmemory);
     	gfxmemory = 0;
 
     	allocated_gfxmem = currprefs.gfxmem_size;
-    	gfxmem_mask = allocated_gfxmem - 1;
+    	gfxmem_mask = allocated_gfxmem ? (allocated_gfxmem - 1) : 0;
 
     	if (allocated_gfxmem) {
-    		gfxmemory = mapped_malloc (allocated_gfxmem, "gfx");
+    		gfxmemory = (uae_u8 *)mapped_malloc (allocated_gfxmem, "gfx");
     		if (gfxmemory == 0) {
     			write_log ("Out of memory for graphics card memory\n");
     			allocated_gfxmem = 0;
     		}
     	}
     }
-
-    z3fastmem_bank.baseaddr = z3fastmem;
+    gfxmem_bank.baseaddr = gfxmemory;
 #endif
     fastmem_bank.baseaddr = fastmemory;
 
@@ -879,16 +803,13 @@ void expamem_reset (void)
 
    allocate_expamem ();
 
-   /* check if Kickstart version is below 1.3 */
    if (! ersatzkickfile
-         && (/* Kickstart 1.0 & 1.1! */
+         && (
                get_word (0xF8000C) == 0xFFFF
-               /* Kickstart < 1.3 */
                || get_word (0xF8000C) < 34))
    {
       do_mount = 0;
    }
-   /* No need for filesystem stuff if there aren't any mounted.  */
    if (nr_units (currprefs.mountinfo) == 0)
       do_mount = 0;
 
@@ -930,11 +851,15 @@ void expansion_init (void)
 {
 #if !( defined(PANDORA) || defined(ANDROIDSDL) )
     z3fastmem = 0;
+#endif
+#if !( defined(PANDORA) || defined(ANDROIDSDL) ) || defined(PICASSO96)
     gfxmemory = 0;
 #endif
     fastmemory = 0;
 #if !( defined(PANDORA) || defined(ANDROIDSDL) )
     allocated_z3fastmem = 0;
+#endif
+#if !( defined(PANDORA) || defined(ANDROIDSDL) ) || defined(PICASSO96)
     allocated_gfxmem = 0;
 #endif
     allocated_fastmem = 0;
@@ -946,7 +871,7 @@ void expansion_init (void)
 	write_log ("virtual memory exhausted (filesysory)!\n");
 	exit (0);
     }
-    
+
     filesys_bank.baseaddr = (uae_u8*)filesysory;
 }
 
@@ -957,6 +882,8 @@ void expansion_cleanup (void)
 #if !( defined(PANDORA) || defined(ANDROIDSDL) )
     if (z3fastmem)
 	mapped_free (z3fastmem);
+#endif
+#if !( defined(PANDORA) || defined(ANDROIDSDL) ) || defined(PICASSO96)
     if (gfxmemory)
 	mapped_free (gfxmemory);
 #endif
@@ -965,12 +892,15 @@ void expansion_cleanup (void)
     fastmemory = 0;
 #if !( defined(PANDORA) || defined(ANDROIDSDL) )
     z3fastmem = 0;
+#endif
+#if !( defined(PANDORA) || defined(ANDROIDSDL) ) || defined(PICASSO96)
     gfxmemory = 0;
+    allocated_gfxmem = 0;
+    picasso_memory_reset();
 #endif
     filesysory = 0;
 }
 
-/* State save/restore code.  */
 
 uae_u8 *save_fram (int *len)
 {

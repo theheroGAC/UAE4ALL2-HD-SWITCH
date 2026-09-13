@@ -26,8 +26,6 @@
 
 unsigned long doMask (int p, int bits, int shift)
 {
-    /* p is a value from 0 to 15 (Amiga color value)
-     * scale to 0..255, shift to align msb with mask, and apply mask */
 
     unsigned long val = p * 0x11111111UL;
     val >>= (32 - bits);
@@ -53,7 +51,6 @@ void alloc_colors64k (int rw, int gw, int bw, int rs, int gs, int bs)
 		int b = i & 0xF;
 		xcolors[i] = doMask(r, rw, rs) | doMask(g, gw, gs) | doMask(b, bw, bs);
 	}
-	/* create AGA color tables */
 	for(i=0; i<256; i++) {
 		xredcolors[i] = doColor(i, rw, rs);
 		xgreencolors[i] = doColor(i, gw, gs);

@@ -1,5 +1,5 @@
 int kickstart=1;
-int oldkickstart=-1;	/* reload KS at startup */
+int oldkickstart=-1;
 
 extern char launchDir[300];
 
@@ -42,18 +42,20 @@ extern "C" int main( int argc, char *argv[] );
 #include "gui.h"
 #include "zfile.h"
 #include "autoconf.h"
+#ifdef PICASSO96
+#include "picasso96.h"
+#endif
 #include "osemu.h"
 #include "exectasks.h"
 #include "bsdsocket.h"
 #include "drawing.h"
-#include "menu.h" 
+#include "menu.h"
 #include "menu_config.h"
 #include "gp2xutil.h"
 #ifdef __SWITCH__
 #include "switch/whdload_manager_switch.h"
 #include "switch/uae_gui_switch.h"
 #endif
-/* PocketUAE */
 #include "native2amiga.h"
 
 #ifdef USE_SDL
@@ -71,26 +73,21 @@ extern SDL_Surface *current_screenshot;
 #include "vkbd.h"
 #endif
 
-#if defined(__PSP2__) // NOT __SWITCH__
-//Allow locking PS Button
+#if defined(__PSP2__)
 #include <psp2/shellutil.h>
-//Touch input
 #include "psp2_touch.h"
-//Custom bubble
 #include <psp2/appmgr.h>
 #ifdef DEBUG_UAE4ALL
-/* psp2shell is not available in this VitaSDK; use vita_write_log fallback */
 #endif
 #endif
 
 #if defined(__SWITCH__)
-//Touch input
 #include "switch_touch.h"
 #endif
 
 long int version = 256*65536L*UAEMAJOR + 65536L*UAEMINOR + UAESUBREV;
 
-struct uae_prefs currprefs, changed_prefs; 
+struct uae_prefs currprefs, changed_prefs;
 
 int no_gui = 0;
 int joystickpresent = 0;
@@ -145,15 +142,6 @@ static void vita_debug_log_close(void)
 bool resetOnStartingApp = false;
 extern char config_load_filename[300];
 
-/* If you want to pipe printer output to a file, put something like
- * "cat >>printerfile.tmp" above.
- * The printer support was only tested with the driver "PostScript" on
- * Amiga side, using apsfilter for linux to print ps-data.
- *
- * Under DOS it ought to be -p LPT1: or -p PRN: but you'll need a
- * PostScript printer or ghostscript -=SR=-
- */
-
 
 void discard_prefs ()
 {
@@ -177,8 +165,8 @@ void default_prefs ()
 		strcpy (romfile, "kick.rom");
 	}
 	else fclose(f);
-	
-	snprintf(romkeyfile, 256, "%s/kickstarts/%s",launchDir,"rom.key");	
+
+	snprintf(romkeyfile, 256, "%s/kickstarts/%s",launchDir,"rom.key");
 
 	f=fopen (romkeyfile, "r" );
 	if(!f)
@@ -186,7 +174,7 @@ void default_prefs ()
 		strcpy (romkeyfile, "rom.key");
 	}
 	else fclose(f);
-	
+
 #ifdef ANDROIDSDL
 	if (uae4all_init_rom(romfile)==-1)
 	{
@@ -197,8 +185,8 @@ void default_prefs ()
 		  strcpy (romfile, "kick.rom");
 	  }
 	  else fclose(f3);
-	  
-	  snprintf(romkeyfile, 256, "%s/Android/data/com.cloanto.amigaforever.essentials/files/rom/%s",getenv("SDCARD"),"rom.key");	
+
+	  snprintf(romkeyfile, 256, "%s/Android/data/com.cloanto.amigaforever.essentials/files/rom/%s",getenv("SDCARD"),"rom.key");
 	  FILE *f4=fopen (romkeyfile, "r" );
 	  if(!f4)
 	  {
@@ -208,7 +196,6 @@ void default_prefs ()
 	}
 #endif
 
-	/* 1MB */
     prefs_chipmem_size = 0x00100000;
     prefs_bogomem_size = 0;
 	changed_prefs.fastmem_size = 0;
@@ -220,7 +207,7 @@ void uae_reset (void)
 {
     gui_purge_events();
 #ifdef USE_UAE4ALL_VKBD
-	vkbd_reset_sticky_keys(); // keyvalues clear on reset, so vkbd must reflect this
+	vkbd_reset_sticky_keys();
 #endif
     black_screen_now();
     quit_program = 2;
@@ -249,15 +236,6 @@ void reset_all_systems (void)
     filesys_start_threads ();
 }
 
-/* Okay, this stuff looks strange, but it is here to encourage people who
- * port UAE to re-use as much of this code as possible. Functions that you
- * should be using are do_start_program() and do_leave_program(), as well
- * as real_main(). Some OSes don't call main() (which is braindamaged IMHO,
- * but unfortunately very common), so you need to call real_main() from
- * whatever entry point you have. You may want to write your own versions
- * of start_program() and leave_program() if you need to do anything special.
- * Add #ifdefs around these as appropriate.
- */
 void do_start_program (void)
 {
 	quit_program = 2;
@@ -267,20 +245,22 @@ void do_start_program (void)
 void do_leave_program (void)
 {
 #ifdef USE_SDL
-#if defined(__PSP2__) || defined(__SWITCH__) //On Vita, only remove keyboard graphics from memory when quitting the emu
+#if defined(__PSP2__) || defined(__SWITCH__)
 #ifdef USE_UAE4ALL_VKBD
 	vkbd_quit();
 #endif
-#ifdef __PSP2__ // NOT __SWITCH__
-	//De-Initialize touch panels
+#ifdef __PSP2__
 	psp2QuitTouch();
 #endif
 #endif
   if(current_screenshot != NULL)
     SDL_FreeSurface(current_screenshot);
 #endif
-	     
+
     graphics_leave ();
+#ifdef PICASSO96
+    picasso_shutdown ();
+#endif
     close_joystick ();
     close_sound ();
     zfile_exit ();
@@ -310,16 +290,15 @@ void leave_program (void)
 
 void real_main (int argc, char **argv)
 {
-#if defined(__PSP2__) // NOT __SWITCH__
+#if defined(__PSP2__)
     vita_debug_log_init();
 	write_log("[VITA] real_main() start argc=%d argv=%p\n", argc, argv);
 #ifdef DEBUG_UAE4ALL
-	/* psp2shell is not available in this VitaSDK; using vita file logs only */
 	write_log("[VITA] DEBUG_UAE4ALL active, shell log disabled\n");
 #endif
 #endif
 
-#if defined(__PSP2__) // NOT __SWITCH__
+#if defined(__PSP2__)
 	write_log("[VITA] init touch\n");
 	psp2InitTouch();
 	write_log("[VITA] touch init done\n");
@@ -331,7 +310,7 @@ void real_main (int argc, char **argv)
 #endif
 
 #ifdef USE_SDL
-    SDL_Init (SDL_INIT_VIDEO | SDL_INIT_JOYSTICK 
+    SDL_Init (SDL_INIT_VIDEO | SDL_INIT_JOYSTICK
 #if !defined(NO_SOUND) && !defined(GP2X)
  			| SDL_INIT_AUDIO
 #endif
@@ -385,11 +364,10 @@ void real_main (int argc, char **argv)
     write_log("[VITA] set gpu xbar\n");
 #endif
 
-  // Initialize timebase
   g_uae_epoch = read_processor_time();
-  syncbase = 1000000; // Microseconds
+  syncbase = 1000000;
 
-#if defined(__PSP2__) // NOT __SWITCH__
+#if defined(__PSP2__)
 	mkdir("ux0:/data/uae4all", 0777);
 	mkdir("ux0:/data/uae4all/roms", 0777);
 	mkdir("ux0:/data/uae4all/saves", 0777);
@@ -411,23 +389,20 @@ void real_main (int argc, char **argv)
 #else
 	getcwd(launchDir,250);
 #endif
-    /* PocketUAE prefs */
     default_prefs_uae (&currprefs);
     default_prefs();
 
 #ifdef GP2X
     gp2x_init(argc, argv);
 #endif
-	// Set everthing to default and clear HD settings
 	SetDefaultMenuSettings(1);
-    //Check if UAE4All2 was launched by a custom bubble
 #if defined(__SWITCH__)
     if (argc == 2) {
         snprintf(config_load_filename, 300, argv[1]);
         resetOnStartingApp = true;
     }
 #endif
-#if defined(__PSP2__) // NOT __SWITCH__
+#if defined(__PSP2__)
     char boot_params[1024];
     sceAppMgrGetAppParam(boot_params);
 	if (strstr(boot_params,"psgm:play") && strstr(boot_params, "&param=")) {
@@ -460,7 +435,6 @@ void real_main (int argc, char **argv)
 	if (err == -1) {
 	    write_log ("Failed to initialize the GUI\n");
 #ifdef __PSP2__
-        /* Do not continue into emulator startup with no valid framebuffer. */
         vita_debug_log_close();
         return;
 #endif
@@ -474,10 +448,9 @@ void real_main (int argc, char **argv)
 	produce_sound = 0;
     }
     write_log("[VITA] init_audio done produce_sound=%d sound_available=%d\n", produce_sound, sound_available);
-    /* Install resident module to get 8MB chipmem, if requested */
     rtarea_setup ();
 
-    keybuf_init (); /* Must come after init_joystick */
+    keybuf_init ();
 
 #ifdef USE_AUTOCONFIG
     expansion_init ();
@@ -485,10 +458,10 @@ void real_main (int argc, char **argv)
 
     memory_init ();
 
-    filesys_install (); 
+    filesys_install ();
     native2amiga_install ();
 
-    custom_init (); /* Must come after memory_init */
+    custom_init ();
     DISK_init ();
 #ifdef __PSP2__
     disk_sound_reset ();
@@ -518,12 +491,14 @@ int main (int argc, char *argv[])
 void default_prefs_uae (struct uae_prefs *p)
 {
     p->chipset_mask = CSMASK_ECS_AGNUS;
-    
+
     p->cpu_level = M68000;
-    
+
     p->fastmem_size = 0x00000000;
 #if !( defined(PANDORA) || defined(ANDROIDSDL) )
     p->z3fastmem_size = 0x00000000;
+#endif
+#if !( defined(PANDORA) || defined(ANDROIDSDL) ) || defined(PICASSO96)
     p->gfxmem_size = 0x00000000;
 #endif
 

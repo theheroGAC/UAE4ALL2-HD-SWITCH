@@ -43,7 +43,7 @@
 #include "gp2x.h"
 #include "gp2xutil.h"
 
-#if defined(__PSP2__) // NOT __SWITCH__
+#if defined(__PSP2__)
 #include <psp2/shellutil.h>
 #include <psp2/power.h>
 #include "uae_gui_vita.h"
@@ -72,7 +72,7 @@ extern int gp2xMouseEmuOn, gp2xButtonRemappingOn;
 extern bool switch_autofire;
 int justMovedUp[MAX_NUM_CONTROLLERS]={};
 int justMovedDown[MAX_NUM_CONTROLLERS]={};
-int justMovedLeft[MAX_NUM_CONTROLLERS]={}; 
+int justMovedLeft[MAX_NUM_CONTROLLERS]={};
 int justMovedRight[MAX_NUM_CONTROLLERS]={};
 int justLComma=0, justLPeriod=0;
 #ifdef USE_UAE4ALL_VKBD
@@ -108,10 +108,10 @@ extern int nr_joysticks;
 extern struct gui_info gui_data;
 
 static char _show_message_str[40]={
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 };
 
 int show_message=0;
@@ -122,7 +122,6 @@ extern SDL_Surface *prSDLScreen;
 extern SDL_Joystick *uae4all_joy0, *uae4all_joy1, *uae4all_joy2, *uae4all_joy3, *uae4all_joy4, *uae4all_joy5, *uae4all_joy6, *uae4all_joy7;
 
 #if defined(__PSP2__) || defined(__SWITCH__)
-//Predefined quick switch resolutions to select via TRIGGER R+START+DPAD LEFT/RIGHT
 static int can_change_quickSwitchModeID = 1;
 static int can_change_custom_controlSet = 1;
 static int quickSwitchModeID=1;
@@ -150,7 +149,6 @@ static myRes quickSwitchModes[] = {
 };
 extern int moveY;
 
-//analog stick values for mouse emulation on Vita
 int lAnalogX=0;
 int lAnalogY=0;
 int rAnalogX=0;
@@ -195,10 +193,10 @@ int stickUp[MAX_NUM_CONTROLLERS]={};
 int stickDown[MAX_NUM_CONTROLLERS]={};
 int stickLeft[MAX_NUM_CONTROLLERS]={};
 int stickRight[MAX_NUM_CONTROLLERS]={};
-int buttonA[MAX_NUM_CONTROLLERS]={}; // Vita Square, GP2X_BUTTON_B
-int buttonB[MAX_NUM_CONTROLLERS]={}; // Vita Circle, GP2X_BUTTON_A
-int buttonX[MAX_NUM_CONTROLLERS]={}; // Vita Cross, GP2X_BUTTON_X
-int buttonY[MAX_NUM_CONTROLLERS]={}; // Vita Triangle, GP2X_BUTTON_Y
+int buttonA[MAX_NUM_CONTROLLERS]={};
+int buttonB[MAX_NUM_CONTROLLERS]={};
+int buttonX[MAX_NUM_CONTROLLERS]={};
+int buttonY[MAX_NUM_CONTROLLERS]={};
 int triggerL[MAX_NUM_CONTROLLERS]={};
 int triggerR[MAX_NUM_CONTROLLERS]={};
 #ifdef __SWITCH__
@@ -259,7 +257,7 @@ void update_joycon_mode() {
 #endif
 
 #if defined(__PSP2__) || defined(__SWITCH__)
-void remap_custom_controls() // assign custom 1-3 to currently used custom set
+void remap_custom_controls()
 {
 	for (int i=0; i<MAX_NUM_CONTROLLERS; i++)
 	{
@@ -285,7 +283,7 @@ void remap_custom_controls() // assign custom 1-3 to currently used custom set
 		mainMenu_custom_R3[i] = mainMenu_customPreset_R3[j][i];
 #endif
 	}
-}		
+}
 #endif
 
 void getChanges(void)
@@ -302,7 +300,7 @@ void getChanges(void)
 		changed_produce_sound=0;
 	changed_gfx_framerate=mainMenu_frameskip;
 }
-	
+
 int gui_init (void)
 {
 	write_log("[VITA] gui_init: start\n");
@@ -396,10 +394,8 @@ int gui_init (void)
 		init_kickstart();
 		write_log("[VITA] gui_init: kickstart done\n");
 
-#if defined(__PSP2__) // NOT __SWITCH__
-		//Lock PS Button to prevent file corruption
+#if defined(__PSP2__)
 		sceShellUtilLock(SCE_SHELL_UTIL_LOCK_TYPE_PS_BTN);
-		//Set Vita CPU Clock Frequency to 444MHz for maximum performance (IPF & Akiko C2P)
 		scePowerSetArmClockFrequency(444);
 		scePowerSetBusClockFrequency(222);
 		scePowerSetGpuClockFrequency(222);
@@ -447,10 +443,10 @@ static void goMenu(void)
 	if (quit_program != 0)
 		return;
 	emulating=1;
-#if !defined(__PSP2__) && !defined(__SWITCH__) //no need to erase all the vkbd graphics from memory on Vita
+#if !defined(__PSP2__) && !defined(__SWITCH__)
 #ifdef USE_UAE4ALL_VKBD
 	vkbd_quit();
-#endif	
+#endif
 #endif
 	pause_sound();
 #if defined(__PSP2__)
@@ -475,11 +471,10 @@ static void goMenu(void)
 #else
 	init_text(0);
 	menu_raise();
-	
+
 	exitmode=run_mainMenu();
 #endif
 
-	/* Clear menu garbage at the bottom of the screen */
 	black_screen_now();
 	notice_screen_contents_lost();
 	resume_sound();
@@ -489,7 +484,7 @@ static void goMenu(void)
 	quit_text();
 #endif
 #ifdef USE_UAE4ALL_VKBD
-#if !defined(__PSP2__) && !defined(__SWITCH__) //no need to reload all the vkbd graphics everytime on Vita
+#if !defined(__PSP2__) && !defined(__SWITCH__)
 	vkbd_init();
 #endif
 #endif
@@ -534,7 +529,7 @@ static void goMenu(void)
 			if (i==0) {
 				uae4all_image_file0[0]=0;
 				if (strcmp(changed_df[0],uae4all_image_file0))
-				{ 
+				{
 				strcpy(changed_df[0],uae4all_image_file0);
 				real_changed_df[0]=1;
 				}
@@ -542,7 +537,7 @@ static void goMenu(void)
 			else if (i==1) {
 				uae4all_image_file1[0]=0;
 				if (strcmp(changed_df[1],uae4all_image_file1))
-				{ 
+				{
 				strcpy(changed_df[1],uae4all_image_file1);
 				real_changed_df[1]=1;
 				}
@@ -550,7 +545,7 @@ static void goMenu(void)
 			else if (i==2) {
 				uae4all_image_file2[0]=0;
 				if (strcmp(changed_df[2],uae4all_image_file2))
-				{ 
+				{
 				strcpy(changed_df[2],uae4all_image_file2);
 				real_changed_df[2]=1;
 				}
@@ -558,7 +553,7 @@ static void goMenu(void)
 			else if (i==3) {
 				uae4all_image_file3[0]=0;
 				if (strcmp(changed_df[3],uae4all_image_file3))
-				{ 
+				{
 				strcpy(changed_df[3],uae4all_image_file3);
 				real_changed_df[3]=1;
 				}
@@ -586,8 +581,7 @@ static void goMenu(void)
 	gui_purge_events();
 	fpscounter_reset();
 	notice_screen_contents_lost();
-	
-	//remove gfx garbage in pixel array
+
 	lockscr();
 	memset((char *) prSDLScreen->pixels, 0, prSDLScreen->h*prSDLScreen->pitch);
 	unlockscr();
@@ -701,7 +695,6 @@ void getMapping(int customId)
 void gui_handle_events (void)
 {
 #ifdef USE_SDL2
-	//Uint8 *keystate = (Uint8 *)((hostptr) SDL_GetKeyboardState(NULL));
 	Uint8 *keystate=const_cast<Uint8*>(SDL_GetKeyboardState(NULL));
 #else
 	Uint8 *keystate = SDL_GetKeyState(NULL);
@@ -713,12 +706,12 @@ void gui_handle_events (void)
 	float joyX = 0;
 	float joyY = 0;
 	float joyDeadZoneSquared = 10240.0*10240.0;
-	float slope = 0.414214f; // tangent of 22.5 degrees for size of angular zones
+	float slope = 0.414214f;
 
 	for (int i=0; i<nr_joysticks; i++)
 	{
 		switch (i)
-		{	
+		{
 			case 0:
 				currentJoy = uae4all_joy0;
 				break;
@@ -744,25 +737,19 @@ void gui_handle_events (void)
 				currentJoy = uae4all_joy7;
 				break;
 		}
-		//Only Joystick 0 analog axis are important for mouse control, the others
-		//are used to have the dpad on the left stick but that is all
 		lX = SDL_JoystickGetAxis(currentJoy, 0);
 		lY = SDL_JoystickGetAxis(currentJoy, 1);
 		rX = SDL_JoystickGetAxis(currentJoy, 2);
 		rY = SDL_JoystickGetAxis(currentJoy, 3);
-		
-		//Is this the first time this routine is called when the program has just been launched? 
-		//If yes, center the joysticks now
-		//After that, center the joysticks everytime we open the menu with "select"
-		if (!haveJoysticksBeenCentered) {	
+
+		if (!haveJoysticksBeenCentered) {
 			lAnalogXCenter[i]=lX;
 			lAnalogYCenter[i]=lY;
 			rAnalogXCenter[i]=rX;
 			rAnalogYCenter[i]=rY;
-			//From now on only center when entering menu
 			haveJoysticksBeenCentered=1;
 		}
-				
+
 		lX=lX-lAnalogXCenter[i];
 		lY=lY-lAnalogYCenter[i];
 		rX=rX-rAnalogXCenter[i];
@@ -770,15 +757,11 @@ void gui_handle_events (void)
 
 		if (i==0)
 		{
-				//save the main controller analog inputs those are used in the vkeyboard etc.
 				lAnalogX=lX;
 				lAnalogY=lY;
 				rAnalogX=rX;
-				rAnalogY=rY;	
+				rAnalogY=rY;
 		}
-		// Main Controller is special (it does mouse controls vkeyboard etc.)
-		// On Main Controller, always use either the left of right analog for mouse pointer movement
-		// the other stick replicates the dpad inputs
 		dpadRight[i]  = SDL_JoystickGetButton(currentJoy, PAD_RIGHT);
 		dpadLeft[i]  = SDL_JoystickGetButton(currentJoy, PAD_LEFT);
 		dpadUp[i]  = SDL_JoystickGetButton(currentJoy, PAD_UP);
@@ -855,7 +838,6 @@ void gui_handle_events (void)
 		if (!singleJoycons)
 #endif
 		{
-			// analog joystick acts as digital controls with proper circular deadzone
 #ifdef USE_UAE4ALL_VKBD
 			if (i==0 && mainMenu_leftStickMouse && !(buttonStart[0] && triggerR[0]) && !vkbd_mode)
 #else
@@ -894,7 +876,6 @@ void gui_handle_events (void)
 				left = &dpadLeft[i];
 				right = &dpadRight[i];
 			}
-			// upper right quadrant
 			if (joyY>0 && joyX>0)
 			{
 				if (joyY>slope*joyX)
@@ -902,7 +883,6 @@ void gui_handle_events (void)
 				if (joyX>slope*joyY)
 					*right = 1;
 			}
-			// upper left quadrant
 			else if (joyY>0 && joyX<=0)
 			{
 				if (joyY>slope*(-joyX))
@@ -910,7 +890,6 @@ void gui_handle_events (void)
 				if ((-joyX)>slope*joyY)
 					*left = 1;
 			}
-			// lower right quadrant
 			else if (joyY<=0 && joyX>0)
 			{
 				if ((-joyY)>slope*joyX)
@@ -918,7 +897,6 @@ void gui_handle_events (void)
 				if (joyX>slope*(-joyY))
 					*right = 1;
 			}
-			// lower left quadrant
 			else if (joyY<=0 && joyX<=0)
 			{
 				if ((-joyY)>slope*(-joyX))
@@ -930,7 +908,6 @@ void gui_handle_events (void)
 	}
 
 #ifdef USE_UAE4ALL_VKBD
-	//no autofire when keyboard is displayed
 	if (mainMenu_customAutofireButton && !vkbd_mode)
 #else
 	if (mainMenu_customAutofireButton)
@@ -942,7 +919,7 @@ void gui_handle_events (void)
 			int *autoButton;
 			switch (mainMenu_customAutofireButton)
 			{
-				case 1: 
+				case 1:
 					autoButton = &buttonA[i];
 					break;
 				case 2:
@@ -973,7 +950,7 @@ void gui_handle_events (void)
 			{
 				if (customAutofireDelay[i]>mainMenu_autofireRate)
 				{
-					*autoButton=1; // press button for one frame only
+					*autoButton=1;
 					customAutofireDelay[i]=0;
 				}
 				else
@@ -990,7 +967,7 @@ void gui_handle_events (void)
 		for (int i=0; i<nr_joysticks; i++)
 		{
 			switch (i)
-			{	
+			{
 				case 0:
 					currentJoy = uae4all_joy0;
 					break;
@@ -1053,7 +1030,7 @@ void gui_handle_events (void)
 	if(keystate[SDLK_F12])
 		goMenu();
 #endif
-#endif // __PSP2__
+#endif
 
 	cd32_button_state = 0;
 	if (buttonA[0]) cd32_button_state |= 1;
@@ -1122,7 +1099,7 @@ void gui_handle_events (void)
 		update_display();
 	}
 	if (((mainMenu_quickSwitch==1) && buttonB[0] && dpadLeft[0]) || ((mainMenu_quickSwitch==2) && buttonY[0] && dpadLeft[0]))
-	{	
+	{
 	  keystate[SDLK_s]=0;
 	  savestate_state = STATE_DOSAVE;
 	}
@@ -1139,14 +1116,14 @@ void gui_handle_events (void)
 		else
 			gui_set_message("Failed: Savestate not found", 100);
 	}
-#endif 		
-	
+#endif
+
 #ifdef USE_UAE4ALL_VKBD
 if(!vkbd_mode)
 #endif
 {
 #if defined(__PSP2__) || defined(__SWITCH__)
-	if(buttonStart[0] && triggerL[0]) //toggle custom control config 1-3
+	if(buttonStart[0] && triggerL[0])
 	{
 		if (can_change_custom_controlSet)
 		{
@@ -1155,11 +1132,10 @@ if(!vkbd_mode)
 				mainMenu_custom_controlSet++;
 				if (mainMenu_custom_controlSet>=MAX_NUM_CUSTOM_PRESETS)
 					mainMenu_custom_controlSet = 0;
-				// zero triggerL before the control config switches
 				if(mainMenu_custom_L[0] == -1) buttonstate[0]=0;
 				else if(mainMenu_custom_L[0] == -2) buttonstate[2]=0;
 				else if(mainMenu_custom_L[0] > 0)
-				{		
+				{
 					getMapping(mainMenu_custom_L[0]);
 					uae4all_keystate[customKey] = 0;
 					record_key((customKey << 1) | 1);
@@ -1175,17 +1151,14 @@ if(!vkbd_mode)
 	}
 	else if(buttonStart[0] && triggerR[0])
 #else
-	//L + R
 	if(triggerL[0] && triggerR[0])
 #endif
 	{
-		//up
 		if(dpadUp[0])
 		{
 			moveVertical(1);
 			moved_y += 2;
 		}
-		//down
 		else if(dpadDown[0])
 		{
 			moveVertical(-1);
@@ -1195,7 +1168,7 @@ if(!vkbd_mode)
 		{
 #if defined(__PSP2__) || defined(__SWITCH__)
 			if (can_change_quickSwitchModeID)
-			{			
+			{
 				if (quickSwitchModeID==sizeof(quickSwitchModes)/sizeof(quickSwitchModes[0])-1)
 				{
 					quickSwitchModeID=0;
@@ -1204,9 +1177,9 @@ if(!vkbd_mode)
 				{
 					quickSwitchModeID++;
 				}
-				mainMenu_displayedLines = 
-					quickSwitchModes[quickSwitchModeID].num_lines;	
-				moveY = 
+				mainMenu_displayedLines =
+					quickSwitchModes[quickSwitchModeID].num_lines;
+				moveY =
 					quickSwitchModes[quickSwitchModeID].top_pos;
 				getChanges();
 				check_all_prefs();
@@ -1238,9 +1211,9 @@ if(!vkbd_mode)
 				{
 					quickSwitchModeID--;
 				}
-				mainMenu_displayedLines = 
-					quickSwitchModes[quickSwitchModeID].num_lines;	
-				moveY = 
+				mainMenu_displayedLines =
+					quickSwitchModes[quickSwitchModeID].num_lines;
+				moveY =
 					quickSwitchModes[quickSwitchModeID].top_pos;
 				getChanges();
 				check_all_prefs();
@@ -1289,62 +1262,52 @@ if(!vkbd_mode)
 			can_change_quickSwitchModeID = 1;
 		}
 #if !defined(__PSP2__) && !defined(__SWITCH__)
-		//1
 		else if(keystate[SDLK_1])
 		{
 			SetPresetMode((presetModeId / 10) * 10 + 0);
 			update_display();
 		}
-		//2
 		else if(keystate[SDLK_2])
 		{
 			SetPresetMode((presetModeId / 10) * 10 + 1);
 			update_display();
 		}
-		//3
 		else if(keystate[SDLK_3])
 		{
 			SetPresetMode((presetModeId / 10) * 10 + 2);
 			update_display();
 		}
-		//4
 		else if(keystate[SDLK_4])
 		{
 			SetPresetMode((presetModeId / 10) * 10 + 3);
 			update_display();
 		}
-		//5
 		else if(keystate[SDLK_5])
 		{
 			SetPresetMode((presetModeId / 10) * 10 + 4);
 			update_display();
 		}
-		//6
 		else if(keystate[SDLK_6])
 		{
 			SetPresetMode((presetModeId / 10) * 10 + 5);
 			update_display();
 		}
-		//7
 		else if(keystate[SDLK_7])
 		{
 			SetPresetMode((presetModeId / 10) * 10 + 6);
 			update_display();
 		}
-		//8
 		else if(keystate[SDLK_8])
 		{
 			SetPresetMode((presetModeId / 10) * 10 + 7);
 			update_display();
 		}
-		//9
 		else if(keystate[SDLK_9])
 		{
 			if(mainMenu_displayedLines > 100)
 				mainMenu_displayedLines--;
 			update_display();
 		}
-		//0
 		else if(keystate[SDLK_0])
 		{
 			if(mainMenu_displayedLines < 286)
@@ -1353,7 +1316,6 @@ if(!vkbd_mode)
 		}
 		else if(keystate[SDLK_w])
 		{
-			// Change width
 			if(presetModeId < 50)
 				SetPresetMode(presetModeId + 10);
 			else
@@ -1373,13 +1335,12 @@ if(!vkbd_mode)
 			setenv("SDL_OMAP_VSYNC",value,1);
 #endif
 			update_display();
-		}		
+		}
 #endif
 	}
 
 	else if(triggerL[0])
 	{
-		//cutRight
 		if(keystate[SDLK_COMMA] && mainMenu_cutLeft > 0)
 		{
 			mainMenu_cutLeft--;
@@ -1413,7 +1374,6 @@ if(!vkbd_mode)
 			check_all_prefs();
 		}
 
-		//Q key
 		if(keystate[SDLK_q])
 		{
 			if(!justPressedQ)
@@ -1421,7 +1381,7 @@ if(!vkbd_mode)
 				uae4all_keystate[AK_NPMUL] = 1;
 				record_key(AK_NPMUL << 1);
 				uae4all_keystate[AK_F10] = 1;
-				record_key(AK_F10 << 1);				
+				record_key(AK_F10 << 1);
 				justPressedQ=1;
 			}
 		}
@@ -1435,15 +1395,12 @@ if(!vkbd_mode)
 		}
 	}
 
-	//autofire on/off
 	else if(triggerR[0])
 	{
-		//(Y) button
 		if(buttonY[0])
 		{
 			if(!justPressedY[0])
 			{
-				//autofire on/off
 				switch_autofire = !switch_autofire;
 				justPressedY[0]=1;
 			}
@@ -1451,7 +1408,6 @@ if(!vkbd_mode)
 		else if(justPressedY[0])
 			justPressedY[0]=0;
 
-		//Q key
 		if(keystate[SDLK_q])
 		{
 			if(!justPressedQ)
@@ -1459,7 +1415,7 @@ if(!vkbd_mode)
 				uae4all_keystate[AK_NPMUL] = 1;
 				record_key(AK_NPMUL << 1);
 				uae4all_keystate[AK_F10] = 1;
-				record_key(AK_F10 << 1);				
+				record_key(AK_F10 << 1);
 				justPressedQ=1;
 			}
 		}
@@ -1472,7 +1428,6 @@ if(!vkbd_mode)
 			justPressedQ=0;
 		}
 
-		//cutRight
 		if(keystate[SDLK_COMMA] && mainMenu_cutRight > 0)
 		{
 			mainMenu_cutRight--;
@@ -1483,7 +1438,7 @@ if(!vkbd_mode)
 			mainMenu_cutRight++;
 			update_display();
 		}
-#endif //!defined(__PSP2__) && !defined(__SWITCH__)
+#endif
 	}
 	if (mainMenu_customControls && !gp2xMouseEmuOn && !gp2xButtonRemappingOn)
 	{
@@ -1493,122 +1448,104 @@ if(!vkbd_mode)
 		int *justPressed;
 		int *mainMenu_custom;
 		for (int i = 0; i < nr_joysticks; i++)
-		{		
-			if(mainMenu_custom_dpad == 0) // always true on Vita
+		{
+			if(mainMenu_custom_dpad == 0)
 			{
 #ifdef __SWITCH__
 				for (int j = 0; j < 18; j++)
-#else				
+#else
 				for (int j = 0; j < 14; j++)
 #endif
 				{
 					switch (j)
 					{
 						case 0:
-							//UP
 							button = &(dpadUp[i]);
 							justPressed = &(justMovedUp[i]);
 							mainMenu_custom = &(mainMenu_custom_up[i]);
 							break;
 						case 1:
-							//DOWN
 							button = &(dpadDown[i]);
 							justPressed = &(justMovedDown[i]);
 							mainMenu_custom = &(mainMenu_custom_down[i]);
 							break;
 						case 2:
-							//LEFT
 							button = &(dpadLeft[i]);
 							justPressed = &(justMovedLeft[i]);
 							mainMenu_custom = &(mainMenu_custom_left[i]);
 							break;
 						case 3:
-							//RIGHT
 							button = &(dpadRight[i]);
 							justPressed = &(justMovedRight[i]);
 							mainMenu_custom = &(mainMenu_custom_right[i]);
 							break;
 						case 4:
-							//STICK UP
 							button = &(stickUp[i]);
 							justPressed = &(justMovedStickUp[i]);
 							mainMenu_custom = &(mainMenu_custom_stickup[i]);
 							break;
 						case 5:
-							//STICK DOWN
 							button = &(stickDown[i]);
 							justPressed = &(justMovedStickDown[i]);
 							mainMenu_custom = &(mainMenu_custom_stickdown[i]);
 							break;
 						case 6:
-							//STICK LEFT
 							button = &(stickLeft[i]);
 							justPressed = &(justMovedStickLeft[i]);
 							mainMenu_custom = &(mainMenu_custom_stickleft[i]);
 							break;
 						case 7:
-							//STICK RIGHT
 							button = &(stickRight[i]);
 							justPressed = &(justMovedStickRight[i]);
 							mainMenu_custom = &(mainMenu_custom_stickright[i]);
 							break;
 						case 8:
-							//(A)
 							button = &(buttonA[i]);
 							justPressed = &(justPressedA[i]);
 							mainMenu_custom = &(mainMenu_custom_A[i]);
 							break;
 						case 9:
-							//(B)
 							button = &(buttonB[i]);
 							justPressed = &(justPressedB[i]);
 							mainMenu_custom = &(mainMenu_custom_B[i]);
 							break;
 						case 10:
-							//(X)
 							button = &(buttonX[i]);
 							justPressed = &(justPressedX[i]);
 							mainMenu_custom = &(mainMenu_custom_X[i]);
 							break;
 						case 11:
-							//(Y)
 							button = &(buttonY[i]);
 							justPressed = &(justPressedY[i]);
 							mainMenu_custom = &(mainMenu_custom_Y[i]);
 							break;
 						case 12:
-							//(L)
 							button = &(triggerL[i]);
 							justPressed = &(justPressedL[i]);
 							mainMenu_custom = &(mainMenu_custom_L[i]);
 							break;
 						case 13:
-							//(R)
 							button = &(triggerR[i]);
 							justPressed = &(justPressedR[i]);
 							mainMenu_custom = &(mainMenu_custom_R[i]);
 							break;
 #ifdef __SWITCH__
 						case 14:
-							//(L2)
 							button = &(triggerL2[i]);
 							justPressed = &(justPressedL2[i]);
 							mainMenu_custom = &(mainMenu_custom_L2[i]);
 							break;
 						case 15:
-							//(R2)
 							button = &(triggerR2[i]);
 							justPressed = &(justPressedR2[i]);
 							mainMenu_custom = &(mainMenu_custom_R2[i]);
 							break;
 						case 16:
-							//(L3)
 							button = &(triggerL3[i]);
 							justPressed = &(justPressedL3[i]);
 							mainMenu_custom = &(mainMenu_custom_L3[i]);
 							break;
 						case 17:
-							//(R3)
 							button = &(triggerR3[i]);
 							justPressed = &(justPressedR3[i]);
 							mainMenu_custom = &(mainMenu_custom_R3[i]);
@@ -1622,7 +1559,7 @@ if(!vkbd_mode)
 					{
 						if (!(*justPressed))
 						{
-							
+
 #ifdef __SWITCH__
 							if (*mainMenu_custom == -1) buttonstate[mainMenu_mouseSwapButtons ? 2 : 0]=1;
 							else if (*mainMenu_custom == -2) buttonstate[mainMenu_mouseSwapButtons ? 0 : 2]=1;
@@ -1651,22 +1588,22 @@ if(!vkbd_mode)
 						else if (*mainMenu_custom == -2) buttonstate[2]=0;
 #endif
 						else if (*mainMenu_custom > 0)
-						{		
+						{
 							getMapping(*mainMenu_custom);
 							uae4all_keystate[customKey] = 0;
 							record_key((customKey << 1) | 1);
 						}
 						*justPressed=0;
 					}
-				} // end of buttons loop
+				}
 			}
-		}//end of nr_joysticks loop
+		}
 		if (quickSave)
 		{
 			make_savestate_filenames(savestate_filename,screenshot_filename);
 			savestate_state = STATE_DOSAVE;
-		} 
-		else if (quickLoad) 
+		}
+		else if (quickLoad)
 		{
 			make_savestate_filenames(savestate_filename,screenshot_filename);
 			FILE *f=fopen(savestate_filename, "rb");
@@ -1678,18 +1615,14 @@ if(!vkbd_mode)
 			}
 		}
 	}
-	// on Vita/Switch: gp2xMouseEmuOn = 0, and gp2xButtonRemappingOn = 0;
 	else if(!gp2xMouseEmuOn)
 	{
-		//DPad = arrow keys in stylus-mode
 		if(gp2xButtonRemappingOn)
 		{
-			//dpad up
 			if (dpadUp[0])
 			{
 				if(!justMovedUp[0])
 				{
-					//left and right mouse-buttons down
 					buttonstate[0] = 1;
 					buttonstate[2] = 1;
 					stylusClickOverride = 1;
@@ -1698,34 +1631,28 @@ if(!vkbd_mode)
 			}
 			else if(justMovedUp[0])
 			{
-				//left and right mouse-buttons up
 				buttonstate[0] = 0;
 				buttonstate[2] = 0;
 				stylusClickOverride = 0;
 				justMovedUp[0]=0;
 			}
-			//dpad down
 			if (dpadDown[0])
 			{
 				if(!justMovedDown[0])
 				{
-					//no clicks with stylus now
 					stylusClickOverride=1;
 					justMovedDown[0]=1;
 				}
 			}
 			else if(justMovedDown[0])
 			{
-				//clicks active again
 				stylusClickOverride=0;
 				justMovedDown[0]=0;
 			}
-			//dpad left
 			if (dpadLeft[0])
 			{
 				if(!justMovedLeft[0])
 				{
-					//left mouse-button down
 					buttonstate[0] = 1;
 					stylusClickOverride = 1;
 					justMovedLeft[0]=1;
@@ -1733,17 +1660,14 @@ if(!vkbd_mode)
 			}
 			else if(justMovedLeft[0])
 			{
-				//left mouse-button up
 				buttonstate[0] = 0;
 				stylusClickOverride = 0;
 				justMovedLeft[0]=0;
 			}
-			//dpad right
 			if (dpadRight[0])
 			{
 				if(!justMovedRight[0])
 				{
-					//right mouse-button down
 					buttonstate[2] = 1;
 					stylusClickOverride = 1;
 					justMovedRight[0]=1;
@@ -1751,21 +1675,16 @@ if(!vkbd_mode)
 			}
 			else if(justMovedRight[0])
 			{
-				//right mouse-button up
 				buttonstate[2] = 0;
 				stylusClickOverride = 0;
 				justMovedRight[0]=0;
 			}
-			//L + up
 			if(triggerL[0] && dpadUp[0])
 				stylusAdjustY-=2;
-			//L + down
 			if(triggerL[0] && dpadDown[0])
 				stylusAdjustY+=2;
-			//L + left
 			if(triggerL[0] && dpadLeft[0])
 				stylusAdjustX-=2;
-			//L + right
 			if(triggerL[0] && dpadRight[0])
 				stylusAdjustX+=2;
 		}
@@ -1908,12 +1827,10 @@ if(!vkbd_mode)
 		}
 		else if(triggerR[0])
 		{
-			//(A) button
 			if(buttonA[0])
 			{
 				if(!justPressedA[0])
 				{
-					//CTRL
 					uae4all_keystate[AK_CTRL] = 1;
 					record_key(AK_CTRL << 1);
 					justPressedA[0]=1;
@@ -1925,12 +1842,10 @@ if(!vkbd_mode)
 				record_key((AK_CTRL << 1) | 1);
 				justPressedA[0]=0;
 			}
-			//(B) button
 			if(buttonB[0])
 			{
 				if(!justPressedB[0])
 				{
-					//left ALT
 					uae4all_keystate[AK_LALT] = 1;
 					record_key(AK_LALT << 1);
 					justPressedB[0]=1;
@@ -1942,12 +1857,10 @@ if(!vkbd_mode)
 				record_key((AK_LALT << 1) | 1);
 				justPressedB[0]=0;
 			}
-			//(X) button
 			if(buttonX[0])
 			{
 				if(!justPressedX[0])
 				{
-					//HELP
 					uae4all_keystate[AK_HELP] = 1;
 					record_key(AK_HELP << 1);
 					justPressedX[0]=1;
@@ -1955,7 +1868,6 @@ if(!vkbd_mode)
 			}
 			else if(justPressedX[0])
 			{
-				//HELP
 				uae4all_keystate[AK_HELP] = 0;
 				record_key((AK_HELP << 1) | 1);
 				justPressedX[0]=0;
@@ -1963,35 +1875,29 @@ if(!vkbd_mode)
 		}
 		else if(triggerL[0])
 		{
-			//(A) button
 			if(buttonA[0])
 			{
 				if(!justPressedA[0])
 				{
-					//left mouse-button down
 					buttonstate[0] = 1;
 					justPressedA[0]=1;
 				}
 			}
 			else if(justPressedA[0])
 			{
-				//left mouse-button up
 				buttonstate[0] = 0;
 				justPressedA[0]=0;
 			}
-			//(B) button
 			if(buttonB[0])
 			{
 				if(!justPressedB[0])
 				{
-					//right mouse-button down
 					buttonstate[2] = 1;
 					justPressedB[0]=1;
 				}
 			}
 			else if(justPressedB[0])
 			{
-				//right mouse-button up
 				buttonstate[2] = 0;
 				justPressedB[0]=0;
 			}
@@ -2002,7 +1908,6 @@ if(!vkbd_mode)
 			{
 				if(!justPressedY[0])
 				{
-					//SPACE
 					uae4all_keystate[AK_SPC] = 1;
 					record_key(AK_SPC << 1);
 					justPressedY[0]=1;
@@ -2010,7 +1915,6 @@ if(!vkbd_mode)
 			}
 			else if(justPressedY[0])
 			{
-				//SPACE
 				uae4all_keystate[AK_SPC] = 0;
 				record_key((AK_SPC << 1) | 1);
 				justPressedY[0]=0;
@@ -2023,30 +1927,25 @@ if(!vkbd_mode)
 		{
 			if(!justPressedA[0])
 			{
-				//left mouse-button down
 				buttonstate[0] = 1;
 				justPressedA[0]=1;
 			}
 		}
 		else if(justPressedA[0])
 		{
-			//left mouse-button up
 			buttonstate[0] = 0;
 			justPressedA[0]=0;
 		}
-		//(B) button
 		if(buttonB[0])
 		{
 			if(!justPressedB[0])
 			{
-				//left mouse-button down
 				buttonstate[2] = 1;
 				justPressedB[0]=1;
 			}
 		}
 		else if(justPressedB[0])
 		{
-			//left mouse-button up
 			buttonstate[2] = 0;
 			justPressedB[0]=0;
 		}
@@ -2054,7 +1953,6 @@ if(!vkbd_mode)
 		{
 			if(!justPressedY[0])
 			{
-				//SPACE
 				uae4all_keystate[AK_SPC] = 1;
 				record_key(AK_SPC << 1);
 				justPressedY[0]=1;
@@ -2062,7 +1960,6 @@ if(!vkbd_mode)
 		}
 		else if(justPressedY[0])
 		{
-			//SPACE
 			uae4all_keystate[AK_SPC] = 0;
 			record_key((AK_SPC << 1) | 1);
 			justPressedY[0]=0;
@@ -2071,7 +1968,6 @@ if(!vkbd_mode)
 		{
 			if(!justMovedLeft[0])
 			{
-				//left ALT
 				uae4all_keystate[0x64] = 1;
 				record_key(0x64 << 1);
 				justMovedLeft[0]=1;
@@ -2079,7 +1975,6 @@ if(!vkbd_mode)
 		}
 		else if(justMovedLeft[0])
 		{
-			//left ALT
 			uae4all_keystate[0x64] = 0;
 			record_key((0x64 << 1) | 1);
 			justMovedLeft[0]=0;
@@ -2088,7 +1983,6 @@ if(!vkbd_mode)
 		{
 			if(!justMovedRight[0])
 			{
-				//left ALT
 				uae4all_keystate[0x64] = 1;
 				record_key(0x64 << 1);
 				justMovedRight[0]=1;
@@ -2096,7 +1990,6 @@ if(!vkbd_mode)
 		}
 		else if(justMovedRight[0])
 		{
-			//left ALT
 			uae4all_keystate[0x64] = 0;
 			record_key((0x64 << 1) | 1);
 			justMovedRight[0]=0;
@@ -2105,13 +1998,10 @@ if(!vkbd_mode)
 
 	if(!mainMenu_customControls && triggerR[0] && !(buttonStart[0]))
 	{
-		//R+dpad = arrow keys in joystick mode
-		//dpad up
 		if(dpadUp[0])
 		{
 			if(!justMovedUp[0])
 			{
-				//arrow up
 				uae4all_keystate[0x4C] = 1;
 				record_key(0x4C << 1);
 				justMovedUp[0]=1;
@@ -2119,17 +2009,14 @@ if(!vkbd_mode)
 		}
 		else if(justMovedUp[0])
 		{
-			//arrow up
 			uae4all_keystate[0x4C] = 0;
 			record_key((0x4C << 1) | 1);
 			justMovedUp[0]=0;
 		}
-		//dpad down
 		if(dpadDown[0])
 		{
 			if(!justMovedDown[0])
 			{
-				//arrow down
 				uae4all_keystate[0x4D] = 1;
 				record_key(0x4D << 1);
 				justMovedDown[0]=1;
@@ -2137,17 +2024,14 @@ if(!vkbd_mode)
 		}
 		else if(justMovedDown[0])
 		{
-			//arrow down
 			uae4all_keystate[0x4D] = 0;
 			record_key((0x4D << 1) | 1);
 			justMovedDown[0]=0;
 		}
-		//dpad left
 		if(dpadLeft[0])
 		{
 			if(!justMovedLeft[0])
 			{
-				//arrow left
 				uae4all_keystate[0x4F] = 1;
 				record_key(0x4F << 1);
 				justMovedLeft[0]=1;
@@ -2155,17 +2039,14 @@ if(!vkbd_mode)
 		}
 		else if(justMovedLeft[0])
 		{
-			//arrow left
 			uae4all_keystate[0x4F] = 0;
 			record_key((0x4F << 1) | 1);
 			justMovedLeft[0]=0;
 		}
-		//dpad right
 		if (dpadRight[0])
 		{
 			if(!justMovedRight[0])
 			{
-				//arrow right
 				uae4all_keystate[0x4E] = 1;
 				record_key(0x4E << 1);
 				justMovedRight[0]=1;
@@ -2173,16 +2054,13 @@ if(!vkbd_mode)
 		}
 		else if(justMovedRight[0])
 		{
-			//arrow right
 			uae4all_keystate[0x4E] = 0;
 			record_key((0x4E << 1) | 1);
 			justMovedRight[0]=0;
 		}
 	}
-	
+
 #if defined(__PSP2__) || defined(__SWITCH__)
-	//VITA Controls: If not using custom controls, use L=right mouse, R=left mouse 
-	//because analog stick = mouse movement is always on for Vita
 	if(!mainMenu_customControls)
 	{
 #ifdef __SWITCH__
@@ -2241,18 +2119,14 @@ if(!vkbd_mode)
 		}
 #endif
 	}
-#endif // __PSP2__
+#endif
 
-} // if(!vkbd_mode)
+}
 
 #ifdef USE_UAE4ALL_VKBD
 #if defined(__PSP2__) || defined(__SWITCH__)
-	//on Vita, Start brings up the  virtual keyboard, but Trigger R + Start is used for
-	//quickswitch resolution etc. and Trigger L + Start is used for switching between
-	//custom control configs
 	if(buttonStart[0] && !triggerR[0] && !triggerL[0])
 #else
-	//L+K: virtual keyboard
 	if(triggerL[0] && keystate[SDLK_k])
 #endif
 	{
@@ -2507,13 +2381,12 @@ if(!vkbd_mode)
 #endif
 
 #ifdef USE_UAE4ALL_VKBD
-	if (vkbd_key!=KEYCODE_NOTHING) // This means key was selected by user. We cannot test for zero, because that is a valid Amiga keycode
+	if (vkbd_key!=KEYCODE_NOTHING)
 	{
 		if (vkbd_key >= 0)
 		{
-			// Handle all sticky keys (release and press) here up front
 			bool sticky=false;
-			for (int i=0; i<NUM_STICKY; i++) 
+			for (int i=0; i<NUM_STICKY; i++)
 			{
 				if (vkbd_key == vkbd_sticky_key[i].code)
 				{
@@ -2527,22 +2400,22 @@ if(!vkbd_mode)
 						uae4all_keystate[vkbd_sticky_key[i].code]=0;
 						record_key((vkbd_sticky_key[i].code<<1)|1);
 					}
-					sticky=true; // a sticky key was pressed and handled. We are done.
+					sticky=true;
 					break;
 				}
 			}
-			if (!sticky && vkbd_keysave==KEYCODE_NOTHING) // a non-sticky key was pressed and previous key was released. Press the new key
+			if (!sticky && vkbd_keysave==KEYCODE_NOTHING)
 			{
-				vkbd_keysave=vkbd_key; // remember which key we are pressing so we can release it later
+				vkbd_keysave=vkbd_key;
 				if (!uae4all_keystate[vkbd_keysave])
 				{
 					uae4all_keystate[vkbd_keysave]=1;
 					record_key(vkbd_keysave<<1);
 				}
 			}
-		} else if (vkbd_key == KEYCODE_STICKY_RESET) // the special button to reset all sticky keys was pressed
+		} else if (vkbd_key == KEYCODE_STICKY_RESET)
 		{
-			for (int i=0; i<NUM_STICKY; i++) 
+			for (int i=0; i<NUM_STICKY; i++)
 			{
 				if (uae4all_keystate[vkbd_sticky_key[i].code] == 1)
 				{
@@ -2552,9 +2425,9 @@ if(!vkbd_mode)
 			}
 		}
 	}
-	else if (vkbd_keysave!=KEYCODE_NOTHING) // some non-sticky key was released
+	else if (vkbd_keysave!=KEYCODE_NOTHING)
 	{
-		if (vkbd_keysave >= 0) //handle key release 
+		if (vkbd_keysave >= 0)
 		{
 			uae4all_keystate[vkbd_keysave]=0;
 			record_key((vkbd_keysave << 1) | 1);

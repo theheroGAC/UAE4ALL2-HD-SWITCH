@@ -20,11 +20,10 @@
 #include "gui.h"
 
 
-
 char * make_hard_dir_cfg_line (char *dst) {
 	char buffer[256];
 	int i;
-	
+
 	if (uae4all_hard_dir[0] != '\0') {
 		for (i = strlen(uae4all_hard_dir); i > 0; i--)
 			if ((uae4all_hard_dir[i] == '/')||(uae4all_hard_dir[i] == '\\'))
@@ -33,11 +32,11 @@ char * make_hard_dir_cfg_line (char *dst) {
 			strncpy(buffer, &uae4all_hard_dir[i+1], 256);
 			strcat(buffer, ":");
 			strncat(buffer, uae4all_hard_dir, 256 - strlen(buffer));
-			strcpy(dst, buffer); 
+			strcpy(dst, buffer);
 		} else
 			return NULL;
 	}
-	
+
 	return dst;
 }
 
@@ -92,7 +91,7 @@ char * make_hard_file_cfg_line (char *dst) {
     return dst;
 }
 
-/*static*/ void parse_filesys_spec (int readonly, char *spec)
+ void parse_filesys_spec (int readonly, char *spec)
 {
     if (!spec || !spec[0]) return;
     char volname[64] = "DH0";
@@ -117,11 +116,8 @@ char * make_hard_file_cfg_line (char *dst) {
     add_filesys_unit (currprefs.mountinfo, volname, path, readonly, 0, 0, 0, 0);
 }
 
-/*static*/ void parse_hardfile_spec (int readonly, char *spec)
+ void parse_hardfile_spec (int readonly, char *spec)
 {
-	/* spec example:
-	 * rw,32:1:2:512:hdd/AmigaHD.hdf
-	 */
     char *x0 = my_strdup (spec);
     char *x1, *x2, *x3, *x4;
 

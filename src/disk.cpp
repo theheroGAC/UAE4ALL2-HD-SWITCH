@@ -53,13 +53,9 @@ char extfile[256];
 int real_changed_df[4]={0,0,0,0};
 
 
-/* support HD floppies */
 #define FLOPPY_DRIVE_HD
-/* writable track length with normal 2us bitcell/300RPM motor */
 #define FLOPPY_WRITE_LEN (12650 / 2)
-/* This works out to 341 */
 #define FLOPPY_GAP_LEN (FLOPPY_WRITE_LEN - 11 * 544)
-/* (cycles/bitcell) << 8, normal = ((2us/280ns)<<8) = ~1830 */
 #define NORMAL_FLOPPY_SPEED 1830
 
 #ifdef FLOPPY_DRIVE_HD
@@ -69,26 +65,16 @@ int real_changed_df[4]={0,0,0,0};
 #endif
 
 static int floppy_speed = NORMAL_FLOPPY_SPEED;
-#define MAX_DISK_WORDS_PER_LINE 50	/* depends on floppy_speed */
+#define MAX_DISK_WORDS_PER_LINE 50
 
 #define maxhpos MAXHPOS
 
-/* UAE-1ADF (ADF_EXT2)
- * W	reserved
- * W	number of tracks (default 2*80=160)
- *
- * W	reserved
- * W	type, 0=normal AmigaDOS track, 1 = raw MFM
- * L	available space for track in bytes
- * L	track length in bits
- */
 
 static int side, direction, writing;
 static uae_u8 selected = 15, disabled=0;
 
 static uae_u8 writebuffer[544 * 22 * DDHDMULT];
 
-// delay increasing floppy speed for a little bit to prevent problems during boot
 static int newly_inserted_countdown = 100;
 
 typedef enum { TRACK_AMIGADOS, TRACK_RAW, TRACK_RAW1, TRACK_PCDOS } image_tracktype;
@@ -102,20 +88,11 @@ typedef struct {
 
 #define MAX_TRACKS 328
 
-/* We have three kinds of Amiga floppy drives
- * - internal A500/A2000 drive:
- *   ID is always DRIVE_ID_NONE (S.T.A.G expects this)
- * - HD drive (A3000/A4000):
- *   ID is DRIVE_ID_35DD if DD floppy is inserted or drive is empty
- *   ID is DRIVE_ID_35HD if HD floppy is inserted
- * - regular external drive:
- *   ID is always DRIVE_ID_35DD
- */
 
 #define DRIVE_ID_NONE  0x00000000
 #define DRIVE_ID_35DD  0xFFFFFFFF
 #define DRIVE_ID_35HD  0xAAAAAAAA
-#define DRIVE_ID_525SD 0x55555555 /* 40 track 5.25 drive , kickstart does not recognize this */
+#define DRIVE_ID_525SD 0x55555555
 
 typedef enum { ADF_NORMAL, ADF_EXT1, ADF_EXT2 } drive_filetype;
 typedef struct {
@@ -143,20 +120,15 @@ typedef struct {
     int dskready;
     int dskready_time;
     int steplimit;
-    int ddhd; /* 1=DD 2=HD */
-    int drive_id_scnt; /* drive id shift counter */
+    int ddhd;
+    int drive_id_scnt;
     int idbit;
-    unsigned long drive_id; /* drive id to be reported */
-    char newname[256]; /* storage space for new filename during eject delay */
+    unsigned long drive_id;
+    char newname[256];
 } drive;
 
 static drive floppy[4];
 
-/* Keeps track of whether the Amiga program seems to be using the data coming
-   in from the disk; if this remains 0 for several seconds, we stop calling
-   disk_doupdate_read, even if the motor is still on.  This is a rather large
-   performance win.  This contains the number of frames since we last accessed
-   the disk.  */
 static int disk_data_used;
 
 static int get_floppy_speed (void)
@@ -183,11 +155,6 @@ static char *drive_id_name (drive *drv)
 }
 #endif
 
-/* Simulate exact behaviour of an A3000T 3.5 HD disk drive.
- * The drive reports to be a 3.5 DD drive whenever there is no
- * disk or a 3.5 DD disk is inserted. Only 3.5 HD drive id is reported
- * when a real 3.5 HD disk is inserted. -Adil
- */
 static void drive_settype_id (drive *drv)
 {
     int t = drv->type;
@@ -221,7 +188,6 @@ static void drive_settype_id (drive *drv)
 #endif
 }
 
-/* code for track display */
 static void update_drive_gui (int num)
 {
    if (num>=mainMenu_drives) return;
@@ -389,7 +355,7 @@ static int drive_insert (drive *drv, int dnum, const char *fname)
 
 	zfile_fseek (drv->diskfile, 8, SEEK_SET);
 
-	drv->wrprot = 1;	/* write to adf_ext1 not implemented */
+	drv->wrprot = 1;
 	for (i = 0; i < 160; i++) {
 	    tid = &drv->trackdata[i];
 	    zfile_fread (buffer, 4, 1, drv->diskfile);
@@ -409,7 +375,6 @@ static int drive_insert (drive *drv, int dnum, const char *fname)
 	int i;
 	drv->filetype = ADF_NORMAL;
 
-	/* High-density disk? */
 	if (size >= 160 * 22 * 512) {
 	    drv->num_tracks = size / (512 * (drv->num_secs = 22));
 	    drv->ddhd = 2;
@@ -426,9 +391,9 @@ static int drive_insert (drive *drv, int dnum, const char *fname)
 	    tid->offs = i * 512 * drv->num_secs;
 	}
     }
-    drive_settype_id (drv);	/* Set DD or HD drive */
-    drv->buffered_side = 2;	/* will force read */
-    newly_inserted_countdown = 100; // fix problems when booting with speed >1x
+    drive_settype_id (drv);
+    drv->buffered_side = 2;
+    newly_inserted_countdown = 100;
     drive_fill_bigbuf (drv);
     return 1;
 }
@@ -446,10 +411,6 @@ static void drive_step (drive * drv)
 {
     if (drv->steplimit)
 	return;
-    /* A1200's floppy drive needs at least 30 raster lines between steps
-     * but we'll use very small value for better compatibility with faster CPU emulation
-     * (stupid trackloaders with CPU delay loops)
-     */
     drv->steplimit = 2;
     disk_sound_floppy_step();
     if (!drive_empty (drv))
@@ -457,10 +418,6 @@ static void drive_step (drive * drv)
     if (direction) {
 	if (drv->cyl)
 	    drv->cyl--;
-/*	else
-	    write_log ("program tried to step beyond track zero\n");
-	    "no-click" programs does that
-*/
   } else {
 	if (drv->cyl < 83)
 	    drv->cyl++;
@@ -490,9 +447,6 @@ static int drive_running (drive * drv)
 
 static void drive_motor (drive * drv, int off)
 {
-    /* A value of 5 works out to a guaranteed delay of 1/2 of a second
-       Higher values are dangerous, e.g. a value of 8 breaks the RSI
-       demo.  */
     if (drv->motoroff && !off) {
         disk_sound_floppy_motor();
         {
@@ -509,7 +463,7 @@ static void drive_motor (drive * drv, int off)
 #endif
     }
     if (!drv->motoroff && off) {
-	drv->drive_id_scnt = 0; /* Reset id shift reg counter */
+	drv->drive_id_scnt = 0;
     }
     drv->motoroff = off;
     if (drv->motoroff) {
@@ -551,8 +505,8 @@ static uae_u8 mfmencodetable[16] = {
 
 
 static uae_u16 dos_encode_byte (uae_u8 byte)
-{           
-    uae_u8 b2, b1;        
+{
+    uae_u8 b2, b1;
     uae_u16 word;
 
     b1 = byte;
@@ -562,19 +516,18 @@ static uae_u16 dos_encode_byte (uae_u8 byte)
     return (word | ((word & (256 | 64)) ? 0 : 128));
 }
 
-static uae_u16 *mfmcoder (uae_u8 *src, uae_u16 *dest, int len) 
+static uae_u16 *mfmcoder (uae_u8 *src, uae_u16 *dest, int len)
 {
     int i;
 
     for (i = 0; i < len; i++) {
 	*dest = dos_encode_byte (*src++);
-	*dest |= ((dest[-1] & 1)|| (*dest & 0x4000)) ? 0: 0x8000;            
+	*dest |= ((dest[-1] & 1)|| (*dest & 0x4000)) ? 0: 0x8000;
 	dest++;
     }
     return dest;
 }
 
-/* Megalomania does not like zero MFM words... */
 static void mfmcode (uae_u16 * mfm, int words)
 {
     uae_u32 lastword = 0;
@@ -592,7 +545,6 @@ static void mfmcode (uae_u16 * mfm, int words)
 
 static void decode_amigados (drive *drv)
 {
-    /* Normal AmigaDOS format track */
     int tr = drv->cyl * 2 + side;
     int sec;
     int dstmfmoffset = 0;
@@ -732,14 +684,12 @@ static void drive_fill_bigbuf (drive * drv)
                     drv->bigmfmbuf[i] = (uae_u16)((drv->bigmfmbuf[i] >> 8) | (drv->bigmfmbuf[i] << 8));
             }
             drv->tracklen = track_bits > 0 ? track_bits : bytes * 8;
-            /* Clamp tracklen to what bigmfmbuf can actually hold */
             int max_bits = (int)sizeof(drv->bigmfmbuf) * 8;
             if (drv->tracklen > max_bits)
                 drv->tracklen = max_bits;
             if (drv->tracklen > bytes * 8)
                 drv->tracklen = bytes * 8;
             drv->trackspeed = get_floppy_speed() * drv->tracklen / (2 * 8 * FLOPPY_WRITE_LEN);
-            /* Prevent division-related hangs: ensure trackspeed is never zero */
             if (drv->trackspeed <= 0)
                 drv->trackspeed = floppy_speed;
         }
@@ -785,7 +735,6 @@ static void drive_fill_bigbuf (drive * drv)
     }
 }
 
-/* Update ADF_EXT2 track header */
 static void diskfile_update (drive * drv, int len, uae_u8 type)
 {
     trackid *ti;
@@ -873,7 +822,7 @@ static int drive_write_adf_amigados (drive * drv)
 		secwritten = -200;
 	    }
 	    chksum ^= odd ^ even;
-	}			/* could check here if the label is nonstandard */
+	}
 	mbuf += 8;
 	odd = getmfmlong (mbuf);
 	even = getmfmlong (mbuf + 2);
@@ -927,7 +876,6 @@ static int drive_write_adf_amigados (drive * drv)
     return 0;
 }
 
-/* write raw track to disk file */
 static int drive_write_ext2 (drive * drv)
 {
     trackid *ti;
@@ -966,12 +914,11 @@ static void drive_write_data (drive * drv)
     case ADF_EXT2:
 	ret = drive_write_adf_amigados (drv);
 	if (ret) {
-	    /*write_log ("not an amigados track (error %d), writing as raw track\n", ret); */
 	    drive_write_ext2 (drv);
 	}
 	break;
     }
-    drv->buffered_side = 2;	/* will force read */
+    drv->buffered_side = 2;
 }
 
 static void drive_eject (drive * drv)
@@ -980,16 +927,12 @@ static void drive_eject (drive * drv)
     drv->dskchange = 1;
     drv->ddhd = 1;
     drv->dskchange_time = 0;
-//    drv->dskready = 0;
-//    drv->dskready_time = 0;
-    drive_settype_id (drv); /* Back to 35 DD */
+    drive_settype_id (drv);
 #ifdef DEBUG_DISK
     write_log ("eject drive %d\n", drv - &floppy[0]);
 #endif
 }
 
-/* We use this function if we have no Kickstart ROM.
- * No error checking - we trust our luck. */
 void DISK_ersatz_read (int tr, int sec, uaecptr dest)
 {
     uae_u8 *dptr = get_real_address (dest);
@@ -1032,11 +975,7 @@ void disk_insert (int num, const char *name)
 		disk_eject (num);
     	} else if (!drive_empty(drv) || drv->dskchange_time > 0) {
 		drive_eject (drv);
-		/* set dskchange_time, disk_insert() will be
-		 * called from DISK_check_change() after 1 second delay
-	 	* this makes sure that all programs detect disk change correctly
-	 	*/
-		drv->dskchange_time = 10; /* 1 second disk change delay */
+		drv->dskchange_time = 10;
     	} else {
 		drv->dskchange_time = 1;
     	}
@@ -1048,7 +987,6 @@ void DISK_check_change (void)
     int i;
 
     for (i = 0; i < mainMenu_drives; i++) {
-	//uae4all_flush_disk(i);
 	drive *drv = floppy + i;
 	if (real_changed_df[i] && drv->dskchange_time == 0)
 	{
@@ -1057,13 +995,11 @@ void DISK_check_change (void)
 	    disk_insert (i, changed_df[i]);
 	}
 
-	/* emulate drive motor turn on time */
 	if (drv->dskready_time && !drive_empty (drv)) {
 	    drv->dskready_time--;
 	    if (drv->dskready_time == 0)
 		drv->dskready = 1;
 	}
-	/* delay until new disk image is inserted */
 	if (drv->dskchange_time) {	    drv->dskchange_time--;
 	    if (drv->dskchange_time == 0) {
 		int inserted = drive_insert (drv, i, drv->newname);
@@ -1114,19 +1050,14 @@ void DISK_select (uae_u8 data)
     if (!savestate_state) {
     for (dr = 0; dr < mainMenu_drives; dr++) {
 	    drive *drv = floppy + dr;
-	    /* motor on/off workings tested with small assembler code on real Amiga 1200. */
-	    /* motor/id flipflop is set only when drive select goes from high to low */
 	    if (!(selected & (1 << dr)) && (lastselected & (1 << dr)) ) {
 		drv->drive_id_scnt++;
 		drv->drive_id_scnt &= 31;
 		drv->idbit = (drv->drive_id & (1L << (31 - drv->drive_id_scnt))) ? 1 : 0;
 		if (!(disabled & (1 << dr))) {
 		    if ((prevdata & 0x80) == 0 || (data & 0x80) == 0) {
-			/* motor off: if motor bit = 0 in prevdata or data -> turn motor on */
 			drive_motor (drv, 0);
 		    } else if (prevdata & 0x80) {
-			/* motor on: if motor bit = 1 in prevdata only (motor flag state in data has no effect)
-			   -> turn motor off */
 			drive_motor (drv, 1);
 		    }
 		}
@@ -1152,10 +1083,9 @@ uae_u8 DISK_status (void)
 		if (drv->dskready)
 		    st &= ~0x20;
 	    } else {
-		/* report drive ID */
 		if (drv->idbit)
 		    st &= ~0x20;
-#ifdef DEBUG_DISK		
+#ifdef DEBUG_DISK
 		write_log ("DISK_status: sel %d id %s [0x%08lx, bit #%02d: %d]\n",
 			   dr, drive_id_name (drv), drv->drive_id << drv->drive_id_scnt, 31 - drv->drive_id_scnt, st & 0x20 ? 1:0);
 #endif
@@ -1190,7 +1120,7 @@ static uae_u32 dskpt;
 static void disk_dmafinished (void)
 {
     INTREQ (0x8002);
-    dskdmaen = 0; /* ??? */
+    dskdmaen = 0;
 #ifdef DEBUG_DISK
     write_log ("disk dma finished %08.8X\n", dskpt);
 #endif
@@ -1226,10 +1156,8 @@ void DISK_handler (void)
 static int dma_enable, bitoffset;
 static uae_u32 word;
 
-/* Always carried through to the next line.  */
 static int disk_hpos;
 
-/* emulate disk write dma for full horizontal line */
 static void disk_doupdate_write (drive * drv)
 {
     int hpos = disk_hpos;
@@ -1258,7 +1186,6 @@ static void disk_doupdate_write (drive * drv)
     disk_hpos = hpos - (maxhpos << 8);
 }
 
-/* get one bit from MFM bit stream */
 static uae_u32 getonebit (uae_u16 * mfmbuf, int mfmpos, uae_u32 word)
 {
     uae_u16 *buf;
@@ -1269,9 +1196,8 @@ static uae_u32 getonebit (uae_u16 * mfmbuf, int mfmpos, uae_u32 word)
     return word;
 }
 
-#define WORDSYNC_CYCLES 7 /* (~7 * 280ns = 2us) */
+#define WORDSYNC_CYCLES 7
 
-/* emulate disk read dma for full horizontal line */
 static void disk_doupdate_read (drive * drv)
 {
     int hpos = disk_hpos;
@@ -1343,13 +1269,6 @@ static void disk_doupdate_read (drive * drv)
     disk_hpos = hpos - (maxhpos << 8);
 }
 
-/* disk DMA fetch happens on real Amiga at the beginning of next horizontal line
-   (cycles 9, 11 and 13 according to hardware manual) We transfer all DMA'd
-   data at cycle 0. I don't think any program cares about this small difference.
-
-   We must handle dsklength = 0 because some copy protections use it to detect
-   wordsync without transferring any data.
-*/
 static void dodmafetch (void)
 {
     int i=0;
@@ -1375,7 +1294,6 @@ static void dodmafetch (void)
     dma_tab[0] = 0xffffffff;
 }
 
-/* this is very unoptimized. DSKBYTR is used very rarely, so it should not matter. */
 
 uae_u16 DSKBYTR (int hpos)
 {
@@ -1418,8 +1336,6 @@ static void DISK_start (void)
 		drv->tracklen = FLOPPY_WRITE_LEN * drv->ddhd * 8 * 2;
 		drv->trackspeed = get_floppy_speed();
 	    }
-	    /* Ugh.  A nasty hack.  Assume ADF_EXT1 tracks are always read
-	       from the start.  */
 	    if (ti->type == TRACK_RAW1)
 		drv->mfmpos = 0;
 	}
@@ -1479,7 +1395,6 @@ void DSKLEN (uae_u16 v, int hpos)
     if (v & 0x8000) {
 	dskdmaen = dskdmaen == 1 ? 2 : 1;
     } else {
-	/* Megalomania does this */
 	if (dskdmaen == 3)
 	    write_log ("warning: Disk write DMA aborted, %d words left\n", dsklength);
 	dskdmaen = 0;
@@ -1509,15 +1424,12 @@ void DSKLEN (uae_u16 v, int hpos)
     }
 #endif
 
-    /* Megalomania does not work if DSKLEN write is delayed to next horizontal line,
-       also it seems some copy protections require this fix */
     DISK_start ();
     if (mainMenu_floppyspeed == 100) {
         if (dskdmaen == 2) disk_sound_floppy_read();
         if (dskdmaen == 3) disk_sound_floppy_write();
     }
 
-    /* Try to make floppy access from Kickstart faster.  */
     if (dskdmaen != 2)
 	return;
     {
@@ -1539,7 +1451,6 @@ void DSKLEN (uae_u16 v, int hpos)
 			pos += 16;
 			pos %= drv->tracklen;
 			if (drv->bigmfmbuf[pos >> 4] == dsksync) {
-			    /* must skip first disk sync marker */
 			    pos += 16;
 			    pos %= drv->tracklen;
 			    break;
@@ -1563,7 +1474,6 @@ void DSKLEN (uae_u16 v, int hpos)
     }
 }
 
-/* not a real hardware */
 uae_u16 DSKDATR (int hpos)
 {
     return 0;
@@ -1607,7 +1517,6 @@ void DISK_init (void)
 
     for (dr = 0; dr < 4; dr++) {
 	drive *drv = &floppy[dr];
-	/* reset all drive types to 3.5 DD */
 	drv->type = DRV_35_DD;
 	reset_drive (dr);
     }
@@ -1640,7 +1549,6 @@ void dumpdisk (void)
     }
 }
 
-/* Disk save/restore code */
 
 void DISK_save_custom (uae_u32 *pdskpt, uae_u16 *pdsklength, uae_u16 *pdsksync, uae_u16 *pdskdatr, uae_u16 *pdskbytr)
 {
@@ -1697,7 +1605,7 @@ uae_u8 *restore_disk(int num,uae_u8 *src)
 	    drv->dskchange_time = 0;
 	   	strncpy(changed_df[num],(char *)src,255);
     	changed_df[num][255] = 0;
-	
+
 	{
 		FILE *f=fopen(changed_df[num],"rb");
 		if (f)
@@ -1753,24 +1661,24 @@ uae_u8 *save_disk(int num,int *len)
     if (num<mainMenu_drives)
     {
     	drv = &floppy[num];
-    	save_u32 (drv->drive_id);	    /* drive type ID */
-    	save_u8 ((drv->motoroff ? 0:1) | ((disabled & (1 << num)) ? 2 : 0));  /* state */
-    	save_u8 (drv->cyl);		    /* cylinder */
-    	save_u8 (drv->dskready);	    /* dskready */
-    	save_u8 (drv->drive_id_scnt);   /* id mode position */
-    	save_u32 (drv->mfmpos);	    /* disk position */
-    	save_u32 (0);		    /* CRC of disk image */
-    	strcpy ((char *)dst, prefs_df[num]);/* image name */
+    	save_u32 (drv->drive_id);
+    	save_u8 ((drv->motoroff ? 0:1) | ((disabled & (1 << num)) ? 2 : 0));
+    	save_u8 (drv->cyl);
+    	save_u8 (drv->dskready);
+    	save_u8 (drv->drive_id_scnt);
+    	save_u32 (drv->mfmpos);
+    	save_u32 (0);
+    	strcpy ((char *)dst, prefs_df[num]);
     }
     else
     {
-	save_u32 (DRIVE_ID_NONE);	/* drive type ID */
-	save_u8 (((disabled & (1 << num)) ? 2 : 0)); /* state */
-	save_u8 (0);	/* cylinder */
-	save_u8 (0);	/* dskready */
-	save_u8 (0);	/* id mode position */
-	save_u32 (0);	/* disk position */
-	save_u32 (0);	/* CRC of disk image */
+	save_u32 (DRIVE_ID_NONE);
+	save_u8 (((disabled & (1 << num)) ? 2 : 0));
+	save_u8 (0);
+	save_u8 (0);
+	save_u8 (0);
+	save_u32 (0);
+	save_u32 (0);
 	dst[0]=dst[1]=0;
     }
 
@@ -1779,7 +1687,6 @@ uae_u8 *save_disk(int num,int *len)
     return dstbak;
 }
 
-/* internal floppy controller variables */
 
 uae_u8 *restore_floppy(uae_u8 *src)
 {
@@ -1797,16 +1704,15 @@ uae_u8 *save_floppy(int *len)
 {
     uae_u8 *dstbak, *dst;
 
-    /* flush dma buffer before saving */
     dodmafetch();
 
     dstbak = dst = (uae_u8 *)malloc(2+1+1+1+1+2);
-    save_u16 (word);		/* current fifo (low word) */
-    save_u8 (bitoffset);	/* dma bit offset */
-    save_u8 (dma_enable);	/* disk sync found */
-    save_u8 (disk_hpos);	/* next bit read position */
-    save_u8 (dskdmaen);		/* dma status */
-    save_u16 (word >> 16);	/* current fifo (high word) */
+    save_u16 (word);
+    save_u8 (bitoffset);
+    save_u8 (dma_enable);
+    save_u8 (disk_hpos);
+    save_u8 (dskdmaen);
+    save_u16 (word >> 16);
 
     *len = dst - dstbak;
     return dstbak;

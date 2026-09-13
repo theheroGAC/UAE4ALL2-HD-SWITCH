@@ -78,8 +78,6 @@ struct zfile
 static struct zfile *zlist = 0;
 
 
-
-
 static unsigned getFreeBlocks(void)
 {
 	return 0x10000;
@@ -120,14 +118,11 @@ void zfile_exit (void)
     while ((l = zlist)) {
 	zlist = l->next;
 	fclose (l->f);
-	unlink (l->name); /* sam: in case unlink () after fopen () fails */
+	unlink (l->name);
 	free (l);
     }
 }
 
-/*
- * fclose () but for a compressed file
- */
 int zfile_fclose (struct zfile *f)
 {
     int ret;
@@ -135,7 +130,7 @@ int zfile_fclose (struct zfile *f)
     if (f->next)
 	f->next->pprev = f->pprev;
     (*f->pprev) = f->next;
-    
+
     ret = fclose (f->f);
     unlink (f->name);
 
@@ -165,9 +160,6 @@ size_t zfile_fwrite (void *b, size_t l1, size_t l2, struct zfile *z)
 }
 
 
-/*
- * gzip decompression
- */
 static int gunzip (const char *decompress, const char *src, const char *dst)
 {
 #if defined(__PSP2__) || defined(__SWITCH__)
@@ -183,7 +175,6 @@ static int gunzip (const char *decompress, const char *src, const char *dst)
             gzrewind(input);
             while(!gzeof(input))
             {
-                //buf contains len bytes of decompressed data
                 int len = gzread(input, buf, 1024*1024 - 2);
                 fwrite(buf, sizeof(char), len, output);
             }
@@ -205,9 +196,6 @@ static int gunzip (const char *decompress, const char *src, const char *dst)
 }
 
 
-/*
- * bzip/bzip2 decompression
- */
 static int bunzip (const char *decompress, const char *src, const char *dst)
 {
     char cmd[1024];
@@ -217,9 +205,6 @@ static int bunzip (const char *decompress, const char *src, const char *dst)
     return !system (cmd);
 }
 
-/*
- * lha decompression
- */
 #ifdef __PSP2__
 struct ZArchiveContext {
     SceUID fd;
@@ -364,25 +349,69 @@ static int unzip (const char *src, const char *dst)
 
     unzFile input = unzOpen(src);
     if (input) {
-        unzGoToFirstFile(input);
-        unzGetCurrentFileInfo(input, &file_info, NULL, 0, NULL, 0, NULL, 0);
-        size = file_info.uncompressed_size;
-        if (size < 2048 * 1024 && size > 0) {
-            if (unzOpenCurrentFile(input) == UNZ_OK) {
-                FILE *output = fopen(dst,"wb");
-                if (output) {
-                    char *buf = (char *) malloc(size);
-                    int len = unzReadCurrentFile(input, buf, size);
-                    if (len == size) {
-                        int written = fwrite(buf, sizeof(char), len, output);
-                        if (written == size) {
-                            success = 1;
-                        }
-                    }
-                    fclose(output);
-                    free(buf);
+        char filename_in_zip[256];
+        int found = 0;
+        int err = unzGoToFirstFile(input);
+
+        while (err == UNZ_OK) {
+            unzGetCurrentFileInfo(input, &file_info, filename_in_zip, sizeof(filename_in_zip) - 1, NULL, 0, NULL, 0);
+            filename_in_zip[sizeof(filename_in_zip) - 1] = '\0';
+            const char *dot = strrchr(filename_in_zip, '.');
+            if (dot && (strcasecmp(dot, ".adf") == 0 || strcasecmp(dot, ".adz") == 0 ||
+                        strcasecmp(dot, ".dms") == 0 || strcasecmp(dot, ".ipf") == 0 ||
+                        strcasecmp(dot, ".hdf") == 0)) {
+                found = 1;
+                break;
+            }
+            err = unzGoToNextFile(input);
+        }
+
+        if (!found) {
+            err = unzGoToFirstFile(input);
+            while (err == UNZ_OK) {
+                unzGetCurrentFileInfo(input, &file_info, filename_in_zip, sizeof(filename_in_zip) - 1, NULL, 0, NULL, 0);
+                filename_in_zip[sizeof(filename_in_zip) - 1] = '\0';
+                size_t fnlen = strlen(filename_in_zip);
+                if (fnlen > 0 && filename_in_zip[fnlen - 1] != '/' && filename_in_zip[fnlen - 1] != '\\'
+                    && file_info.uncompressed_size > 0 && file_info.uncompressed_size <= 10 * 1024 * 1024) {
+                    found = 1;
+                    break;
                 }
-                unzCloseCurrentFile(input);
+                err = unzGoToNextFile(input);
+            }
+        }
+
+        if (found) {
+            size = file_info.uncompressed_size;
+            if (size > 0 && size <= 10 * 1024 * 1024) {
+                if (unzOpenCurrentFile(input) == UNZ_OK) {
+                    char dst_dir[256];
+                    strncpy(dst_dir, dst, sizeof(dst_dir) - 1);
+                    dst_dir[sizeof(dst_dir) - 1] = '\0';
+                    char *slash = strrchr(dst_dir, '/');
+                    if (!slash) slash = strrchr(dst_dir, '\\');
+                    if (slash) {
+                        *slash = '\0';
+                        mkdir(dst_dir, 0777);
+                    }
+                    FILE *output = fopen(dst, "wb");
+                    if (output) {
+                        char *buf = (char *)malloc(size);
+                        if (buf) {
+                            int len = unzReadCurrentFile(input, buf, size);
+                            if (len == (int)size) {
+                                int written = fwrite(buf, 1, len, output);
+                                if (written == len) {
+                                    success = 1;
+                                }
+                            }
+                            free(buf);
+                        }
+                        fclose(output);
+                        if (!success) unlink(dst);
+                    }
+                    unzCloseCurrentFile(input);
+                }
             }
         }
         unzClose(input);
@@ -453,15 +482,12 @@ static int uncompress (const char *name, char *dest)
 	|| access (strcat (strcpy (nam, name),".ZIP"),0) >= 0
 	|| access (strcat (strcpy (nam, name),".Zip"),0) >= 0
 	|| access (strcat (strcpy (nam, name),".rp9"),0) >= 0
-	|| access (strcat (strcpy (nam, name),".RP9"),0) >= 0)      
+	|| access (strcat (strcpy (nam, name),".RP9"),0) >= 0)
        return unzip (nam, dest);
 
     return 0;
 }
 
-/*
- * fopen () for a compressed file
- */
 struct zfile *zfile_open (const char *name, const char *mode)
 {
     struct zfile *l = (struct zfile *)malloc (sizeof *l);
@@ -475,11 +501,12 @@ struct zfile *zfile_open (const char *name, const char *mode)
     if (! uncompress (name, NULL))
 	l->f = fopen (name, mode);
     else {
-//	tmpnam (l->name);
-//	fd = creat (l->name, S_IRUSR | S_IWUSR);
 #if defined(__SWITCH__) || defined(__PSP2__)
     static int tempnr = 0;
     tempnr++;
+#if defined(__SWITCH__)
+    mkdir("./tmp", 0777);
+#endif
     snprintf(l->name, L_tmpnam, "%suaetmp-%06d", TMP_PREFIX, tempnr);
     if (! uncompress (name, l->name)) {
         unlink (l->name);
@@ -494,7 +521,7 @@ struct zfile *zfile_open (const char *name, const char *mode)
   strncpy(l->name, "/tmp/uaetmp-XXXXXX", L_tmpnam);
 #endif
   fd = mkstemp(l->name);
-  
+
 	if (fd < 0)
 	    return NULL;
 
@@ -507,7 +534,7 @@ struct zfile *zfile_open (const char *name, const char *mode)
 
     l->f = fopen (l->name, mode);
     close (fd);
-#endif // __SWITCH__ || __PSP2__
+#endif
     }
     if (l->f == NULL) {
 	if (strlen (l->name) > 0)
@@ -601,7 +628,6 @@ static void uae4all_disk_real_write(int num)
 			char *namefile=get_namefile(num);
 			void *bc=calloc(1,MAX_COMP_SIZE);
 			unsigned long sizecompressed=MAX_COMP_SIZE;
-			//int compress2(Bytef * dest, uLongf * destLen, const Bytef * source, uLong sourceLen, int level);
 			int retc=compress2((Bytef *)bc,&sizecompressed,(const Bytef *)uae4all_extra_buffer,changed,Z_BEST_COMPRESSION);
 			if (retc>=0)
 			{
@@ -631,7 +657,6 @@ static void uae4all_disk_real_write(int num)
 			}
 			free(bc);
 			uae4all_disk_actual_crc[num]=new_crc;
-// FIXME - error: 'sync' was not declared in this scope
 #ifndef WIN32
 #if !defined(__PSP2__) && !defined(__SWITCH__)
 			sync();
@@ -640,7 +665,6 @@ static void uae4all_disk_real_write(int num)
 		}
 	}
 }
-
 
 
 static void uae4all_initsave(unsigned num)
@@ -679,7 +703,6 @@ static void uae4all_initsave(unsigned num)
 	}
 	uae4all_disk_actual_crc[num]=savedisk_get_checksum(uae4all_disk_memory[num],MAX_DISK_LEN);
 }
-
 
 
 size_t uae4all_fread( void *ptr, size_t tam, size_t nmiemb, FILE *flujo)
@@ -806,7 +829,7 @@ size_t uae4all_rom_fread(void *ptr, size_t tam, size_t nmiemb, FILE *flujo)
 		return 0;
 	memcpy(ptr,(void *)(((hostptr)uae4all_rom_memory)+((hostptr)uae4all_rom_pos)),tam*nmiemb);
 	uae4all_rom_pos+=tam*nmiemb;
-	return (uae4all_rom_len == 262155 || uae4all_rom_len == 524299) /* cloanto */ ? uae4all_rom_len - 11 : uae4all_rom_len;
+	return (uae4all_rom_len == 262155 || uae4all_rom_len == 524299)  ? uae4all_rom_len - 11 : uae4all_rom_len;
 }
 
 

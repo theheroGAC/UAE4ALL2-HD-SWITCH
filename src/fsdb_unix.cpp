@@ -14,7 +14,6 @@
 
 #include "fsdb.h"
 
-/* Return nonzero for any name we can't create on the native filesystem.  */
 int fsdb_name_invalid (const char *n)
 {
     if (strcmp (n, FSDB_FILE) == 0)
@@ -26,22 +25,18 @@ int fsdb_name_invalid (const char *n)
     return n[1] == '.' && n[2] == '\0';
 }
 
-/* For an a_inode we have newly created based on a filename we found on the
- * native fs, fill in information about this file/directory.  */
 void fsdb_fill_file_attrs (a_inode *aino)
 {
     struct stat statbuf;
-    /* This really shouldn't happen...  */
     if (stat (aino->nname, &statbuf) == -1)
 	return;
     aino->dir = S_ISDIR (statbuf.st_mode) ? 1 : 0;
-    
+
     aino->amigaos_mode = ((S_IXUSR & statbuf.st_mode ? 0 : A_FIBF_EXECUTE)
     			  | (S_IWUSR & statbuf.st_mode ? 0 : A_FIBF_WRITE)
     			  | (S_IRUSR & statbuf.st_mode ? 0 : A_FIBF_READ));
 
 #if defined(WIN32) || defined(ANDROIDSDL) || defined(__PSP2__) || defined(__SWITCH__)
-    // Always give execute & read permission
     aino->amigaos_mode &= ~A_FIBF_EXECUTE;
     aino->amigaos_mode &= ~A_FIBF_READ;
 #endif
@@ -54,9 +49,8 @@ int fsdb_set_file_attrs (a_inode *aino, int mask)
 
     if (stat (aino->nname, &statbuf) == -1)
 	return ERROR_OBJECT_NOT_AROUND;
-	
+
     mode = statbuf.st_mode;
-    /* Unix dirs behave differently than AmigaOS ones.  */
     if (! aino->dir) {
 	if (mask & A_FIBF_READ)
 	    mode &= ~S_IRUSR;
@@ -83,8 +77,6 @@ int fsdb_set_file_attrs (a_inode *aino, int mask)
     return 0;
 }
 
-/* Return nonzero if we can represent the amigaos_mode of AINO within the
- * native FS.  Return zero if that is not possible.  */
 int fsdb_mode_representable_p (const a_inode *aino)
 {
     if (aino->dir)
@@ -105,8 +97,6 @@ char *fsdb_create_unique_nname (a_inode *base, const char *suggestion)
 	}
 	free (p);
 
-	/* tmpnam isn't reentrant and I don't really want to hack configure
-	 * right now to see whether tmpnam_r is available...  */
 	for (i = 0; i < 8; i++) {
 #if WIN32 || __PSP2__ || __SWITCH__
 	    tmp[i] = "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[rand () % 63];

@@ -28,9 +28,6 @@
 
 #include "fsusage.h"
 
-/* Return the number of TOSIZE-byte blocks used by
-   BLOCKS FROMSIZE-byte blocks, rounding away from zero.
-   TOSIZE must be positive.  Return -1 if FROMSIZE is not positive.  */
 
 static long
 adjust_blocks
@@ -42,11 +39,11 @@ adjust_blocks
   if (fromsize <= 0)
     return -1;
 
-  if (fromsize == tosize)	/* e.g., from 512 to 512 */
+  if (fromsize == tosize)
     return blocks;
-  else if (fromsize > tosize)	/* e.g., from 2048 to 512 */
+  else if (fromsize > tosize)
     return blocks * (fromsize / tosize);
-  else				/* e.g., from 256 to 512 */
+  else
     return (blocks + (blocks < 0 ? -1 : 1)) / (tosize / fromsize);
 }
 
@@ -71,12 +68,12 @@ int statfs ();
 #endif
 #endif
 
-#if HAVE_SYS_FS_S5PARAM_H	/* Fujitsu UXP/V */
+#if HAVE_SYS_FS_S5PARAM_H
 # include <sys/fs/s5param.h>
 #endif
 
 #if defined (HAVE_SYS_FILSYS_H) && !defined (_CRAY)
-# include <sys/filsys.h>	/* SVR2 */
+# include <sys/filsys.h>
 #endif
 
 #if HAVE_FCNTL_H
@@ -89,18 +86,15 @@ int statfs ();
 #endif
 #endif
 
-#if HAVE_DUSTAT_H		/* AIX PS/2 */
+#if HAVE_DUSTAT_H
 # include <sys/dustat.h>
 #endif
 
-#if HAVE_SYS_STATVFS_H		/* SVR4 */
+#if HAVE_SYS_STATVFS_H
 # include <sys/statvfs.h>
 int statvfs ();
 #endif
 
-/* Read LEN bytes at PTR from descriptor DESC, retrying if interrupted.
-   Return the actual number of bytes read, zero for EOF, or negative
-   for an error.  */
 
 int
 safe_read
@@ -127,18 +121,10 @@ safe_read
 }
 
 #if defined(__PSP2__) || defined(__SWITCH__)
-#ifdef __PSP2__ // NOT __SWITCH__
+#ifdef __PSP2__
 #include <psp2/io/devctl.h>
 #endif
 
-/*
-typedef struct {
-    uint64_t max_size;
-    uint64_t free_size;
-    uint32_t cluster_size;
-    void *unk;
-} SceIoDevInfo;
-*/
 
 int
 get_fs_usage
@@ -152,38 +138,22 @@ get_fs_usage
 	fsp->fsu_files = 3435973;
 	fsp->fsu_ffree = 3435973;
 
-/*
-	SceIoDevInfo info;
-	memset(&info, 0, sizeof(SceIoDevInfo));
-	int res = sceIoDevctl("ux0:", 0x3001, 0, 0, &info, sizeof(SceIoDevInfo));
-	if (res >= 0) {
-	}
-*/
 	return 0;
 }
 #else
 
-/* Fill in the fields of FSP with information about space usage for
-   the filesystem on which PATH resides.
-   DISK is the device on which PATH is mounted, for space-getting
-   methods that need to know it.
-   Return 0 if successful, -1 if not.  When returning -1, ensure that
-   ERRNO is either a system error value, or zero if DISK is NULL
-   on a system that requires a non-NULL value.  */
 int
 get_fs_usage
 	(const char *path,
 	const char *disk,
 	struct fs_usage *fsp)
 {
-	/* TODO: *** use RFs:Volume() to get free space *** */
-	/* Just a hack */
 	fsp->fsu_blocks = 507289;
 	fsp->fsu_bfree = 3435973;
 	fsp->fsu_bavail = 507289 / 2;
 	fsp->fsu_files = 3435973;
 	fsp->fsu_ffree = 3435973;
-		
+
 #ifdef STAT_STATFS3_OSF1
 # define CONVERT_BLOCKS(B) adjust_blocks ((B), fsd.f_fsize, 512)
 
@@ -192,9 +162,9 @@ get_fs_usage
   if (statfs (path, &fsd, sizeof (struct statfs)) != 0)
     return -1;
 
-#endif /* STAT_STATFS3_OSF1 */
+#endif
 
-#ifdef STAT_STATFS2_FS_DATA	/* Ultrix */
+#ifdef STAT_STATFS2_FS_DATA
 # define CONVERT_BLOCKS(B) adjust_blocks ((B), 1024, 512)
 
   struct fs_data fsd;
@@ -207,9 +177,9 @@ get_fs_usage
   fsp->fsu_files = fsd.fd_req.gtot;
   fsp->fsu_ffree = fsd.fd_req.gfree;
 
-#endif /* STAT_STATFS2_FS_DATA */
+#endif
 
-#ifdef STAT_READ_FILSYS		/* SVR2 */
+#ifdef STAT_READ_FILSYS
 # ifndef SUPERBOFF
 #  define SUPERBOFF (SUPERB * 512)
 # endif
@@ -241,9 +211,9 @@ get_fs_usage
   fsp->fsu_files = (fsd.s_isize - 2) * INOPB * (fsd.s_type == Fs2b ? 2 : 1);
   fsp->fsu_ffree = fsd.s_tinode;
 
-#endif /* STAT_READ_FILSYS */
+#endif
 
-#ifdef STAT_STATFS2_BSIZE	/* 4.3BSD, SunOS 4, HP-UX, AIX */
+#ifdef STAT_STATFS2_BSIZE
 # define CONVERT_BLOCKS(B) adjust_blocks ((B), fsd.f_bsize, 512)
 
   struct statfs fsd;
@@ -253,22 +223,17 @@ get_fs_usage
 
 # ifdef STATFS_TRUNCATES_BLOCK_COUNTS
 
-  /* In SunOS 4.1.2, 4.1.3, and 4.1.3_U1, the block counts in the
-     struct statfs are truncated to 2GB.  These conditions detect that
-     truncation, presumably without botching the 4.1.1 case, in which
-     the values are not truncated.  The correct counts are stored in
-     undocumented spare fields.  */
   if (fsd.f_blocks == 0x1fffff && fsd.f_spare[0] > 0)
     {
       fsd.f_blocks = fsd.f_spare[0];
       fsd.f_bfree = fsd.f_spare[1];
       fsd.f_bavail = fsd.f_spare[2];
     }
-# endif /* STATFS_TRUNCATES_BLOCK_COUNTS */
+# endif
 
-#endif /* STAT_STATFS2_BSIZE */
+#endif
 
-#ifdef STAT_STATFS2_FSIZE	/* 4.4BSD */
+#ifdef STAT_STATFS2_FSIZE
 # define CONVERT_BLOCKS(B) adjust_blocks ((B), fsd.f_fsize, 512)
 
   struct statfs fsd;
@@ -276,9 +241,9 @@ get_fs_usage
   if (statfs (path, &fsd) < 0)
     return -1;
 
-#endif /* STAT_STATFS2_FSIZE */
+#endif
 
-#ifdef STAT_STATFS4		/* SVR3, Dynix, Irix, AIX */
+#ifdef STAT_STATFS4
 # if _AIX || defined(_CRAY)
 #  define CONVERT_BLOCKS(B) adjust_blocks ((B), fsd.f_bsize, 512)
 #  ifdef _CRAY
@@ -286,8 +251,8 @@ get_fs_usage
 #  endif
 # else
 #  define CONVERT_BLOCKS(B) (B)
-#  ifndef _SEQUENT_		/* _SEQUENT_ is DYNIX/ptx */
-#   ifndef DOLPHIN		/* DOLPHIN 3.8.alfa/7.18 has f_bavail */
+#  ifndef _SEQUENT_
+#   ifndef DOLPHIN
 #    define f_bavail f_bfree
 #   endif
 #  endif
@@ -297,13 +262,10 @@ get_fs_usage
 
   if (statfs (path, &fsd, sizeof fsd, 0) < 0)
     return -1;
-  /* Empirically, the block counts on most SVR3 and SVR3-derived
-     systems seem to always be in terms of 512-byte blocks,
-     no matter what value f_bsize has.  */
 
-#endif /* STAT_STATFS4 */
+#endif
 
-#ifdef STAT_STATVFS		/* SVR4 */
+#ifdef STAT_STATVFS
 # define CONVERT_BLOCKS(B) \
     adjust_blocks ((B), fsd.f_frsize ? fsd.f_frsize : fsd.f_bsize, 512)
 
@@ -311,12 +273,10 @@ get_fs_usage
 
   if (statvfs (path, &fsd) < 0)
     return -1;
-  /* f_frsize isn't guaranteed to be supported.  */
 
-#endif /* STAT_STATVFS */
+#endif
 
 #if !defined(STAT_STATFS2_FS_DATA) && !defined(STAT_READ_FILSYS) && !defined(__SYMBIAN32__)
-				/* !Ultrix && !SVR2 */
 
   fsp->fsu_blocks = CONVERT_BLOCKS (fsd.f_blocks);
   fsp->fsu_bfree = CONVERT_BLOCKS (fsd.f_bfree);
@@ -324,8 +284,8 @@ get_fs_usage
   fsp->fsu_files = fsd.f_files;
   fsp->fsu_ffree = fsd.f_ffree;
 
-#endif /* not STAT_STATFS2_FS_DATA && not STAT_READ_FILSYS */
+#endif
 
   return 0;
 }
-#endif // __PSP2__
+#endif

@@ -33,11 +33,11 @@
  /* Usage :
   *
   * save:
-  * 
+  *
   * set savestate_state = STATE_DOSAVE, savestate_filename = "..."
   *
   * restore:
-  * 
+  *
   * set savestate_state = STATE_DORESTORE, savestate_filename = "..."
   *
   */
@@ -61,6 +61,9 @@
 #define Z_COMPRESSION_LEVEL Z_BEST_COMPRESSION
 
 #include "savestate.h"
+#ifdef PICASSO96
+#include "picasso96.h"
+#endif
 
 int savestate_state;
 
@@ -70,8 +73,6 @@ static char savestate_filename_default[255]={
 char *savestate_filename=(char *)&savestate_filename_default[0];
 FILE *savestate_file=NULL;
 
-/* functions for reading/writing bytes, shorts and longs in big-endian
- * format independent of host machine's endianess */
 
 void save_u32_func (uae_u8 **dstp, uae_u32 v)
 {
@@ -141,10 +142,9 @@ char *restore_string_func (uae_u8 **dstp)
 	*top++ = v;
     } while(v);
     *dstp = dst;
-    return to; 
+    return to;
 }
 
-/* read and write IFF-style hunks */
 
 static void save_chunk (FILE *f, uae_u8 *chunk, long len, const char *name)
 {
@@ -154,19 +154,14 @@ static void save_chunk (FILE *f, uae_u8 *chunk, long len, const char *name)
     if (!chunk)
 	return;
 
-    /* chunk name */
     fwrite (name, 1, 4, f);
-    /* chunk size */
     dst = &tmp[0];
     save_u32 (len + 4 + 4 + 4);
     fwrite (&tmp[0], 1, 4, f);
-    /* chunk flags */
     dst = &tmp[0];
     save_u32 (0);
     fwrite (&tmp[0], 1, 4, f);
-    /* chunk data */
     fwrite (chunk, 1, len, f);
-    /* alignment */
     len = 4 - (len & 3);
     if (len)
 	fwrite (zero, 1, len, f);
@@ -188,10 +183,8 @@ static uae_u8 *restore_chunk (FILE *f, char *name, long *len, long *filepos)
     uae_u32 flags;
     long len2;
 
-    /* chunk name */
     fread (name, 1, 4, f);
     name[4] = 0;
-    /* chunk size */
     fread (tmp, 1, 4, f);
     src = tmp;
     len2 = restore_u32 () - 4 - 4 - 4;
@@ -201,18 +194,16 @@ static uae_u8 *restore_chunk (FILE *f, char *name, long *len, long *filepos)
     if (len2 == 0)
 	return 0;
 
-    /* chunk flags */
     fread (tmp, 1, 4, f);
     src = tmp;
     flags = restore_u32 ();
 
     *filepos = ftell (f);
-    /* chunk data.  RAM contents will be loaded during the reset phase,
-       no need to malloc multiple megabytes here.  */
     if (strcmp (name, "CRAM") != 0
 	&& strcmp (name, "BRAM") != 0
 	&& strcmp (name, "FRAM") != 0
-	&& strcmp (name, "ZRAM") != 0)
+	&& strcmp (name, "ZRAM") != 0
+	&& strcmp (name, "P96V") != 0)
     {
 	mem = (uae_u8 *)malloc (len2);
 	fread (mem, 1, len2, f);
@@ -221,7 +212,6 @@ static uae_u8 *restore_chunk (FILE *f, char *name, long *len, long *filepos)
 	fseek (f, len2, SEEK_CUR);
     }
 
-    /* alignment */
     len2 = 4 - (len2 & 3);
     if (len2)
 	fread (dummy, 1, len2, f);
@@ -243,7 +233,6 @@ static void restore_header (uae_u8 *src)
     free (emuname);
 }
 
-/* restore all subsystems */
 
 void restore_state (char *filename)
 {
@@ -266,9 +255,11 @@ void restore_state (char *filename)
     if (!chunk || memcmp (name, "ASF ", 4)) {
 	write_log ("%s is not an AmigaStateFile\n",filename);
 	goto error;
-    }
-    savestate_file = f;
-    restore_header (chunk);
+    }	savestate_file = f;
+#ifdef PICASSO96
+	picasso_restore_begin();
+#endif
+	restore_header (chunk);
     free (chunk);
     savestate_state = STATE_RESTORE;
     for (;;) {
@@ -348,6 +339,16 @@ void restore_state (char *filename)
 	    end = restore_disk (3, chunk);
 	else if (!strcmp (name, "EXPA"))
 	    end = restore_expansion (chunk);
+#ifdef PICASSO96
+	else if (!strcmp (name, "P96S")) {
+	    picasso_restore_state (chunk, len);
+	    end = chunk + len;
+	} else if (!strcmp (name, "P96V")) {
+	    picasso_restore_vram (filepos, len);
+	    end = chunk;
+	    continue;
+	}
+#endif
 	else if (!strcmp (name, "AKIK"))
 	    end = akiko_restore_state (chunk);
 	else if (!strcmp (name, "ROM "))
@@ -390,12 +391,10 @@ void savestate_restore_finish (void)
     update_audio();
     savestate_file = 0;
     savestate_state = 0;
-//    unset_special(SPCFLAG_BRK);
     notice_screen_contents_lost();
     gui_set_message("Restored", 50);
 }
 
-/* Save all subsystems  */
 
 void save_state (char *filename, const char *description)
 {
@@ -524,6 +523,13 @@ void save_state (char *filename, const char *description)
 #ifdef DEBUG_SAVESTATE
     puts("--> save EXPA");fflush(stdout);
 #endif
+#ifdef PICASSO96
+    dst = picasso_save_state(&len);
+    save_chunk (f, dst, len, "P96S");
+    free (dst);
+    dst = picasso_save_vram(&len);
+    save_chunk (f, dst, len, "P96V");
+#endif
     dst = save_expansion (&len);
     save_chunk (f, dst, len, "EXPA");
     free (dst);
@@ -571,256 +577,3 @@ void save_state (char *filename, const char *description)
 #endif
 }
 
-/*
-
-My (Toni Wilen <twilen@arabuusimiehet.com>)
-proposal for Amiga-emulators' state-save format
-
-Feel free to comment...
-
-This is very similar to IFF-fileformat
-Every hunk must end to 4 byte boundary,
-fill with zero bytes if needed
-
-version 0.7
-
-HUNK HEADER (beginning of every hunk)
-
-        hunk name (4 ascii-characters)
-        hunk size (including header)
-        hunk flags             
-
-        bit 0 = chunk contents are compressed with zlib (maybe RAM chunks only?)
-
-HEADER
-
-        "ASF " (AmigaStateFile)
-        
-	statefile version
-        emulator name ("uae", "fellow" etc..)
-        emulator version string (example: "0.8.15")
-        free user writable comment string
-
-CPU
-
-         "CPU "
-
-        CPU model               4 (68000,68010 etc..)
-        CPU typeflags           bit 0=EC-model or not
-        D0-D7                   8*4=32
-        A0-A6                   7*4=32
-        PC                      4
-        prefetch address        4
-        prefetch data           4
-        USP                     4
-        ISP                     4
-        SR/CCR                  2
-        flags                   4 (bit 0=CPU was HALTed)
-
-        CPU specific registers
-
-        68000: SR/CCR is last saved register
-        68010: save also DFC,SFC and VBR
-        68020: all 68010 registers and CAAR,CACR and MSP
-        etc..
-
-        DFC                     4 (010+)
-        SFC                     4 (010+)
-        VBR                     4 (010+)
-
-        CAAR                    4 (020-030)
-        CACR                    4 (020+)
-        MSP                     4 (020+)
-
-MMU (when and if MMU is supported in future..)
-
-        MMU model               4 (68851,68030,68040)
-
-        // 68040 fields
-
-        ITT0                    4
-        ITT1                    4
-        DTT0                    4
-        DTT1                    4
-        URP                     4
-        SRP                     4
-        MMUSR                   4
-        TC                      2
-
-		
-FPU (only if used)
-
-	"FPU "
-
-        FPU model               4 (68881 or 68882)
-        FPU typeflags           4 (keep zero)
-
-        FP0-FP7                 4+2 (80 bits)
-        FPCR                    4
-        FPSR                    4
-        FPIAR                   4
-
-CUSTOM CHIPS
-
-        "CHIP"
-
-        chipset flags   4      OCS=0,ECSAGNUS=1,ECSDENISE=2,AGA=4
-                               ECSAGNUS and ECSDENISE can be combined
-
-        DFF000-DFF1FF   352    (0x120 - 0x17f and 0x0a0 - 0xdf excluded)
-
-        sprite registers (0x120 - 0x17f) saved with SPRx chunks
-        audio registers (0x0a0 - 0xdf) saved with AUDx chunks
-
-AGA COLORS
-
-        "AGAC"
-
-        AGA color               8 banks * 32 registers *
-        registers               LONG (XRGB) = 1024
-
-SPRITE
-
-        "SPR0" - "SPR7"
-
-
-        SPRxPT                  4
-        SPRxPOS                 2
-        SPRxCTL                 2
-        SPRxDATA                2
-        SPRxDATB                2
-        AGA sprite DATA/DATB    3 * 2 * 2
-        sprite "armed" status   1
-
-        sprites maybe armed in non-DMA mode
-        use bit 0 only, other bits are reserved
-
-
-AUDIO
-        "AUD0" "AUD1" "AUD2" "AUD3"
-
-        audio state             1
-        machine mode
-        AUDxVOL                 1
-	irq?                    1
-	data_written?           1
-        internal AUDxLEN        2
-        AUDxLEN                 2
-	internal AUDxPER        2
-	AUDxPER                 2
-        internal AUDxLC         4
-	AUDxLC                  4
-	evtime?                 4
-
-BLITTER
-
-        "BLIT"
-
-        internal blitter state
-
-        blitter running         1
-        anything else?
-
-CIA
-
-        "CIAA" and "CIAB"
-
-        BFE001-BFEF01   16*1 (CIAA)
-        BFD000-BFDF00   16*1 (CIAB)
-
-        internal registers
-
-        IRQ mask (ICR)  1 BYTE
-        timer latches   2 timers * 2 BYTES (LO/HI)
-        latched tod     3 BYTES (LO/MED/HI)
-        alarm           3 BYTES (LO/MED/HI)
-        flags           1 BYTE
-                        bit 0=tod latched (read)
-                        bit 1=tod stopped (write)
-	div10 counter	1 BYTE
-
-FLOPPY DRIVES
-
-        "DSK0" "DSK1" "DSK2" "DSK3"
-
-        drive state
-
-        drive ID-word           4
-        state                   1 (bit 0: motor on, bit 1: drive disabled)
-        rw-head track           1
-        dskready                1
-        id-mode                 1 (ID mode bit number 0-31)
-        floppy information
-
-        bits from               4
-        beginning of track
-        CRC of disk-image       4 (used during restore to check if image
-                                  is correct)
-        disk-image              null-terminated
-        file name
-
-INTERNAL FLOPPY CONTROLLER STATUS
-
-        "DISK"
-
-        current DMA word        2
-        DMA word bit offset     1
-        WORDSYNC found          1 (no=0,yes=1)
-        hpos of next bit        1
-        DSKLENGTH status        0=off,1=written once,2=written twice
-
-RAM SPACE 
-
-        "xRAM" (CRAM = chip, BRAM = bogo, FRAM = fast, ZFRAM = Z3)
-
-        start address           4 ("bank"=chip/slow/fast etc..)
-        of RAM "bank"
-        RAM "bank" size         4
-        RAM flags               4
-        RAM "bank" contents
-
-ROM SPACE
-
-        "ROM "
-
-        ROM start               4
-        address
-        size of ROM             4
-        ROM type                4 KICK=0
-        ROM flags               4
-        ROM version             2
-        ROM revision            2
-        ROM CRC                 4 see below
-        ROM-image               null terminated, see below
-        ID-string
-        ROM contents            (Not mandatory, use hunk size to check if
-                                this hunk contains ROM data or not)
-
-        Kickstart ROM:
-         ID-string is "Kickstart x.x"
-         ROM version: version in high word and revision in low word
-         Kickstart ROM version and revision can be found from ROM start
-         + 12 (version) and +14 (revision)
-
-        ROM version and CRC is only meant for emulator to automatically
-        find correct image from its ROM-directory during state restore.
-
-        Usually saving ROM contents is not good idea.
-
-
-END
-        hunk "END " ends, remember hunk size 8!
-
-
-EMULATOR SPECIFIC HUNKS
-
-Read only if "emulator name" in header is same as used emulator.
-Maybe useful for configuration?
-
-misc:
-
-- save only at position 0,0 before triggering VBLANK interrupt
-- all data must be saved in bigendian format
-- should we strip all paths from image file names?
-
-*/
