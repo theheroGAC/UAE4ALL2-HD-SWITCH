@@ -19,6 +19,7 @@ const char *switch_whdload_root(void);
 const char *switch_whdload_get_last_error(void);
 int switch_whdload_is_aga(const char *game_name);
 int switch_whdload_needs_immediate_blitter(const char *game_name);
+int switch_whdload_needs_improved_blitter(const char *game_name);
 
 #ifdef __cplusplus
 }

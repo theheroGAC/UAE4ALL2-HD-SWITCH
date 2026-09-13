@@ -35,7 +35,7 @@ void inputmode_init(void)
 		inputMode[0] = SDL_DisplayFormat(tmp);
 		SDL_FreeSurface(tmp);
 	}
-	
+
 	snprintf(tmpchar, 256, "%s/data/mouse.bmp", launchDir);
 	tmp = SDL_LoadBMP(tmpchar);
 

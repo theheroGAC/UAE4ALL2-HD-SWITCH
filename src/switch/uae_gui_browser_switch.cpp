@@ -127,7 +127,7 @@ static int compare_entries(const void *a, const void *b)
 static void scan_directory(const char *path)
 {
     s_num_entries = 0;
-    
+
     if (strcmp(path, "./") != 0 && strcmp(path, ".") != 0 && strcmp(path, "/") != 0 && strlen(path) > 1) {
         strncpy(s_entries[0].name, "..", sizeof(s_entries[0].name));
         s_entries[0].is_dir = true;
@@ -588,15 +588,15 @@ int switch_gui_run_browser(char *out_path, const char *start_dir, int disk_drive
                 switch_draw_text_centered(ph_x + (ph_w * 0.5f), ph_y + 160.0f, SWITCH_COLOR_TEXT_DIM, 0.85f, "Cover: <name>.png");
             }
 
-            
+
             switch_draw_text(preview_x + 16.0f, preview_y + 278.0f, SWITCH_COLOR_TEXT_DIM, 0.80f, sel_entry->is_dir ? "DIRECTORY:" : "FILE NAME:");
 
-            
+
             char name_buf[128];
             switch_truncate_text(sel_entry->name, preview_w - 32.0f, 0.90f, name_buf, sizeof(name_buf));
             switch_draw_text(preview_x + 16.0f, preview_y + 298.0f, SWITCH_COLOR_TEXT_WHITE, 0.90f, name_buf);
 
-            
+
             if (!sel_entry->is_dir) {
                 char size_txt[64];
                 char size_buf[64];

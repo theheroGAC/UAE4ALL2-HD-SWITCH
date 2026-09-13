@@ -92,10 +92,9 @@ static inline void cp(char* source_name, char* dest_name)
 	char *buffer;
 	long lsize;
 	if (src && dst) {
-		fseek(src, 0, SEEK_END);   // non-portable
+		fseek(src, 0, SEEK_END);
 		lsize = ftell(src);
 		fseek(src, 0, SEEK_SET);
-		//rewind(src);
 		buffer = (char*) malloc (sizeof(char)*lsize);
 
 		fread(buffer, 1, lsize, src);
@@ -103,7 +102,7 @@ static inline void cp(char* source_name, char* dest_name)
 
 		fwrite(buffer, sizeof(char), lsize, dst);
 		fclose(dst);
-		
+
 		free(buffer);
 	}
 }
@@ -124,11 +123,11 @@ static inline void draw_savestatesMenu(int c)
 		write_text_inv(leftMargin,menuLine,text_str_exit);
 	else
 		write_text(leftMargin,menuLine,text_str_exit);
-	
+
 	menuLine++;
 	write_text(leftMargin,menuLine,text_str_separator);
 	menuLine++;
-	
+
 	write_text(leftMargin,menuLine,text_str_savestate);
 
 	if ((saveMenu_n_savestate==0)&&((c!=1)||(bb)))
@@ -160,7 +159,7 @@ static inline void draw_savestatesMenu(int c)
 		write_text_inv(tabstop1+10,menuLine,text_str_5);
 	else
 		write_text(tabstop1+10,menuLine,text_str_5);
-	
+
 	if ((saveMenu_n_savestate==6)&&((c!=1)||(bb)))
 		write_text_inv(tabstop1+12,menuLine,text_str_6);
 	else
@@ -185,7 +184,7 @@ static inline void draw_savestatesMenu(int c)
 		write_text_inv(tabstop1+20,menuLine,text_str_10);
 	else
 		write_text(tabstop1+20,menuLine,text_str_10);
-	
+
 	if ((saveMenu_n_savestate==11)&&((c!=1)||(bb)))
 		write_text_inv(tabstop1+23,menuLine,text_str_auto);
 	else
@@ -198,7 +197,6 @@ static inline void draw_savestatesMenu(int c)
 	int menuLineForThumb = menuLine;
 	if (!savestate_empty) {
 		if (thumbnail_image != NULL) {
-			//draw_image_pos(thumbnail_image, (320 - thumbnail_image->w) / 2 , menuLine * 7);
 		} else {
 			write_text(tabstop1,menuLine+9,"No preview found");
 		}
@@ -216,7 +214,7 @@ static inline void draw_savestatesMenu(int c)
 		write_text_inv(leftMargin,menuLine,text_str_loadmem);
 	else
 		write_text(leftMargin,menuLine,text_str_loadmem);
-	
+
 	if ((c==4)&&(bb))
 		write_text_inv(tabstop1+8,menuLine,text_str_importmem);
 	else
@@ -237,7 +235,7 @@ static inline void draw_savestatesMenu(int c)
 	menuLine++;
 	write_text(leftMargin,menuLine,text_str_separator);
 	menuLine++;
-	
+
 	if ((c==6)&&(bb))
 		write_text_inv(leftMargin,menuLine,text_str_deletemem);
 	else
@@ -265,9 +263,6 @@ static inline int key_saveMenu(int *cp)
 	int left=0, right=0, up=0, down=0, hit0=0, hit1=0;
 	int hit2=0, hit3=0, hit4=0, hit5=0;
 	SDL_Event event;
-	//delay ++;
-	//if (delay<3) return end;
-	//delay=0;
 
 	static int holdingUp=0;
 	static int holdingDown=0;
@@ -307,8 +302,7 @@ static inline int key_saveMenu(int *cp)
 			case SDLK_LEFT: left=1; break;
 			case SDLK_UP: up=1; break;
 			case SDLK_DOWN: down=1; break;
-			case SDLK_LCTRL: hit2=1; break; //allow user to quit menu completely at any time
-			//note SDLK_CTRL corresponds to ButtonSelect on Vita
+			case SDLK_LCTRL: hit2=1; break;
 #if defined(__PSP2__) || defined(__SWITCH__)
 			case SDLK_PAGEDOWN: hit0=1; break;
 			case SDLK_END: hit1=1; break;
@@ -342,35 +336,35 @@ static inline int key_saveMenu(int *cp)
 					break;
 			}
 		}
-		
+
 		if (left && !holdingLeft)
 		{
 			holdingLeft=1;
 			menu_last_press_time=now;
 		}
-		if (right && !holdingRight) 
+		if (right && !holdingRight)
 		{
 			holdingRight=1;
 			menu_last_press_time=now;
 		}
-		if (up && !holdingUp) 
+		if (up && !holdingUp)
 		{
 			holdingUp=1;
 			menu_last_press_time=now;
 		}
-		if (down && !holdingDown) 
+		if (down && !holdingDown)
 		{
 			holdingDown=1;
 			menu_last_press_time=now;
 		}
 
-		if (hit2) // does the user want to shut-down the whole menu?
+		if (hit2)
 		{
 			if (emulating)
 			{
-				saveMenu_case=SAVE_MENU_CASE_CANCEL; // quit this menu
+				saveMenu_case=SAVE_MENU_CASE_CANCEL;
 				end=1;
-				quit_pressed_in_submenu=1; //also change mainMenu state so that it automatically exits
+				quit_pressed_in_submenu=1;
 			}
 		}
 		if (hit1)
@@ -436,7 +430,7 @@ static inline int key_saveMenu(int *cp)
 			saveMenu_case=SAVE_MENU_CASE_IMPORT_MEM;
 			end=1;
 			}
-			break;			
+			break;
 			case 5:
 			if (hit0)
 			{
@@ -505,7 +499,7 @@ void show_error(const char *str)
 	text_draw_window(54/7,91/8,255/7,64/8,"--- ERROR ---");
 	write_text(12,14,str);
 	text_flip();
-	
+
 	SDL_Delay(1000);
 }
 
@@ -558,9 +552,6 @@ void make_savestate_filenames(char *save, char *thumb)
 	int i=0;
 	char *hd_name=NULL;
 #if defined(__PSP2__) || defined(__SWITCH__)
-	/* Per-game WHDLoad savestates: when a game context is active, states are
-	 * stored in SAVE_PREFIX/<game>/<game>-<slot>.asf instead of being shared
-	 * by the WHDLoad library directory. */
 	if (mainMenu_whdload_game[0] != '\0')
 	{
 		char game[128];
@@ -583,13 +574,11 @@ void make_savestate_filenames(char *save, char *thumb)
 		return;
 	}
 #endif
-	// savestate is named by boot unit
-	// use first floppy as filename, if empty, use boot hdf/hd dir
 	if (uae4all_image_file0[0]!='\0')
 	{
 		copy_state_path(save, uae4all_image_file0);
 	}
-	else 
+	else
 	{
 		if (mainMenu_bootHD == 2)
 		{
@@ -602,8 +591,8 @@ void make_savestate_filenames(char *save, char *thumb)
 			else if (uae4all_hard_file3[0]!='\0')
 				hd_name=uae4all_hard_file3;
 		} else if (mainMenu_bootHD == 1 && uae4all_hard_dir[0]!='\0')
-				hd_name=uae4all_hard_dir;				
-		if (hd_name!=NULL && hd_name[0]!='\0') 
+				hd_name=uae4all_hard_dir;
+		if (hd_name!=NULL && hd_name[0]!='\0')
 		{
 			int oneColonFound=0;
 			for (i = strlen(hd_name); i > 0; i--)
@@ -616,18 +605,18 @@ void make_savestate_filenames(char *save, char *thumb)
 				}
 				else if (hd_name[i] == ':' && oneColonFound)
 					break;
-			if (i > 0) 
+			if (i > 0)
 			{
 				copy_state_path(save, &hd_name[i+1]);
 				if (strlen(save) > 255 - 2)
 					save[255 - 2] = '\0';
-			} 
+			}
 			else
 			{
 				save[0]='\0';
 			}
-		} 
-	} //Still nothing? Use floppy numbers 2,3,4
+		}
+	}
 	if (save[0]=='\0')
 	{
 		if (uae4all_image_file1[0]!='\0')
@@ -640,39 +629,39 @@ void make_savestate_filenames(char *save, char *thumb)
 	switch(saveMenu_n_savestate)
 	{
 		case 1:
-			append_state_suffix(save,"-1.asf"); 
+			append_state_suffix(save,"-1.asf");
 			break;
 		case 2:
-			append_state_suffix(save,"-2.asf"); 
+			append_state_suffix(save,"-2.asf");
 			break;
 		case 3:
-			append_state_suffix(save,"-3.asf"); 
+			append_state_suffix(save,"-3.asf");
 			break;
 		case 4:
-			append_state_suffix(save,"-4.asf"); 
+			append_state_suffix(save,"-4.asf");
 			break;
 		case 5:
-			append_state_suffix(save,"-5.asf"); 
+			append_state_suffix(save,"-5.asf");
 			break;
 		case 6:
-			append_state_suffix(save,"-6.asf"); 
+			append_state_suffix(save,"-6.asf");
 			break;
 		case 7:
-			append_state_suffix(save,"-7.asf"); 
+			append_state_suffix(save,"-7.asf");
 			break;
 		case 8:
-			append_state_suffix(save,"-8.asf"); 
+			append_state_suffix(save,"-8.asf");
 			break;
 		case 9:
-			append_state_suffix(save,"-9.asf"); 
+			append_state_suffix(save,"-9.asf");
 			break;
 		case 10:
-			append_state_suffix(save,"-10.asf"); 
+			append_state_suffix(save,"-10.asf");
 			break;
 		case 11:
-			append_state_suffix(save,"-auto.asf"); 
+			append_state_suffix(save,"-auto.asf");
 			break;
-		default: 
+		default:
 			append_state_suffix(save,".asf");
 	}
 	char buffer[256];
@@ -739,7 +728,6 @@ void load_savestate_thumbnail() {
 }
 
 
-
 int run_menuSavestates()
 {
 	static int c=0;
@@ -751,7 +739,7 @@ int run_menuSavestates()
 		showWarning("Emulation has not started yet.");
 		return 0;
 	}
-	
+
 	make_savestate_filenames(savestate_filename,screenshot_filename);
 	load_savestate_thumbnail();
 
@@ -776,12 +764,10 @@ int run_menuSavestates()
 					if(run_menuLoad(path, MENU_LOAD_IMPORT_SAVE)) {
 						FILE *f=fopen(save_import_filename,"rb");
 						if (f) {
-							// import savestate
 							fclose(f);
 							remove(savestate_filename);
 							cp(save_import_filename,savestate_filename);
 
-							// import thumbnail if it exists
 							remove(screenshot_filename);
 							char thumb[255] = "";
 							stateFilenameToThumbFilename(save_import_filename,thumb);
@@ -875,7 +861,6 @@ int run_menuSavestates()
 							fclose(f);
 							remove(save_import_filename);
 
-							// delete thumbnail
 							char thumb[255] = "";
 							stateFilenameToThumbFilename(save_import_filename, thumb);
 							FILE *f2=fopen(thumb,"rb");
@@ -886,7 +871,7 @@ int run_menuSavestates()
 							showWarning("File deleted.");
 							load_savestate_thumbnail();
 						} else {
-							showWarning("Nothing to delete."); 
+							showWarning("Nothing to delete.");
 						}
 					}
 					saveMenu_case=-1;
@@ -912,8 +897,8 @@ int run_menuSavestates()
 				saveMenu_case=-1;
 				break;
 			}
-			case SAVE_MENU_CASE_EXIT:	
-			case SAVE_MENU_CASE_CANCEL:	
+			case SAVE_MENU_CASE_EXIT:
+			case SAVE_MENU_CASE_CANCEL:
 				saveMenu_case=1;
 				break;
 			default:

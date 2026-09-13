@@ -10,7 +10,7 @@
 
 #include <sys/stat.h>
 #include <unistd.h>
-#if defined(__PSP2__) // NOT __SWITCH__
+#if defined(__PSP2__)
 #include "psp2-dirent.h"
 #else
 #include <dirent.h>
@@ -25,8 +25,7 @@
 #include "gp2x.h"
 #include <SDL_ttf.h>
 
-/* PocketUAE config file. Used for parsing PocketUAE-like options. */
-#include "cfgfile.h" 
+#include "cfgfile.h"
 
 #if defined(__PSP2__) || defined(__SWITCH__)
 #define SDL_PollEvent PSP2_PollEvent
@@ -48,7 +47,7 @@ int current_hdf = 0;
 extern int quit_pressed_in_submenu;
 extern int emulating;
 
-enum { 
+enum {
 	MENUDISK_RETURNMAIN = 0,
 	MENUDISK_CHIPMEM,
 	MENUDISK_SLOWMEM,
@@ -66,7 +65,7 @@ extern char currentDir[300];
 static void draw_memDiskMenu(int c)
 {
 	static int b=0;
-	int bb=(b%6)/3;		/* Inverted/normal selection drawing */
+	int bb=(b%6)/3;
 
 	int leftMargin=3;
 	int tabstop1 = 17;
@@ -78,7 +77,7 @@ static void draw_memDiskMenu(int c)
 	int tabstop7 = 29;
 	int tabstop8 = 31;
 	int tabstop9 = 33;
-	
+
 	int menuLine = 3;
 	SDL_Rect r;
 	extern SDL_Surface *text_screen;
@@ -87,7 +86,7 @@ static void draw_memDiskMenu(int c)
 
 	text_draw_background();
 	text_draw_window(2,2,40,30,text_str_memdisk_title);
-	
+
 	if ((menuMemDisk == 0)&&(c==MENUDISK_RETURNMAIN)&&(bb))
 		write_text_inv(3, menuLine, "Return to main menu");
 	else
@@ -96,13 +95,13 @@ static void draw_memDiskMenu(int c)
 	menuLine++;
 	write_text(3, menuLine, text_str_memdisk_separator);
 	menuLine++;
-	
+
 	write_text(leftMargin,menuLine,"Chip Memory");
 	if ((mainMenu_chipMemory==0)&&((c!=MENUDISK_CHIPMEM)||(!bb)))
 		write_text_inv(tabstop3 + 4,menuLine,text_str_512K);
 	else
 		write_text(tabstop3 + 4,menuLine,text_str_512K);
-	
+
 	if ((mainMenu_chipMemory==1)&&((c!=MENUDISK_CHIPMEM)||(!bb)))
 		write_text_inv(tabstop3 + 9,menuLine,text_str_1M);
 	else
@@ -117,24 +116,24 @@ static void draw_memDiskMenu(int c)
 		write_text_inv(tabstop3 + 15,menuLine,text_str_4M);
 	else
 		write_text(tabstop3 + 15,menuLine,text_str_4M);
-	
+
 	if ((mainMenu_chipMemory==4)&&((c!=MENUDISK_CHIPMEM)||(!bb)))
 		write_text_inv(tabstop3 + 18,menuLine,text_str_8M);
 	else
 		write_text(tabstop3 + 18,menuLine,text_str_8M);
-	
+
 	menuLine+=2;
 	write_text(leftMargin,menuLine,"Slow Memory");
 	if ((mainMenu_slowMemory==0)&&((c!=MENUDISK_SLOWMEM)||(!bb)))
 		write_text_inv(tabstop3,menuLine,text_str_off);
 	else
 		write_text(tabstop3,menuLine,text_str_off);
-	
+
 	if ((mainMenu_slowMemory==1)&&((c!=MENUDISK_SLOWMEM)||(!bb)))
 		write_text_inv(tabstop3 + 4,menuLine,text_str_512K);
 	else
 		write_text(tabstop3 + 4,menuLine,text_str_512K);
-	
+
 	if ((mainMenu_slowMemory==2)&&((c!=MENUDISK_SLOWMEM)||(!bb)))
 		write_text_inv(tabstop3 + 9,menuLine,text_str_1M);
 	else
@@ -144,7 +143,7 @@ static void draw_memDiskMenu(int c)
 		write_text_inv(tabstop3 + 12,menuLine,text_str_1_5M);
 	else
 		write_text(tabstop3 + 12,menuLine,text_str_1_5M);
-	
+
 	menuLine+=2;
 	write_text(leftMargin,menuLine,"Fast Memory");
 	if ((mainMenu_fastMemory==0)&&((c!=MENUDISK_FASTMEM)||(!bb)))
@@ -156,7 +155,7 @@ static void draw_memDiskMenu(int c)
 		write_text_inv(tabstop3 + 9,menuLine,text_str_1M);
 	else
 		write_text(tabstop3 + 9,menuLine,text_str_1M);
-	
+
 	if ((mainMenu_fastMemory==2)&&((c!=MENUDISK_FASTMEM)||(!bb)))
 		write_text_inv(tabstop3 + 12,menuLine,text_str_2M);
 	else
@@ -175,7 +174,7 @@ static void draw_memDiskMenu(int c)
 	menuLine++;
 	write_text(3, menuLine, text_str_memdisk_separator);
 	menuLine++;
-	
+
 	write_text(leftMargin,menuLine,"Boot HD");
 	if ((mainMenu_bootHD==0)&&((c!=MENUDISK_BOOTHD)||(!bb)))
 		write_text_inv(tabstop3,menuLine,text_str_off);
@@ -186,18 +185,18 @@ static void draw_memDiskMenu(int c)
 		write_text_inv(tabstop3 + 7,menuLine,"Dir");
 	else
 		write_text(tabstop3 + 7,menuLine,"Dir");
-	
+
 	if ((mainMenu_bootHD==2)&&((c!=MENUDISK_BOOTHD)||(!bb)))
 		write_text_inv(tabstop3 + 12,menuLine,"File1");
 	else
 		write_text(tabstop3 + 12,menuLine,"File1");
-	
+
 	menuLine+=2;
 
 	{
 		char str[256];
 		int i;
-		
+
 		strcpy(str, "HD Dir");
 		if ((c==MENUDISK_HDDIR)&&(bb))
 			write_text_inv(leftMargin + 2,menuLine,str);
@@ -213,9 +212,9 @@ static void draw_memDiskMenu(int c)
 			write_text(tabstop1,menuLine,str);
 		} else
 			write_text(tabstop1,menuLine,"");
-		
+
 		menuLine += 2;
-		
+
 		strcpy(str, "HD File1");
 		if ((c==MENUDISK_HDFILE)&&(bb)&&current_hdf==0)
 			write_text_inv(leftMargin + 2,menuLine,str);
@@ -267,7 +266,7 @@ static void draw_memDiskMenu(int c)
 			write_text(tabstop1,menuLine,str);
 		} else
 			write_text(tabstop1,menuLine,"");
-			
+
 				menuLine += 2;
 
 		strcpy(str, "HD File4");
@@ -289,16 +288,16 @@ static void draw_memDiskMenu(int c)
 	}
 
 	menuLine += 2;
-	
+
 	write_text(3, menuLine, "(Press triangle to eject HD)");
-	
+
 	menuLine += 2;
-		
+
 	if ((c==MENUDISK_SAVEHDCONF)&&(bb))
 		write_text_inv(3, menuLine, "Save Config for current HD");
 	else
 		write_text(3, menuLine, "Save Config for current HD");
-	
+
 	menuLine++;
 	write_text(3, menuLine, text_str_memdisk_separator);
 	menuLine++;
@@ -384,10 +383,9 @@ static int key_memDiskMenu(int *c)
 				case SDLK_DOWN: down=1; break;
 				case SDLK_PAGEDOWN: hit0=1; break;
 				case SDLK_END: hit1=1; break;
-				case SDLK_DELETE: case SDLK_BACKSPACE: 
+				case SDLK_DELETE: case SDLK_BACKSPACE:
 				case SDLK_ESCAPE: case SDLK_PAGEUP: del=1; break;
-				case SDLK_LCTRL: hit2=1; break; //allow user to quit menu completely at any time
-				//note SDLK_LCTRL corresponds to ButtonSelect on Vita
+				case SDLK_LCTRL: hit2=1; break;
 #if !defined(__PSP2__) && !defined(__SWITCH__)
 				case SDLK_HOME: hit0=1; break;
 				case SDLK_LALT: hit1=1; break;
@@ -398,7 +396,7 @@ static int key_memDiskMenu(int *c)
 					break;
 			}
 		}
-		
+
 		if (event.type == SDL_KEYUP)
 		{
 			switch(event.key.keysym.sym)
@@ -419,36 +417,36 @@ static int key_memDiskMenu(int *c)
 					break;
 			}
 		}
-		
+
 		if (left && !holdingLeft)
 		{
 			holdingLeft=1;
 			menu_last_press_time=now;
 		}
-		if (right && !holdingRight) 
+		if (right && !holdingRight)
 		{
 			holdingRight=1;
 			menu_last_press_time=now;
 		}
-		if (up && !holdingUp) 
+		if (up && !holdingUp)
 		{
 			holdingUp=1;
 			menu_last_press_time=now;
 		}
-		if (down && !holdingDown) 
+		if (down && !holdingDown)
 		{
 			holdingDown=1;
 			menu_last_press_time=now;
 		}
-	
-		if (hit2) //Does the user want to cancel the menu completely?
+
+		if (hit2)
 		{
 			if (emulating)
 			{
-				end = -1; 
-				quit_pressed_in_submenu = 1; //Tell the mainMenu to cancel, too
+				end = -1;
+				quit_pressed_in_submenu = 1;
 			}
-		}	
+		}
 		else if (hit1)
 		{
 			end=-1;
@@ -456,7 +454,7 @@ static int key_memDiskMenu(int *c)
 		else if (up)
 		{
 			if (menuMemDisk==MENUDISK_RETURNMAIN) menuMemDisk=MENUDISK_END - 1;
-			else if (menuMemDisk==MENUDISK_HDFILE && current_hdf>0) 
+			else if (menuMemDisk==MENUDISK_HDFILE && current_hdf>0)
 					current_hdf--;
 			else if (menuMemDisk==MENUDISK_SAVEHDCONF)
 			{
@@ -469,7 +467,7 @@ static int key_memDiskMenu(int *c)
 		else if (down)
 		{
 			if (menuMemDisk==MENUDISK_END - 1) menuMemDisk=MENUDISK_RETURNMAIN;
-			else if (menuMemDisk==MENUDISK_HDFILE && current_hdf<3) 
+			else if (menuMemDisk==MENUDISK_HDFILE && current_hdf<3)
 					current_hdf++;
 			else if (menuMemDisk==MENUDISK_HDDIR)
 			{
@@ -477,7 +475,7 @@ static int key_memDiskMenu(int *c)
 				menuMemDisk=MENUDISK_HDFILE;
 			}
 			else
-				menuMemDisk++;	
+				menuMemDisk++;
 		}
 		switch (menuMemDisk)
 		{
@@ -530,8 +528,7 @@ static int key_memDiskMenu(int *c)
 						else
 							mainMenu_fastMemory = 4;
 					}
-				
-					/* Fast memory > 0 => max 2MB chip memory */
+
 					if ((mainMenu_fastMemory > 0) && (mainMenu_chipMemory > 2))
 						mainMenu_chipMemory = 2;
 					UpdateMemorySettings();
@@ -610,9 +607,9 @@ static int key_memDiskMenu(int *c)
 				}
 		}
 	}
-	
+
 	*c = menuMemDisk;
-	
+
 	return end;
 }
 
@@ -650,19 +647,19 @@ static void unraise_memDiskMenu()
 int run_menuMemDisk()
 {
 	SDL_Event event;
-	
+
 	SDL_Delay(150);
 	while(SDL_PollEvent(&event))
 		SDL_Delay(10);
 	int end=0,c=0;
 	raise_memDiskMenu();
-	
+
 	while(!end)
 	{
 		draw_memDiskMenu(c);
 		end = key_memDiskMenu(&c);
 	}
-	
+
 	unraise_memDiskMenu();
 	return end;
 }

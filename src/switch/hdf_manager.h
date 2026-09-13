@@ -35,4 +35,4 @@ int hdf_create_blank(const char *path, unsigned long megabytes, char *err, size_
 }
 #endif
 
-#endif // HDF_MANAGER_H
+#endif

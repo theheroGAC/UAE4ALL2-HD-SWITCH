@@ -31,6 +31,7 @@ extern void mapback_custom_controls();
 extern int mainMenu_chipMemory;
 extern int mainMenu_slowMemory;
 extern int mainMenu_fastMemory;
+extern int mainMenu_rtgMemory;
 extern int mainMenu_bootHD;
 extern int mainMenu_filesysUnits;
 extern int mainMenu_drives;
@@ -194,6 +195,6 @@ extern int mainMenu_singleJoycons;
 extern int mainMenu_numPlayers;
 #endif
 
-#endif // defined(__PSP2__) || defined(__SWITCH__)
-#endif // _MENU_CONFIG_CPP
-#endif // _MENU_CONFIG_H
+#endif
+#endif
+#endif

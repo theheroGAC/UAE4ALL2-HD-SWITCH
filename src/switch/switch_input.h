@@ -46,4 +46,4 @@ void exit_safely(int quit_via_home);
 }
 #endif
 
-#endif // SWITCH_INPUT_H
+#endif

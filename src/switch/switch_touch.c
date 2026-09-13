@@ -205,7 +205,7 @@ static void preprocessFingerUp(SDL_Event *event) {
 static void preprocessFingerMotion(SDL_Event *event) {
 	if (vkbd_mode)
 		return;
-	
+
 	SDL_TouchID port = event->tfinger.touchId;
 	SDL_FingerID id = event->tfinger.fingerId;
 

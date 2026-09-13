@@ -21,7 +21,7 @@ SDLKey getKey(Uint8 button) {
 		case PAD_RIGHT:
 		case LSTICK_RIGHT:
 		return SDLK_RIGHT;
-	
+
 		case PAD_LEFT:
 		case LSTICK_LEFT:
 		return SDLK_LEFT;
@@ -63,12 +63,12 @@ SDLKey getKey(Uint8 button) {
 		default:
 		break;
 	}
-	
+
 	return 0;
 }
 
 int switch_poll_event(SDL_Event *event) {
-	
+
 	int ret = SDL_PollEvent(event);
 
 	if (event != NULL && event->type == SDL_QUIT)
@@ -77,7 +77,7 @@ int switch_poll_event(SDL_Event *event) {
 	if(event != NULL && inside_menu) {
 
 		switch (event->type) {
-			
+
 			case SDL_JOYAXISMOTION:
 			break;
 
@@ -88,7 +88,7 @@ int switch_poll_event(SDL_Event *event) {
 					event->key.keysym.sym = getKey(event->jbutton.button);
 				}
 				break;
-			 
+
 			case SDL_JOYBUTTONUP:
 				if (event->jbutton.which == 0 || (singleJoycons && event->jbutton.which == 1))
 				{
@@ -101,6 +101,6 @@ int switch_poll_event(SDL_Event *event) {
 				break;
 		 }
 	 }
-	 
+
 	 return ret;
 }

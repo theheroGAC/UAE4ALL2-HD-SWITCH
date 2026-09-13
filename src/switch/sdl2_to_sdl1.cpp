@@ -433,6 +433,52 @@ static const char *s_lottes_fs =
 "    gl_FragColor = vec4(ToSrgb(col), 1.0);\n"
 "}\n";
 
+static GLuint s_crisis_prog = 0;
+static GLint s_crisis_u_tex = -1;
+static GLint s_crisis_u_tex_size = -1;
+static GLint s_crisis_u_in_size = -1;
+static GLint s_crisis_u_src_off = -1;
+static GLint s_crisis_u_out_size = -1;
+static GLint s_crisis_a_pos = -1;
+static GLint s_crisis_a_texcoord = -1;
+
+static const char *s_crisis_fs =
+"precision mediump float;\n"
+"uniform sampler2D s_texture;\n"
+"uniform vec2 u_texture_size;\n"
+"uniform vec2 u_input_size;\n"
+"uniform vec2 u_src_offset;\n"
+"uniform vec2 u_output_size;\n"
+"varying vec2 v_texcoord;\n"
+"vec2 Warp(vec2 pos) {\n"
+"    pos = pos * 2.0 - 1.0;\n"
+"    float r2 = dot(pos, pos);\n"
+"    pos *= 1.0 + vec2(0.035, 0.045) * r2;\n"
+"    return pos * 0.5 + 0.5;\n"
+"}\n"
+"vec3 SampleCRT(vec2 uv, float shift) {\n"
+"    float px = 1.0 / u_texture_size.x;\n"
+"    float left = texture2D(s_texture, uv - vec2(shift * px, 0.0)).r;\n"
+"    float mid = texture2D(s_texture, uv).g;\n"
+"    float right = texture2D(s_texture, uv + vec2(shift * px, 0.0)).b;\n"
+"    return vec3(left, mid, right);\n"
+"}\n"
+"void main() {\n"
+"    vec2 pos = Warp(v_texcoord);\n"
+"    if (pos.x < 0.0 || pos.x > 1.0 || pos.y < 0.0 || pos.y > 1.0) {\n"
+"        gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);\n"
+"        return;\n"
+"    }\n"
+"    vec2 texel = (u_src_offset + pos * u_input_size + vec2(0.5, 0.5)) / u_texture_size;\n"
+"    vec3 color = SampleCRT(texel, 0.75);\n"
+"    float scan = 0.80 + 0.20 * (0.5 + 0.5 * cos(pos.y * u_input_size.y * 3.14159265));\n"
+"    float grille = 0.94 + 0.06 * (0.5 + 0.5 * sin(gl_FragCoord.x * 3.14159265));\n"
+"    vec2 curve = v_texcoord * 2.0 - 1.0;\n"
+"    float vignette = 1.0 - 0.18 * dot(curve, curve);\n"
+"    color *= scan * grille * max(0.72, vignette);\n"
+"    gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);\n"
+"}\n";
+
 static bool switch_init_lottes_gl(void) {
 	if (s_lottes_prog != 0) return true;
 	GLuint vs = glCreateShader(GL_VERTEX_SHADER);
@@ -475,8 +521,58 @@ static bool switch_init_lottes_gl(void) {
 	return true;
 }
 
-static void switch_render_lottes_gl(SDL_Surface *surface, const SDL_Rect *src_rect, const SDL_Rect *dst_rect, int sw, int sh) {
-	if (!surface || !surface->pixels || !switch_init_lottes_gl()) return;
+static bool switch_init_crisis_gl(void) {
+	if (s_crisis_prog != 0) return true;
+	GLuint vs = glCreateShader(GL_VERTEX_SHADER);
+	glShaderSource(vs, 1, &s_lottes_vs, NULL);
+	glCompileShader(vs);
+	GLint ok = 0;
+	glGetShaderiv(vs, GL_COMPILE_STATUS, &ok);
+	if (!ok) {
+		glDeleteShader(vs);
+		return false;
+	}
+	GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
+	glShaderSource(fs, 1, &s_crisis_fs, NULL);
+	glCompileShader(fs);
+	glGetShaderiv(fs, GL_COMPILE_STATUS, &ok);
+	if (!ok) {
+		glDeleteShader(vs);
+		glDeleteShader(fs);
+		return false;
+	}
+	s_crisis_prog = glCreateProgram();
+	glAttachShader(s_crisis_prog, vs);
+	glAttachShader(s_crisis_prog, fs);
+	glLinkProgram(s_crisis_prog);
+	glDeleteShader(vs);
+	glDeleteShader(fs);
+	glGetProgramiv(s_crisis_prog, GL_LINK_STATUS, &ok);
+	if (!ok) {
+		glDeleteProgram(s_crisis_prog);
+		s_crisis_prog = 0;
+		return false;
+	}
+	s_crisis_u_tex = glGetUniformLocation(s_crisis_prog, "s_texture");
+	s_crisis_u_tex_size = glGetUniformLocation(s_crisis_prog, "u_texture_size");
+	s_crisis_u_in_size = glGetUniformLocation(s_crisis_prog, "u_input_size");
+	s_crisis_u_src_off = glGetUniformLocation(s_crisis_prog, "u_src_offset");
+	s_crisis_u_out_size = glGetUniformLocation(s_crisis_prog, "u_output_size");
+	s_crisis_a_pos = glGetAttribLocation(s_crisis_prog, "a_pos");
+	s_crisis_a_texcoord = glGetAttribLocation(s_crisis_prog, "a_texcoord");
+	return true;
+}
+
+static void switch_render_lottes_gl(SDL_Surface *surface, const SDL_Rect *src_rect, const SDL_Rect *dst_rect, int sw, int sh, int crisis) {
+	if (!surface || !surface->pixels || !(crisis ? switch_init_crisis_gl() : switch_init_lottes_gl())) return;
+	GLuint crt_prog = crisis ? s_crisis_prog : s_lottes_prog;
+	GLint crt_u_tex = crisis ? s_crisis_u_tex : s_u_tex;
+	GLint crt_u_tex_size = crisis ? s_crisis_u_tex_size : s_u_tex_size;
+	GLint crt_u_in_size = crisis ? s_crisis_u_in_size : s_u_in_size;
+	GLint crt_u_src_off = crisis ? s_crisis_u_src_off : s_u_src_off;
+	GLint crt_u_out_size = crisis ? s_crisis_u_out_size : s_u_out_size;
+	GLint crt_a_pos = crisis ? s_crisis_a_pos : s_a_pos;
+	GLint crt_a_texcoord = crisis ? s_crisis_a_texcoord : s_a_texcoord;
 
 	GLint prev_prog = 0;
 	glGetIntegerv(GL_CURRENT_PROGRAM, &prev_prog);
@@ -533,15 +629,15 @@ static void switch_render_lottes_gl(SDL_Surface *surface, const SDL_Rect *src_re
 	glClear(GL_COLOR_BUFFER_BIT);
 
 	glViewport(vp_x, vp_y, vp_w, vp_h);
-	glUseProgram(s_lottes_prog);
+	glUseProgram(crt_prog);
 
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, s_lottes_tex);
-	glUniform1i(s_u_tex, 0);
-	glUniform2f(s_u_tex_size, (float)surface->w, (float)surface->h);
-	glUniform2f(s_u_in_size, (float)src_rect->w, (float)src_rect->h);
-	glUniform2f(s_u_src_off, (float)src_rect->x, (float)src_rect->y);
-	glUniform2f(s_u_out_size, (float)vp_w, (float)vp_h);
+	glUniform1i(crt_u_tex, 0);
+	glUniform2f(crt_u_tex_size, (float)surface->w, (float)surface->h);
+	glUniform2f(crt_u_in_size, (float)src_rect->w, (float)src_rect->h);
+	glUniform2f(crt_u_src_off, (float)src_rect->x, (float)src_rect->y);
+	glUniform2f(crt_u_out_size, (float)vp_w, (float)vp_h);
 
 	float quad_data[16] = {
 		-1.0f, -1.0f,  0.0f, 1.0f,
@@ -551,19 +647,19 @@ static void switch_render_lottes_gl(SDL_Surface *surface, const SDL_Rect *src_re
 	};
 
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
-	if (s_a_pos >= 0) {
-		glEnableVertexAttribArray((GLuint)s_a_pos);
-		glVertexAttribPointer((GLuint)s_a_pos, 2, GL_FLOAT, GL_FALSE, 4 * (GLsizei)sizeof(float), &quad_data[0]);
+	if (crt_a_pos >= 0) {
+		glEnableVertexAttribArray((GLuint)crt_a_pos);
+		glVertexAttribPointer((GLuint)crt_a_pos, 2, GL_FLOAT, GL_FALSE, 4 * (GLsizei)sizeof(float), &quad_data[0]);
 	}
-	if (s_a_texcoord >= 0) {
-		glEnableVertexAttribArray((GLuint)s_a_texcoord);
-		glVertexAttribPointer((GLuint)s_a_texcoord, 2, GL_FLOAT, GL_FALSE, 4 * (GLsizei)sizeof(float), &quad_data[2]);
+	if (crt_a_texcoord >= 0) {
+		glEnableVertexAttribArray((GLuint)crt_a_texcoord);
+		glVertexAttribPointer((GLuint)crt_a_texcoord, 2, GL_FLOAT, GL_FALSE, 4 * (GLsizei)sizeof(float), &quad_data[2]);
 	}
 
 	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
-	if (s_a_pos >= 0 && s_a_pos > 1) glDisableVertexAttribArray((GLuint)s_a_pos);
-	if (s_a_texcoord >= 0 && s_a_texcoord > 1) glDisableVertexAttribArray((GLuint)s_a_texcoord);
+	if (crt_a_pos >= 0 && crt_a_pos > 1) glDisableVertexAttribArray((GLuint)crt_a_pos);
+	if (crt_a_texcoord >= 0 && crt_a_texcoord > 1) glDisableVertexAttribArray((GLuint)crt_a_texcoord);
 
 	glEnableVertexAttribArray(0);
 	glEnableVertexAttribArray(1);
@@ -901,14 +997,14 @@ void SDL_Flip(SDL_Surface *surface) {
 
 		SDL_Rect dst_rect = { x_offset + eff_off_x, y_offset + eff_off_y, scaled_width, scaled_height };
 
-		if (!displaying_menu && mainMenu_shader == 4) {
-			switch_render_lottes_gl(surface, &src_rect, &dst_rect, display_width, display_height);
+		if (!displaying_menu && (mainMenu_shader == 4 || mainMenu_shader == 9)) {
+			switch_render_lottes_gl(surface, &src_rect, &dst_rect, display_width, display_height, mainMenu_shader == 9);
 			switch_render_osd_overlays(renderer, display_width, display_height);
 			SDL_RenderPresent(renderer);
 		} else if (mainMenu_shader == 1 || mainMenu_shader == 5 || mainMenu_shader == 6 || displaying_menu) {
 			SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
 			texture = SDL_CreateTextureFromSurface(renderer, surface);
-			
+
 			SDL_SetRenderTarget(renderer, prescaled);
 			SDL_Rect dst_rect_prescale = { 0, 0, prescaled_width, prescaled_height };
 			SDL_RenderCopy(renderer, texture, displaying_menu ? NULL : &src_rect, &dst_rect_prescale);

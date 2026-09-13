@@ -24,7 +24,7 @@
 #include "sdl2_to_sdl1.h"
 #endif
 
-#if defined(__PSP2__) // NOT __SWITCH__
+#if defined(__PSP2__)
 #include "psp2_shader.h"
 #include "vita2d_fbo/includes/vita2d.h"
 #include "uae_gui_vita.h"
@@ -36,7 +36,7 @@ typedef struct private_hwdata {
 	vita2d_texture *texture;
 	SDL_Rect dst;
 } private_hwdata;
-#endif //PRIVATE_HWDATA
+#endif
 #endif
 
 extern int mainMenu_background;
@@ -188,9 +188,9 @@ for(y = 0; y < sizeY; y++)
    {
      unsigned short v = p[x];
 
-     *b++ = ((v & systemRedMask  ) >> systemRedShift  ) << 3; // R
-     *b++ = ((v & systemGreenMask) >> systemGreenShift) << 2; // G
-     *b++ = ((v & systemBlueMask ) >> systemBlueShift ) << 3; // B
+     *b++ = ((v & systemRedMask  ) >> systemRedShift  ) << 3;
+     *b++ = ((v & systemGreenMask) >> systemGreenShift) << 2;
+     *b++ = ((v & systemBlueMask ) >> systemBlueShift ) << 3;
    }
    p += surface->pitch / 2;
    png_write_row(png_ptr,writeBuffer);
@@ -237,7 +237,7 @@ void CreateScreenshot(int code)
 		w=32;
 		h=32;
   }
-	
+
 	current_screenshot = SDL_CreateRGBSurface(SDL_SWSURFACE,w,h,prSDLScreen->format->BitsPerPixel,prSDLScreen->format->Rmask,prSDLScreen->format->Gmask,prSDLScreen->format->Bmask,prSDLScreen->format->Amask);
 #ifdef __PSP2__
   if (code == SCREENSHOT && vita_screenshot_request) {
@@ -262,7 +262,6 @@ void CreateScreenshot(int code)
 
 int save_thumb(int code,char *path)
 {
-//	CreateScreenshot(code);
 	int ret = 0;
 	if(current_screenshot != NULL)
 	  ret = save_png(current_screenshot, path);
@@ -367,7 +366,7 @@ else
 	int h=(text_screen->h+text_background->h-1);
 	if (menu_moving)
 	{
-		if (pos_x>=0) 
+		if (pos_x>=0)
 			pos_x=-640;
 		else
 			pos_x++;
@@ -470,7 +469,6 @@ void init_kickstart()
 void init_text(int splash)
 {
 #if defined(__PSP2__) || defined(__SWITCH__)
-	//Display menu always in 320*240 on Vita
 	if(prSDLScreen != NULL) {
 #ifdef __PSP2__
 		vita2d_wait_rendering_done();
@@ -491,12 +489,9 @@ void init_text(int splash)
 	SDL_SetVideoModeScaling(x, y, sw, sh);
 	printf("init_text: SDL_SetVideoModeScaling(%i, %i, %i, %i)\n", x, y, (int)sw, (int)sh);
 
-	//This requires a recent SDL-Vita branch SDL12 for example
-   //https://github.com/rsn8887/SDL-Vita/tree/SDL12
-   //to compile
 	SDL_SetVideoModeBilinear(1);
 
-#ifdef __PSP2__ // NOT __SWITCH__
+#ifdef __PSP2__
 	if(shader != NULL) {
         delete(shader);
         shader = NULL;
@@ -592,7 +587,6 @@ void init_text(int splash)
 		dest.h=24;
 		for (int y=0;y<10;y++)
 		{
-			//text_window_background
 			dest.y=24*y;
 			for(int x=0;x<15;x++)
 			{
@@ -728,7 +722,7 @@ void write_text_pos(int x, int y, const char * str)
 		  src.h = 8;
 
 		  dest.x = x + i * 7;
-		  dest.y = y; //10;
+		  dest.y = y;
 		  dest.w = 7;
 		  dest.h = 8;
 		  switch (mainMenu_font) {
@@ -755,9 +749,9 @@ void write_text_pos(int x, int y, const char * str)
 		  dest.x = x + i * 7;
 
 		  if (c == -2)
-			dest.y = y /*10*/ + 7;
+			dest.y = y  + 7;
 		  else if (c == -3)
-			dest.y = y /*10*/ + 3;
+			dest.y = y  + 3;
 		  dest.w = 7;
 		  dest.h = 1;
 
@@ -772,7 +766,7 @@ void write_text_inv(int x, int y, const char * str)
 {
   SDL_Rect dest;
   dest.x = (text_screen->w - 320) / 2 + (x * 7) -2 ;
-  dest.y = (y * 7) /*10*/ - 2;
+  dest.y = (y * 7)  - 2;
   dest.w = (strlen(str) * 7) + 4;
   dest.h = 12;
 
@@ -806,7 +800,7 @@ void write_num_inv(int x, int y, int v)
 		break;
 
   dest.x = (x * 7) -2 ;
-  dest.y = (y * 8) /*10*/ - 2;
+  dest.y = (y * 8)  - 2;
   dest.w = (l * 7) + 4;
   dest.h = 12;
 

@@ -72,17 +72,17 @@ unsigned long gp2x_joystick_read(int allow_usb_joy)
 {
 	unsigned long value = 0;
 	char u,d,l,r,ul,ur,dl,dr;
-	
+
 	SDL_JoystickUpdate();
 	r  = (SDL_JoystickGetAxis(uae4all_joy0, 0) > 0) ? 1 : 0;
 	l  = (SDL_JoystickGetAxis(uae4all_joy0, 0) < 0) ? 1 : 0;
 	u  = (SDL_JoystickGetAxis(uae4all_joy0, 1) < 0) ? 1 : 0;
 	d  = (SDL_JoystickGetAxis(uae4all_joy0, 1) > 0) ? 1 : 0;
-	ul = (u && l) ? 1 : 0; 
+	ul = (u && l) ? 1 : 0;
 	ur = (u && r) ? 1 : 0;
 	dl = (d && l) ? 1 : 0;
 	dr = (d && r) ? 1 : 0;
-	
+
 	if (r)  value |= GP2X_RIGHT;
 	if (l)  value |= GP2X_LEFT;
 	if (u)  value |= GP2X_UP;
@@ -91,7 +91,7 @@ unsigned long gp2x_joystick_read(int allow_usb_joy)
 	if (ur) value |= GP2X_UP_RIGHT;
 	if (dl) value |= GP2X_DOWN_LEFT;
 	if (dr) value |= GP2X_DOWN_RIGHT;
-	
+
 	if (SDL_JoystickGetButton(uae4all_joy0, GP2X_BUTTON_A))	     value |= GP2X_A;
 	if (SDL_JoystickGetButton(uae4all_joy0, GP2X_BUTTON_X))	     value |= GP2X_X;
 	if (SDL_JoystickGetButton(uae4all_joy0, GP2X_BUTTON_Y))	     value |= GP2X_Y;
@@ -111,9 +111,9 @@ void gp2x_init(int argc, char **argv)
 #ifndef AROS
 	mixerdev = open("/dev/mixer", O_RDWR);
 #endif
-	
+
 	SDL_ShowCursor(SDL_DISABLE);
-#if defined(__PSP2__) // NOT __SWITCH__
+#if defined(__PSP2__)
 	strcpy(launchDir, "ux0:/data/uae4all");
 	strcpy(currentDir, "ux0:/data/uae4all");
 #elif defined(__SWITCH__)
@@ -132,8 +132,7 @@ void gp2x_close( void )
 
 int is_overridden_button(int button)
 {
-	// TODO: load from file
-	return button == GP2X_BUTTON_L || button == GP2X_BUTTON_R || 
+	return button == GP2X_BUTTON_L || button == GP2X_BUTTON_R ||
 		   button == GP2X_BUTTON_A || button == GP2X_BUTTON_B ||
 		   button == GP2X_BUTTON_X || button == GP2X_BUTTON_Y;
 }
@@ -143,7 +142,6 @@ int get_key_for_button(int button)
 	return 0;
 }
 
-// apply the remapped button keystroke
 void handle_remapped_button_down(int button)
 {
 	int key = get_key_for_button(button);
@@ -175,7 +173,6 @@ void switch_to_hw_sdl(int first_time)
 	usleep(100*1000);
 #endif
 
-	// reinit video
 	graphics_init();
 	update_display();
 }

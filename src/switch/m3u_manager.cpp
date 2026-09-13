@@ -66,7 +66,7 @@ int m3u_load(const char *filepath)
         full_path[sizeof(full_path) - 1] = '\0';
 
         strncpy(g_m3u.disk_paths[g_m3u.disk_count], full_path, sizeof(g_m3u.disk_paths[0]) - 1);
-        
+
         const char *base = strrchr(full_path, '/');
         if (!base) base = strrchr(full_path, '\\');
         base = base ? (base + 1) : full_path;

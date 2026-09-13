@@ -46,13 +46,14 @@ static const char *switch_shader_label(int s) {
         case 6: return "Scanlines (50%)";
         case 7: return "Scale2x";
         case 8: return "Pixel-Perfect Integer";
+        case 9: return "Classic CRT";
         default: return "None";
     }
 }
 static int switch_shader_cycle(int s, int dir) {
     int res = s + dir;
-    if (res < 0) res = 8;
-    if (res > 8) res = 0;
+    if (res < 0) res = 9;
+    if (res > 9) res = 0;
     return res;
 }
 #include <sys/socket.h>
@@ -123,13 +124,6 @@ static void switch_ftp_refresh_ip(void) {
     }
 }
 
-/*
- * The FTP root is the Switch SD card.  Older versions exposed the process
- * working directory as "/" and added a fake "sdmc" entry to LIST output.
- * That made clients which issue CWD / after login operate on a different
- * root than the one shown by the server.  Keep /sdmc as a compatibility
- * alias while keeping "/" mapped to the application's working directory.
- */
 static void ftp_normalize_virtual_path(const char *v_cwd, const char *arg, char *out, size_t out_sz) {
     char combined[768];
     char normalized[768] = "/";
@@ -290,7 +284,6 @@ static void* switch_ftp_client_session(void *arg) {
         bool have_line = false;
         bool disconnected = false;
 
-        /* TCP may split or combine commands; process exactly one line at a time. */
         while (!have_line) {
             char *newline = (char*)memchr(pending, '\n', pending_len);
             if (newline) {
@@ -1052,6 +1045,7 @@ extern int mainMenu_chipset;
 extern int mainMenu_chipMemory;
 extern int mainMenu_slowMemory;
 extern int mainMenu_fastMemory;
+extern int mainMenu_rtgMemory;
 extern int kickstart;
 extern int bReloadKickstart;
 extern int uae4all_init_rom(const char *romfile);
@@ -2682,7 +2676,7 @@ void switch_view_whdload(SwitchInputState *input, int *selected_item)
             badge_col = (mainMenu_whdload_mode == 1) ? SWITCH_COLOR_AMIGA_ORANGE : (mainMenu_whdload_mode == 2) ? SWITCH_COLOR_AMIGA_BLUE : SWITCH_COLOR_AMIGA_GREEN;
         } else if (item == 4) {
             title = "WHDLoad Blitter";
-            subtitle = (mainMenu_whdload_blitter == 1) ? "Force Normal: Accurate timing & speed (Golden Axe)" : (mainMenu_whdload_blitter == 2) ? "Force Immediate: Fast blitter (Shadow Dancer $168CE)" : (mainMenu_whdload_blitter == 3) ? "Force Improved: Partial scanline blitter" : "Auto: Normal for standard games, Immediate for Shadow Dancer";
+            subtitle = (mainMenu_whdload_blitter == 1) ? "Force Normal: Accurate timing & speed (Golden Axe)" : (mainMenu_whdload_blitter == 2) ? "Force Immediate: Fast blitter (Shadow Dancer $168CE)" : (mainMenu_whdload_blitter == 3) ? "Force Improved: Partial scanline blitter (Turrican)" : "Auto: Normal (standard), Immediate (Shadow Dancer), Improved (Turrican)";
             badge = (mainMenu_whdload_blitter == 1) ? "NORMAL" : (mainMenu_whdload_blitter == 2) ? "IMMEDIATE" : (mainMenu_whdload_blitter == 3) ? "IMPROVED" : "AUTO";
             badge_col = (mainMenu_whdload_blitter == 1) ? SWITCH_COLOR_AMIGA_BLUE : (mainMenu_whdload_blitter == 2) ? SWITCH_COLOR_AMIGA_ORANGE : (mainMenu_whdload_blitter == 3) ? RGBA8(180, 80, 220, 255) : SWITCH_COLOR_AMIGA_GREEN;
         } else if (item == 5) {
@@ -2817,13 +2811,24 @@ void switch_view_whdload(SwitchInputState *input, int *selected_item)
             switch_draw_text(preview_x + 16.0f, preview_y + 384.0f, SWITCH_COLOR_TEXT_MUTED, 0.76f, hw_buf);
         } else {
             int needs_imm = switch_whdload_needs_immediate_blitter(preview_title);
-            if (mainMenu_whdload_blitter == 2) needs_imm = 1;
-            else if (mainMenu_whdload_blitter == 1) needs_imm = 0;
+            int needs_improved = switch_whdload_needs_improved_blitter(preview_title);
+            if (mainMenu_whdload_blitter == 1) {
+                needs_imm = 0;
+                needs_improved = 0;
+            } else if (mainMenu_whdload_blitter == 2) {
+                needs_imm = 1;
+                needs_improved = 0;
+            } else if (mainMenu_whdload_blitter == 3) {
+                needs_imm = 0;
+                needs_improved = 1;
+            }
             switch_draw_badge(preview_x + 16.0f, preview_y + 356.0f, "A500 OCS", SWITCH_COLOR_AMIGA_GREEN, RGBA8(20, 24, 34, 255));
             switch_draw_hint_item(preview_x + preview_w - 150.0f, preview_y + 356.0f, SWITCH_GLYPH_A, "LAUNCH");
             char hw_buf[128];
             if (needs_imm) {
                 switch_truncate_text("68000 7MHz | Immediate Blitter | 2MB Chip + 4MB Fast", preview_w - 32.0f, 0.76f, hw_buf, sizeof(hw_buf));
+            } else if (needs_improved) {
+                switch_truncate_text("68000 7MHz | Improved Partial Blitter | 2MB Chip + 4MB Fast", preview_w - 32.0f, 0.76f, hw_buf, sizeof(hw_buf));
             } else {
                 switch_truncate_text("68000 7MHz | Normal Blitter | 2MB Chip + 4MB Fast", preview_w - 32.0f, 0.76f, hw_buf, sizeof(hw_buf));
             }
@@ -2920,6 +2925,7 @@ static int switch_detect_floppy_profile(const char *path, const char *title)
 
 static void switch_apply_floppy_model(int model)
 {
+    mainMenu_rtgMemory = 0;
     if (model == 2) {
         kickstart = 3;
         if (!switch_set_kickstart(kickstart, 0)) {
@@ -4115,7 +4121,7 @@ void switch_view_library(SwitchInputState *input, int *selected_item)
                 make_hard_file_cfg_line(uae4all_hard_file0);
                 mainMenu_whdload_game[0] = '\0';
                 uae4all_hard_dir[0] = '\0';
-                mainMenu_bootHD = 1;
+                mainMenu_bootHD = 2;
                 reset_hdConf();
                 ApplyAutomaticGamePreset(1);
                 bReloadKickstart = 1;
@@ -4320,11 +4326,22 @@ void switch_view_library(SwitchInputState *input, int *selected_item)
                 prof_badge_color = SWITCH_COLOR_AMIGA_ORANGE;
             } else {
                 int needs_imm = switch_whdload_needs_immediate_blitter(g->title);
-                if (mainMenu_whdload_blitter == 2) needs_imm = 1;
-                else if (mainMenu_whdload_blitter == 1) needs_imm = 0;
+                int needs_improved = switch_whdload_needs_improved_blitter(g->title);
+                if (mainMenu_whdload_blitter == 1) {
+                    needs_imm = 0;
+                    needs_improved = 0;
+                } else if (mainMenu_whdload_blitter == 2) {
+                    needs_imm = 1;
+                    needs_improved = 0;
+                } else if (mainMenu_whdload_blitter == 3) {
+                    needs_imm = 0;
+                    needs_improved = 1;
+                }
                 prof_badge = "A500 OCS";
                 if (needs_imm) {
                     prof_desc = "68000 7MHz | Immediate Blitter | 2MB Chip + 4MB Fast";
+                } else if (needs_improved) {
+                    prof_desc = "68000 7MHz | Improved Partial Blitter | 2MB Chip + 4MB Fast";
                 } else {
                     prof_desc = "68000 7MHz | Normal Blitter | 2MB Chip + 4MB Fast";
                 }
@@ -4491,7 +4508,7 @@ void switch_view_presets(SwitchInputState *input, int *selected_item)
         }
     }
 
-    
+
     float card_x = 20.0f;
     float card_w = SWITCH_SCREEN_W - 40.0f;
     const float start_y = SWITCH_LIST_START_Y;
@@ -4545,7 +4562,7 @@ void switch_view_presets(SwitchInputState *input, int *selected_item)
 
 void switch_view_hardware(SwitchInputState *input, int *selected_item)
 {
-    const int total_items = 15;
+    const int total_items = 16;
     if (*selected_item < 0) *selected_item = 0;
     if (*selected_item >= total_items) *selected_item = total_items - 1;
 
@@ -4558,7 +4575,7 @@ void switch_view_hardware(SwitchInputState *input, int *selected_item)
         if (*selected_item >= total_items) *selected_item = 0;
     }
 
-    if (input->pressed & SWITCH_BTN_A && *selected_item == 13) {
+    if (input->pressed & SWITCH_BTN_A && *selected_item == 14) {
         char new_file[512];
         new_file[0] = '\0';
         int res = switch_gui_run_browser(new_file, currentDir, 8);
@@ -4573,7 +4590,7 @@ void switch_view_hardware(SwitchInputState *input, int *selected_item)
                 switch_show_message_box("CD32 Image Error", "The selected image could not be opened.", "OK (A)");
         }
     }
-    if (input->pressed & SWITCH_BTN_Y && *selected_item == 13) {
+    if (input->pressed & SWITCH_BTN_Y && *selected_item == 14) {
         cdrom_close_image();
         switch_show_message_box("CD32 Image", "CD image ejected.", "OK (A)");
     }
@@ -4634,7 +4651,12 @@ void switch_view_hardware(SwitchInputState *input, int *selected_item)
                 bReloadKickstart = 1;
                 UpdateMemorySettings();
                 break;
-            case 10: {
+            case 10:
+                mainMenu_rtgMemory = (mainMenu_rtgMemory + dir + 3) % 3;
+                bReloadKickstart = 1;
+                UpdateMemorySettings();
+                break;
+            case 11: {
                 int s_idx = 0;
                 if (!mainMenu_sound) s_idx = 0;
                 else if (sound_rate == 22050) s_idx = 1;
@@ -4656,15 +4678,15 @@ void switch_view_hardware(SwitchInputState *input, int *selected_item)
                 getChanges();
                 break;
             }
-            case 11:
+            case 12:
                 mainMenu_soundStereo = 1 - mainMenu_soundStereo;
                 getChanges();
                 break;
-            case 12:
+            case 13:
                 mainMenu_soundStereoSep = (mainMenu_soundStereoSep + dir + 5) % 5;
                 getChanges();
                 break;
-            case 14:
+            case 15:
                 mainMenu_midiSynth = 1 - mainMenu_midiSynth;
                 midi_synth_set_enabled(mainMenu_midiSynth);
                 if (mainMenu_midiSynth)
@@ -4697,6 +4719,7 @@ void switch_view_hardware(SwitchInputState *input, int *selected_item)
     const char *chip_ram_names[4] = { "512 KB (Standard)", "1 MB", "2 MB (Expanded)", "None" };
     const char *fast_ram_names[5] = { "None", "1 MB", "2 MB", "4 MB (AGA recommended)", "8 MB" };
     const char *slow_ram_names[4] = { "None", "512 KB (Trapdoor)", "1 MB", "1.5 MB" };
+    const char *rtg_ram_names[3] = { "Disabled", "2 MB", "4 MB" };
     const char *sound_out_names[4] = { "Disabled (Mute)", "22050 Hz (Low)", "44100 Hz (Standard Quality)", "48000 Hz (High Quality)" };
     const char *sound_stereo_names[2] = { "Mono", "Stereo" };
     const char *stereo_sep_names[5] = { "0% (Mono)", "25% Separation", "50% (Recommended for Headphones)", "75% Separation", "100% (Hard Amiga L/R)" };
@@ -4751,18 +4774,21 @@ void switch_view_hardware(SwitchInputState *input, int *selected_item)
                 switch_draw_selector_item(card_x, y, card_w, item_h, "Slow / Trapdoor RAM", slow_ram_names[mainMenu_slowMemory % 4], focused);
                 break;
             case 10:
-                switch_draw_selector_item(card_x, y, card_w, item_h, "Audio Output", sound_out_names[curr_sound_idx], focused);
+                switch_draw_selector_item(card_x, y, card_w, item_h, "RTG VRAM (Picasso96)", rtg_ram_names[mainMenu_rtgMemory % 3], focused);
                 break;
             case 11:
-                switch_draw_selector_item(card_x, y, card_w, item_h, "Audio Channels", sound_stereo_names[mainMenu_soundStereo % 2], focused);
+                switch_draw_selector_item(card_x, y, card_w, item_h, "Audio Output", sound_out_names[curr_sound_idx], focused);
                 break;
             case 12:
-                switch_draw_selector_item(card_x, y, card_w, item_h, "Stereo Separation", stereo_sep_names[mainMenu_soundStereoSep % 5], focused);
+                switch_draw_selector_item(card_x, y, card_w, item_h, "Audio Channels", sound_stereo_names[mainMenu_soundStereo % 2], focused);
                 break;
             case 13:
-                switch_draw_selector_item(card_x, y, card_w, item_h, "CD32 CD Image", cd_image_name, focused);
+                switch_draw_selector_item(card_x, y, card_w, item_h, "Stereo Separation", stereo_sep_names[mainMenu_soundStereoSep % 5], focused);
                 break;
             case 14:
+                switch_draw_selector_item(card_x, y, card_w, item_h, "CD32 CD Image", cd_image_name, focused);
+                break;
+            case 15:
                 switch_draw_switch_item(card_x, y, card_w, item_h, "MIDI / MT-32 Synth Emulation", mainMenu_midiSynth == 1, focused);
                 break;
         }
@@ -5671,7 +5697,7 @@ void switch_view_savestates(SwitchInputState *input, int *selected_item)
         }
     }
 
-    
+
     if (do_delete) {
         char state_path[256];
         char thumb_path[256];
@@ -6061,7 +6087,7 @@ void switch_view_system(SwitchInputState *input, int *selected_item)
         "Hard reset the Amiga virtual machine with current settings",
         "Capture the next emulated frame as a PNG in the screenshots folder",
         "Start built-in FTP server to transfer ADF, HDF, and WHDLoad games over Wi-Fi",
-        "Credits, original authors, contributors and project acknowledements"
+        "Credits, original authors, contributors and project acknowledgements"
     };
     static const char *system_badges[11] = { "SAVE", "SAVE AS", "LOAD", "SAVE DEF", "LOAD DEF", "RESET", "AUTO", "REBOOT", "SHOT", "START", "ABOUT" };
 

@@ -27,21 +27,19 @@
 #include "custom.h"
 
 
-
-/* PocketUAE config file. Used for parsing PocketUAE-like options. */
 #include "savestate.h"
 
-#if defined(__PSP2__) // NOT __SWITCH__
+#if defined(__PSP2__)
 #include <psp2/shellutil.h>
 #include <psp2/io/fcntl.h>
 #include "uae_gui_vita.h"
 #endif
- 
+
 #ifdef __SWITCH__
 #include <switch.h>
 extern void update_joycon_mode();
 #endif
- 
+
 #if defined(__PSP2__) || defined(__SWITCH__)
 #define SDL_PollEvent PSP2_PollEvent
 int inside_menu = 0;
@@ -93,7 +91,7 @@ static const char *text_str_title=    "----- UAE4All Pandora -----";
 static const char *text_str_title=    "----- UAE4All Android -----";
 #endif
 #endif
-#endif // __PSP2__
+#endif
 static const char *text_str_df0=		"DF0:";
 static const char *text_str_df1=		"DF1:";
 static const char *text_str_df2=		"DF2:";
@@ -178,7 +176,7 @@ static void showInfo()
 
 	write_text(4,4,"DF1");
 	if (!uae4all_image_file1[0]) write_text(10,4,"Empty");
-	else 
+	else
 	{
 		extractFileName(uae4all_image_file1,buffer);
 		adjustToWindow(buffer,buffertext);
@@ -187,16 +185,16 @@ static void showInfo()
 
 	write_text(4,6,"DF2");
 	if (!uae4all_image_file2[0]) write_text(10,4,"Empty");
-	else 
+	else
 	{
 		extractFileName(uae4all_image_file2,buffer);
 		adjustToWindow(buffer,buffertext);
 		write_text(10,6,buffer);
 	}
-	
+
 	write_text(4,8,"DF3");
 	if (!uae4all_image_file3[0]) write_text(10,4,"Empty");
-	else 
+	else
 	{
 		extractFileName(uae4all_image_file3,buffer);
 		adjustToWindow(buffer,buffertext);
@@ -219,28 +217,6 @@ static void showInfo()
 
 static void draw_mainMenu(int c)
 {
-	/* New Menu
-	0 = DF0:
-	1 = DF1:
-	2 = DF2:
-	3 = DF3:
-	4 = eject all drives
-	5 = number of drives
-	6 = preset system setup
-	7 = harddisk and memory options
-	8 = display settings
-	9 = savestates
-	10 = custom controls
-	11 = more options
-	12 = reset
-	13 = load config
-	14 = save config as...
-	15 = delete config
-	16 = save general config
-	17 = save config current game
-	18 = quit
-	19 = release notes (Switch only) 
-	*/
 	static int b=0;
 	int bb=(b%6)/3;
 	int menuLine = 3;
@@ -258,7 +234,6 @@ static void draw_mainMenu(int c)
 	text_draw_background();
 	text_draw_window(leftMargin-1,menuLine-1,35,40,text_str_title);
 
-	// 0
 	if ((c==0)&&(bb))
 		write_text_inv(leftMargin,menuLine,text_str_df0);
 	else
@@ -268,7 +243,6 @@ static void draw_mainMenu(int c)
 	else
 		write_text_inv(13,menuLine,filename0);
 
-	// 1
 	menuLine+=2;
 	if(nr_drives > 1)
 	{
@@ -282,7 +256,6 @@ static void draw_mainMenu(int c)
 			write_text_inv(13,menuLine,filename1);
 	}
 
-	// 2
 	menuLine+=2;
 	if(nr_drives > 2)
 	{
@@ -296,7 +269,6 @@ static void draw_mainMenu(int c)
 			write_text_inv(13,menuLine,filename2);
 	}
 
-	// 3
 	menuLine+=2;
 	if(nr_drives > 3)
 	{
@@ -314,16 +286,14 @@ static void draw_mainMenu(int c)
 	write_text(leftMargin,menuLine,text_str_separator);
 	menuLine++;
 
-	// 4
 	if ((c==4)&&(bb))
 		write_text_inv(leftMargin,menuLine,text_str_eject);
 	else
 		write_text(leftMargin, menuLine,text_str_eject);
 
-	// 5
 	menuLine+=2;
 	write_text(leftMargin,menuLine,"Number of Drives");
-	
+
 	if ((nr_drives==1)&&((c!=5)||(bb)))
 		write_text_inv(tabstop3,menuLine,"1");
 	else
@@ -348,7 +318,6 @@ static void draw_mainMenu(int c)
 	write_text(leftMargin,menuLine,text_str_separator);
 	menuLine++;
 
-	// 6
 	write_text(leftMargin,menuLine,"Preset System Setup:");
 
 	if ((mainMenu_system!=1)&&((c!=6)||(bb)))
@@ -361,35 +330,30 @@ static void draw_mainMenu(int c)
 	else
 		write_text(tabstop8,menuLine,"A1200");
 
-	// 7
 	menuLine+=2;
 	if ((c==7)&&(bb))
 		write_text_inv(leftMargin,menuLine,text_str_hdnmem);
 	else
 		write_text(leftMargin,menuLine,text_str_hdnmem);
 
-	// 8
 	menuLine+=2;
 	if ((c==8)&&(bb))
 		write_text_inv(leftMargin,menuLine,text_str_display);
 	else
 		write_text(leftMargin,menuLine,text_str_display);
 
-	// 9
 	menuLine+=2;
 	if ((c==9)&&(bb))
 		write_text_inv(leftMargin,menuLine,text_str_savestates);
 	else
 		write_text(leftMargin,menuLine,text_str_savestates);
 
-	// 10
 	menuLine+=2;
 	if ((c==10)&&(bb))
 		write_text_inv(leftMargin,menuLine,text_str_custom);
 	else
 		write_text(leftMargin,menuLine,text_str_custom);
 
-	// 11
 	menuLine+=2;
 	if ((c==11)&&(bb))
 		write_text_inv(leftMargin,menuLine,text_str_more);
@@ -399,7 +363,6 @@ static void draw_mainMenu(int c)
 	menuLine++;
 	write_text(leftMargin,menuLine,text_str_separator);
 
-	// 12
 	menuLine++;
 	if ((c==12)&&(bb))
 		write_text_inv(leftMargin,menuLine,text_str_reset);
@@ -409,7 +372,6 @@ static void draw_mainMenu(int c)
 	menuLine++;
 	write_text(leftMargin,menuLine,text_str_separator);
 
-	// 13
 	menuLine++;
 	write_text(leftMargin,menuLine,"Config");
 
@@ -418,26 +380,22 @@ static void draw_mainMenu(int c)
 	else
 		write_text(leftMargin+7,menuLine,"Load");
 
-	// 14
 	if ((c==14)&&(bb))
 		write_text_inv(leftMargin+13,menuLine,"Save As");
 	else
 		write_text(leftMargin+13,menuLine,"Save As");
 
-	// 15
 	if ((c==15)&&(bb))
 		write_text_inv(leftMargin+22,menuLine,"Delete");
 	else
 		write_text(leftMargin+22,menuLine,"Delete");
 
-	// 16
 	menuLine+=2;
 	if ((c==16)&&(bb))
 		write_text_inv(leftMargin+7,menuLine,"Save General");
 	else
 		write_text(leftMargin+7,menuLine,"Save General");
 
-	// 17
 	if ((c==17)&&(bb))
 		write_text_inv(leftMargin+20,menuLine,"Save Per-Game");
 	else
@@ -446,7 +404,6 @@ static void draw_mainMenu(int c)
 	menuLine++;
 	write_text(leftMargin,menuLine,text_str_separator);
 
-	// 18
 	menuLine++;
 	if ((c==18)&&(bb))
 		write_text_inv(leftMargin,menuLine,text_str_exit);
@@ -454,7 +411,6 @@ static void draw_mainMenu(int c)
 		write_text(leftMargin,menuLine,text_str_exit);
 
 #ifdef __SWITCH__
-	// 19
 	if ((c==19)&&(bb))
 		write_text_inv(leftMargin+20,menuLine,text_str_releasenotes);
 	else
@@ -465,7 +421,7 @@ static void draw_mainMenu(int c)
 	write_text(leftMargin,menuLine,text_str_separator);
 
 	text_flip();
-	
+
 	b++;
 }
 
@@ -473,7 +429,6 @@ void showWarning(const char *msg)
 {
 	text_draw_window(4,9,37,4,"Message");
 	write_text(5,11,msg);
-	//write_text(11,16,"Press any button to continue");
 	text_flip();
 	SDL_Event ev;
 	SDL_Delay(1000);
@@ -523,7 +478,7 @@ SDL_ANDROID_SetScreenKeyboardShown(1);
 	int left=0, right=0, up=0, down=0, hit0=0, hit1=0, hit2=0, hit3=0, hit4=0, hit5=0, hit6=0, hitH=0, hitS=0, hitQ=0, hitN1=0, hitN2=0, hitN3=0, hitN4=0;
 	SDL_Event event;
 	int info=0;
-	
+
 	force_quit=0;
 
 	static int holdingUp=0;
@@ -572,7 +527,7 @@ SDL_ANDROID_SetScreenKeyboardShown(1);
 				case SDLK_PAGEDOWN: hit0=1; break;
 				case SDLK_LALT: hit1=1; break;
 				case SDLK_LCTRL: hit2=1; break;
-#if defined(__PSP2__) || defined(__SWITCH__) //RSHIFT is PAD_L on Vita
+#if defined(__PSP2__) || defined(__SWITCH__)
 				case SDLK_RSHIFT: hitQ=1; break;
 #else
 				case SDLK_RSHIFT: hit3=1; break;
@@ -610,23 +565,23 @@ SDL_ANDROID_SetScreenKeyboardShown(1);
 					break;
 			}
 		}
-		
+
 		if (left && !holdingLeft)
 		{
 			holdingLeft=1;
 			menu_last_press_time=now;
 		}
-		if (right && !holdingRight) 
+		if (right && !holdingRight)
 		{
 			holdingRight=1;
 			menu_last_press_time=now;
 		}
-		if (up && !holdingUp) 
+		if (up && !holdingUp)
 		{
 			holdingUp=1;
 			menu_last_press_time=now;
 		}
-		if (down && !holdingDown) 
+		if (down && !holdingDown)
 		{
 			holdingDown=1;
 			menu_last_press_time=now;
@@ -651,21 +606,18 @@ SDL_ANDROID_SetScreenKeyboardShown(1);
 		}
 		else if (hit4)
 		{
-			// reset
 			back_c = c;
 			hit0 = 1;
 			c = 12;
 		}
 		else if (hit5)
 		{
-			// more options
 			back_c = c;
 			hit0 = 1;
 			c = 11;
 		}
 		else if (hit6)
 		{
-			// custom controls
 			back_c = c;
 			hit0 = 1;
 			c = 10;
@@ -747,28 +699,6 @@ SDL_ANDROID_SetScreenKeyboardShown(1);
 #endif
 		}
 
-	/* New Menu
-	0 = DF0:
-	1 = DF1:
-	2 = DF2:
-	3 = DF3:
-	4 = eject all drives
-	5 = number of drives
-	6 = preset system setup
-	7 = display settings
-	8 = sound
-	9 = savestates
-	10 = custom controls
-	11 = more options
-	12 = reset
-	13 = load config
-	14 = save config as...
-	15 = delete config
-	16 = save general config
-	17 = save config current game
-	18 = exit
-	19 = release notes (Switch only)
-	*/
 		switch(c)
 		{
 			case 0:
@@ -826,7 +756,7 @@ SDL_ANDROID_SetScreenKeyboardShown(1);
 						nr_drives++;
 					else
 						nr_drives=1;
-				}	
+				}
 				break;
 			case 6:
 				if (left)
@@ -944,15 +874,9 @@ SDL_ANDROID_SetScreenKeyboardShown(1);
 			case 19:
 				if (hit0)
 				{
-					// This works on all CFW
 					WebWifiConfig conf;
 					webWifiCreate(&conf, NULL, "https://github.com/rsn8887/uae4all2/releases/latest", (Uuid){0}, 0);
 					webWifiShow(&conf, NULL);
-					// The following would be better, but crashes on SX OS
-					//WebCommonConfig config;
-					//webPageCreate(&config,"https://github.com/rsn8887/uae4all2/releases/latest");
-					//webConfigSetWhitelist(&config, "^http*");
-					//webConfigShow(&config, NULL);
 				}
 				break;
 #endif
@@ -961,7 +885,7 @@ SDL_ANDROID_SetScreenKeyboardShown(1);
 		{
 			c=back_c;
 			back_c=-1;
-		}			
+		}
 	}
 
 	(*cp)=c;
@@ -969,7 +893,7 @@ SDL_ANDROID_SetScreenKeyboardShown(1);
 }
 
 static void raise_mainMenu()
-{	
+{
 	text_draw_background();
 	text_flip();
 #if !defined(__PSP2__) && !defined(__SWITCH__)
@@ -1011,20 +935,20 @@ int run_mainMenu()
     int old_vkbdStyle = mainMenu_vkbdStyle;
 	mainMenu_case=-1;
 	init_text(0);
-	
+
 #if defined(__PSP2__) || defined(__SWITCH__)
 	inside_menu = 1;
 	SDL_Event event;
 	while (SDL_PollEvent(&event) > 0);
 #endif
-   
+
 	while(mainMenu_case<0)
 	{
 		raise_mainMenu();
 		end=0;
 		draw_mainMenu(c);
 		if (!resetOnStartingApp)
-		{ 
+		{
 			while(!end)
 			{
 				draw_mainMenu(c);
@@ -1044,17 +968,14 @@ int run_mainMenu()
 			int autostate_loaded = 0;
 			if(run_menuLoad(currentDir, MENU_LOAD_FLOPPY) && current_drive==0)
 			{
-				// Check for disk-specific config
 				char path[300];
 				create_configfilename(path, uae4all_image_file0, 0);
 				FILE *f=fopen(path,"rt");
 				if(f)
 				{
-					// config file exists -> load
 					fclose(f);
 					loadconfig();
 				}
-				// Check for disk-specific Auto Savestate and load it automatically if possible
 				if (emulating)
 				{
 					int old_saveMenu_n_savestate = saveMenu_n_savestate;
@@ -1066,7 +987,7 @@ int run_mainMenu()
 						fclose(f);
 						savestate_state=STATE_DORESTORE;
 						autostate_loaded=1;
-					} else 
+					} else
 					{
 						saveMenu_n_savestate=old_saveMenu_n_savestate;
 						make_savestate_filenames(savestate_filename,screenshot_filename);
@@ -1077,8 +998,8 @@ int run_mainMenu()
 			{
 				setCpuSpeed();
 				mainMenu_case=1;
-			} 
-			else 
+			}
+			else
 			{
 				mainMenu_case=-1;
 			}
@@ -1086,7 +1007,7 @@ int run_mainMenu()
 		}
 		case MAIN_MENU_CASE_MEMDISK:
 			run_menuMemDisk();
-			if (quit_pressed_in_submenu) //User quit menu while in sub-menu
+			if (quit_pressed_in_submenu)
 			{
 				if (emulating)
 				{
@@ -1107,7 +1028,7 @@ int run_mainMenu()
 				setCpuSpeed();
 				mainMenu_case=1;
 			}
-			else if (quit_pressed_in_submenu) //User quit menu while in sub-menu
+			else if (quit_pressed_in_submenu)
 			{
 				if (emulating)
 				{
@@ -1138,7 +1059,7 @@ int run_mainMenu()
 			gp2xMouseEmuOn=0;
 			gp2xButtonRemappingOn=0;
 			mainMenu_drives=nr_drives;
-			if (kickstart!=oldkickstart) 
+			if (kickstart!=oldkickstart)
 			{
 				oldkickstart=kickstart;
 				snprintf(romfile, 256, "%s/kickstarts/%s",launchDir,kickstarts_rom_names[kickstart]);
@@ -1147,14 +1068,14 @@ int run_mainMenu()
 #ifdef ANDROIDSDL
 				if (uae4all_init_rom(romfile)==-1)
 				{
-				    snprintf(romfile, 256, "%s/../../com.cloanto.amigaforever.essentials/files/rom/%s",launchDir,af_kickstarts_rom_names[kickstart]);			
+				    snprintf(romfile, 256, "%s/../../com.cloanto.amigaforever.essentials/files/rom/%s",launchDir,af_kickstarts_rom_names[kickstart]);
 				    uae4all_init_rom(romfile);
-				} 				
+				}
 #endif
 			}
 			if (emulating)
 			{
-				mainMenu_case=2;	
+				mainMenu_case=2;
 				break;
 			}
 		case MAIN_MENU_CASE_RUN:
@@ -1164,7 +1085,7 @@ int run_mainMenu()
 		case MAIN_MENU_CASE_CONTROLS:
 			{
 				run_menuControls();
-				if (quit_pressed_in_submenu) //User quit menu while in sub-menu
+				if (quit_pressed_in_submenu)
 				{
 					if (emulating)
 					{
@@ -1182,7 +1103,7 @@ int run_mainMenu()
 		case MAIN_MENU_CASE_DISPLAY:
 			{
 				run_menuDisplay();
-				if (quit_pressed_in_submenu) //User quit menu while in sub-menu
+				if (quit_pressed_in_submenu)
 				{
 					if (emulating)
 					{
@@ -1200,7 +1121,7 @@ int run_mainMenu()
 		case MAIN_MENU_CASE_MISC:
 			{
 				run_menuMisc();
-				if (quit_pressed_in_submenu) //User quit menu while in sub-menu
+				if (quit_pressed_in_submenu)
 				{
 					if (emulating)
 					{
@@ -1245,7 +1166,7 @@ int run_mainMenu()
 			break;
 		}
 		case MAIN_MENU_CASE_QUIT:
-			if (gui_data.hdled == HDLED_WRITE && force_quit == 0) 
+			if (gui_data.hdled == HDLED_WRITE && force_quit == 0)
 			{
 				showWarning("Amiga is writing to HDF. Press PAD_right+L to force quit.");
 				break;
@@ -1259,7 +1180,7 @@ int run_mainMenu()
 
 	if (sound_rate != old_sound_rate || mainMenu_soundStereo != old_stereo)
 		init_sound();
-	
+
 #if defined(USE_UAE4ALL_VKBD)
 	if ((mainMenu_vkbdLanguage != old_vkbdLanguage) || (mainMenu_vkbdStyle != old_vkbdStyle))
 	{
@@ -1268,12 +1189,11 @@ int run_mainMenu()
 	}
 #endif
 
-	//See if new joysticks have been paired
 	close_joystick();
-	SDL_QuitSubSystem(SDL_INIT_JOYSTICK);	
+	SDL_QuitSubSystem(SDL_INIT_JOYSTICK);
 	SDL_InitSubSystem(SDL_INIT_JOYSTICK);
 	init_joystick();
-	
+
 	update_display();
 
 #if defined(__PSP2__) || defined(__SWITCH__)

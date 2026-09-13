@@ -10,7 +10,7 @@
 #define VKBD_Y 200
 
 #define VKBD_LEFT 1
-#define VKBD_RIGHT 2	
+#define VKBD_RIGHT 2
 #define VKBD_UP 4
 #define VKBD_DOWN 8
 #define VKBD_BUTTON 16
@@ -19,11 +19,10 @@
 #define VKBD_BUTTON_RESET_STICKY 128
 #define VLBD_BUTTON2 128
 
-// special return codes for vkbd_process
 #define KEYCODE_NOTHING -1234567
 #define KEYCODE_STICKY_RESET -100
 
-#define NUM_STICKY 7 // number of sticky keys (shift, alt etc)
+#define NUM_STICKY 7
 
 int vkbd_init(void);
 void vkbd_quit(void);
@@ -42,14 +41,14 @@ extern float vkbd_touch_x;
 extern float vkbd_touch_y;
 typedef struct
 {
-	int code; // amiga-side keycode
-	bool stuck; // is it currently stuck pressed?
-	bool can_switch; // de-bounce
-	unsigned char index; // index in vkbd_rect[]
+	int code;
+	bool stuck;
+	bool can_switch;
+	unsigned char index;
 } t_vkbd_sticky_key;
 extern t_vkbd_sticky_key vkbd_sticky_key[NUM_STICKY];
 extern int vkbd_key;
 extern int vkbd_keysave;
 extern SDLKey vkbd_button2;
 extern int keymappings[10][3];
-#endif // VKBD_H
+#endif

@@ -1563,4 +1563,19 @@ int switch_whdload_needs_immediate_blitter(const char *game_name)
     return 0;
 }
 
+int switch_whdload_needs_improved_blitter(const char *game_name)
+{
+    if (!game_name || game_name[0] == '\0')
+        return 0;
+
+    char lower_name[256];
+    size_t i = 0;
+    for (; game_name[i] && i < sizeof(lower_name) - 1; i++) {
+        lower_name[i] = (char)tolower((unsigned char)game_name[i]);
+    }
+    lower_name[i] = '\0';
+
+    return strstr(lower_name, "turrican") != NULL;
+}
+
 #endif

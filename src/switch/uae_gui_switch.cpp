@@ -34,7 +34,6 @@
 #include <switch.h>
 
 
-
 static void ttf_shutdown_cleanup(void);
 
 extern int screenWidth;
@@ -73,7 +72,7 @@ static void switch_gui_free_screen(void)
         return;
 
     write_log("[SWITCH] switch_gui_free_screen: freeing %dx%d\n", prSDLScreen->w, prSDLScreen->h);
-    
+
     SDL_FreeSurface(prSDLScreen);
     prSDLScreen = NULL;
     write_log("[SWITCH] switch_gui_free_screen: done\n");
@@ -187,7 +186,7 @@ static const unsigned char s_font_8x8[96][8] = {
     {0x18,0x18,0x18,0x18,0x18,0x18,0x18,0x00},
     {0x70,0x18,0x18,0x0E,0x18,0x18,0x70,0x00},
     {0x76,0xDC,0x00,0x00,0x00,0x00,0x00,0x00},
-    {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00} 
+    {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00}
 };
 
 static const unsigned char s_char_widths[96] = {
@@ -196,7 +195,7 @@ static const unsigned char s_char_widths[96] = {
     7, 7, 7, 7, 7, 7, 7, 7, 7, 4, 6, 7, 6, 8, 7, 7,
     7, 7, 7, 7, 7, 7, 7, 8, 7, 7, 7, 4, 6, 4, 5, 7,
     3, 6, 6, 6, 6, 6, 5, 6, 3, 4, 6, 3, 8, 6, 6, 6,
-    6, 5, 6, 5, 6, 6, 8, 6, 6, 6, 4, 3, 4, 7, 0     
+    6, 5, 6, 5, 6, 6, 8, 6, 6, 6, 4, 3, 4, 7, 0
 };
 
 static const char *s_tab_names[SWITCH_TAB_COUNT] = {
@@ -234,8 +233,6 @@ int switch_gui_init(void)
     SDL_SetVideoModeScaling(0, 0, SWITCH_SCREEN_W, SWITCH_SCREEN_H);
     SDL_SetVideoModeBilinear(1);
 
-    
-    
 
     write_log("[SWITCH] switch_gui_init: menu screen ready (%dx%d)\n", prSDLScreen->w, prSDLScreen->h);
     s_gui_initialized = true;
@@ -268,7 +265,7 @@ void switch_gui_prepare_exit(void)
 {
     switch_gui_stop_ftp();
     if (prSDLScreen) {
-        
+
         SDL_FreeSurface(prSDLScreen);
         prSDLScreen = NULL;
     }
@@ -1337,13 +1334,13 @@ static void switch_draw_boing_ball_3d(float cx, float cy, float radius, float ro
 
 typedef enum {
     CR_EMPTY = 0,
-    CR_TITLE,  
+    CR_TITLE,
     CR_SUBTITLE,
-    CR_TEXT,   
-    CR_DIM,    
-    CR_LINK,   
+    CR_TEXT,
+    CR_DIM,
+    CR_LINK,
     CR_SECTION,
-    CR_RED     
+    CR_RED
 } CreditStyle;
 
 typedef struct {
@@ -1355,13 +1352,18 @@ void switch_show_about_box(void)
 {
     static const CreditLine credits[] = {
         { "UAE4ALL2 HD Switch", CR_TITLE },
-        { "Version 1.05 by theheroGAC", CR_SUBTITLE },
+        { "Version 1.06 - Picasso96 / RTG Edition", CR_SUBTITLE },
         { "Amiga Emulator for Nintendo Switch", CR_DIM },
         { "", CR_EMPTY },
+        { "Version 1.06 by theheroGAC", CR_TEXT },
         { "A high-definition port of the classic UAE4ALL Amiga emulator,", CR_TEXT },
         { "now with WHDLoad, HDF, IPF and CD32 support on Switch.", CR_TEXT },
+        { "Optional Picasso96 / RTG and UAEGFX support", CR_TEXT },
+        { "Separate RTG VRAM with 8/15/16/24/32-bit framebuffer modes.", CR_TEXT },
+        { "RTG remains optional: ECS, OCS, AGA, WHDLoad and disk paths are independent.", CR_DIM },
         { "github.com/theheroGAC/UAE4ALL2-HD-SWITCH", CR_LINK },
         { "", CR_EMPTY },
+
         { "=====  WHDLoad Support  =====", CR_SECTION },
         { "WHDLoad by Bert Jahn (Wepl)", CR_TEXT },
         { "The legendary hard-disk loader system for Amiga games.", CR_DIM },
@@ -1388,6 +1390,7 @@ void switch_show_about_box(void)
         { "aliaspider - CRT-Easymode shader", CR_TEXT },
         { "Andrea Mazzoleni - Scale2x algorithm", CR_TEXT },
         { "rsn8887 - Sharp Bilinear scaling filter", CR_TEXT },
+        { "Classic CRT shader (native GLES2 implementation)", CR_TEXT },
         { "", CR_EMPTY },
         { "theheroGAC - HD modern GUI, LHA decompressor and enhancements", CR_TEXT },
         { "Cpasjuste - original Vita port, SDL-Vita, shader support", CR_TEXT },
@@ -1919,7 +1922,6 @@ void switch_draw_boing_ball_icon(float cx, float cy, float radius, float rot_ang
     }
 }
 
-// ---- splash decorations ----
 
 void switch_gui_draw_splash_progress(float progress, const char *status_text, float ball_angle, float bounce)
 {
@@ -1930,15 +1932,12 @@ void switch_gui_draw_splash_progress(float progress, const char *status_text, fl
     SDL_FillRect(prSDLScreen, NULL, to_sdl_color(SWITCH_COLOR_BG));
 
     float header_y = 56.0f;
-    // Title with drop shadow
     switch_draw_text_centered(SWITCH_SCREEN_W * 0.5f + 2.0f, header_y + 2.0f, RGBA8(8, 10, 16, 255), 1.45f, "UAE4ALL2 HD");
     switch_draw_text_centered(SWITCH_SCREEN_W * 0.5f, header_y, SWITCH_COLOR_AMIGA_RED, 1.45f, "UAE4ALL2 HD");
 
-    // Subtitle fades in after a few frames
     if (s_splash_frames > 12)
         switch_draw_text_centered(SWITCH_SCREEN_W * 0.5f, header_y + 36.0f, SWITCH_COLOR_TEXT_MUTED, 0.85f, "AMIGA EMULATOR FOR NINTENDO SWITCH");
 
-    // Boing ball (clean, no decorations behind)
     float ball_radius = 58.0f;
     float base_y = 290.0f;
     float ball_y = base_y - (bounce * 70.0f);
@@ -1954,7 +1953,6 @@ void switch_gui_draw_splash_progress(float progress, const char *status_text, fl
     if (progress < 0.0f) progress = 0.0f;
     if (progress > 1.0f) progress = 1.0f;
 
-    // Progress bar: dark track + outlined border + two-tone fill + percentage
     float bar_w = 380.0f;
     float bar_h = 10.0f;
     float bar_x = (SWITCH_SCREEN_W - bar_w) * 0.5f;
