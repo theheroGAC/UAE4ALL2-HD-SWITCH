@@ -2,7 +2,36 @@
 
 All notable features, quality-of-life enhancements, and bug fixes for **UAE4ALL2 HD** on Nintendo Switch.
 
+## Version 1.06
+
+### Picasso96 / RTG
+- **Optional Picasso96/RTG support**: Added an isolated UAEGFX-compatible RTG path for Workbench, productivity software, demos, and games that explicitly use Picasso96 screens.
+- **Separate RTG VRAM**: Added configurable `Disabled`, `2 MB`, and `4 MB` RTG VRAM options, kept separate from Chip RAM, Fast RAM, Kickstart, WHDLoad, floppy, and hard-disk memory.
+- **Zorro/autoconfig integration**: RTG VRAM is exposed through the emulated UAEGFX board and Picasso96-compatible autoconfig path without replacing the normal OCS/ECS/AGA chipset.
+- **RTG framebuffer modes**: Added mode enumeration and framebuffer conversion for common 8-bit CLUT, 15-bit, 16-bit, 24-bit, and 32-bit formats.
+- **RTG drawing operations**: Implemented or adapted common fill, copy, invert, pattern, template, and planar-to-chunky/direct operations with validation and software-safe fallbacks where available.
+- **Switch framebuffer fix**: Corrected FAME word-swapped memory access for RTG framebuffer reads, including 8-bit CLUT output. This fixes incorrect or flat-color output in affected modes such as 800x600.
+- **Retro CRT shader**: Added a Switch-compatible **Classic CRT** preset with curved geometry, scanlines, phosphor grille, vignette, and subtle RGB separation. It is implemented in the existing GLES2 inline shader path and adds no external runtime dependency.
+- **Mode compatibility fixes**: Improved Picasso96 resolution-list ABI handling, `SetPanning()`/`SetGC()` call ordering, virtual dimensions, pitch validation, and screen-mode creation.
+- **RTG lifecycle**: Added isolated RTG reset, shutdown, VRAM cleanup, mapping recovery, and controlled behavior when RTG memory is unavailable.
+- **Savestate integration**: Added Picasso96 state, palette, allocation metadata, and RTG VRAM snapshot/restore handling while preserving compatibility with existing non-RTG states.
+
+### Documentation and usability
+- Added [`docs/PICASSO96_RTG_GUIDE.md`](docs/PICASSO96_RTG_GUIDE.md), an English guide covering activation, VRAM selection, usage, supported modes, memory requirements, and troubleshooting.
+- Updated the README with Picasso96/RTG setup instructions and an explicit explanation that ECS/OCS/AGA, WHDLoad, ADF, HDF, LHA, and DMS remain independent of RTG.
+- Updated the Nintendo Switch **About** screen to identify version 1.06 and document the optional Picasso96/RTG feature.
+- Updated the Switch NACP packaging version to `v1.06`.
+
+### Compatibility and scope
+- CPU core and JIT were not replaced or structurally modified for RTG.
+- The normal ECS/OCS/AGA rendering path remains separate from RTG.
+- RTG is not required for non-RTG games or for WHDLoad, ADF, HDF, LHA, or DMS workflows.
+- Hardware-specific Picasso96 board registers, hardware cursor behavior, and some advanced accelerated vectors remain outside the scope of this compatibility layer and may use software fallback or remain unsupported.
+
+---
+
 ## Version 1.05
+
 
 ### User-Friendly Highlights
 - **Smooth 60 FPS Menus (No More Slowdowns)**:

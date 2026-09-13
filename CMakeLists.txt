@@ -100,6 +100,7 @@ set(SRC_FILES
         src/memory.cpp
         src/missing.cpp
         src/native2amiga.cpp
+        src/picasso96.cpp
         src/gui.cpp
         src/od-joy.cpp
         src/scsi-none.cpp
@@ -245,7 +246,7 @@ if(BUILD_PSP2)
   add_custom_target(${PROJECT_NAME}.vpk
           DEPENDS ${PROJECT_NAME}.self-self
           COMMAND ${CMAKE_COMMAND} -E echo "[VPK] Generating param.sfo"
-          COMMAND ${VITASDK}/bin/vita-mksfoex -d ATTRIBUTE2=12 -s TITLE_ID=${TITLEID} -s APP_VER=01.07 "UAE4All2 HD" param.sfo
+          COMMAND ${VITASDK}/bin/vita-mksfoex -d ATTRIBUTE2=12 -s TITLE_ID=${TITLEID} -s APP_VER=01.06 "UAE4All2 HD" param.sfo
           COMMAND ${CMAKE_COMMAND} -E echo "[VPK] Packaging uae4all2hd.vpk"
           COMMAND ${VITASDK}/bin/vita-pack-vpk -s param.sfo -b ${PROJECT_NAME}.self -a ${CMAKE_SOURCE_DIR}/psp2data/data=data -a ${CMAKE_SOURCE_DIR}/psp2data/sce_sys=sce_sys uae4all2hd.vpk
   )
@@ -312,6 +313,7 @@ if(BUILD_NX)
     -DTHUMB_PREFIX=\"./thumbs/\"
     -DTMP_PREFIX=\"./tmp/\"
     -DUSE_UAE4ALL_VKBD
+    -DPICASSO96
     -DVERSION_MAJOR=\"${VERSION_MAJOR}\"
     -DVERSION_MINOR=\"${VERSION_MINOR}\"
   )
@@ -377,11 +379,23 @@ if(BUILD_NX)
   add_executable(${PROJECT_NAME}.elf ${SRC_FILES})
   target_compile_options(${PROJECT_NAME}.elf PRIVATE ${FLAGS})
   target_link_directories(${PROJECT_NAME}.elf PRIVATE ${DEVKITPRO}/libnx/lib ${DEVKITPRO}/portlibs/switch/lib)
-  target_link_options(${PROJECT_NAME}.elf PRIVATE -specs=${DEVKITPRO}/libnx/switch.specs -march=armv8-a -mtune=cortex-a57 -mtp=soft -fPIE)
+
+  # libnx's stock specs file resolves switch.ld from the process environment.
+  # That is unreliable on Windows when Git/MSYS exports a different
+  # DEVKITPRO. Generate a build-local copy with the configured SDK path
+  # embedded, while preserving the rest of the devkitPro link rules.
+  set(SWITCH_SPECS "${CMAKE_BINARY_DIR}/switch.specs")
+  file(READ "${DEVKITPRO}/libnx/switch.specs" SWITCH_SPECS_CONTENT)
+  string(REPLACE "%:getenv(DEVKITPRO /libnx/switch.ld)"
+                 "${DEVKITPRO}/libnx/switch.ld"
+                 SWITCH_SPECS_CONTENT "${SWITCH_SPECS_CONTENT}")
+  file(WRITE "${SWITCH_SPECS}" "${SWITCH_SPECS_CONTENT}")
+
+  target_link_options(${PROJECT_NAME}.elf PRIVATE -specs=${SWITCH_SPECS} -march=armv8-a -mtune=cortex-a57 -mtp=soft -fPIE)
   target_link_libraries(${PROJECT_NAME}.elf PRIVATE ${LIBS})
   add_custom_target(${PROJECT_NAME}.nro
     DEPENDS ${PROJECT_NAME}.elf
-    COMMAND ${DEVKITPRO}/tools/bin/nacptool --create "UAE4All2 HD" "theheroGAC" "v1.05" ${PROJECT_NAME}.nacp
+    COMMAND ${DEVKITPRO}/tools/bin/nacptool --create "UAE4All2 HD" "theheroGAC" "v1.06" ${PROJECT_NAME}.nacp
     COMMAND ${DEVKITPRO}/tools/bin/elf2nro ${PROJECT_NAME}.elf uae4all2hd.nro --icon=${CMAKE_SOURCE_DIR}/switchdata/icon0.jpg --nacp=${PROJECT_NAME}.nacp --romfsdir=${CMAKE_SOURCE_DIR}/switchdata
   )
   add_custom_target(${PROJECT_NAME}_switch.zip

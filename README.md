@@ -1,4 +1,4 @@
-# UAE4ALL2 HD — Nintendo Switch Edition (v1.05)
+# UAE4ALL2 HD — Nintendo Switch Edition (v1.06)
 
 A modern, high-performance, and user-friendly Amiga emulator for Nintendo Switch, supporting Amiga 500, 500+, 600, 1200 (AGA), and CD32 hardware.
 
@@ -52,6 +52,7 @@ UAE4ALL2 HD supports the complete spectrum of Amiga computer and console hardwar
 - **Amiga CD32**: Dedicated 32-bit CD-ROM console, Motorola 68020 CPU, AGA chipset, and custom Akiko chip emulation (Chunky-to-Planar converter and CD-ROM sub-system).
 
 ### Supported File Formats
+- **Amiga RTG / Picasso96 graphics**: Optional UAEGFX-compatible RTG video memory for Amiga software that explicitly uses Picasso96 or RTG. RTG is isolated from the normal OCS/ECS/AGA, WHDLoad, floppy, hard-disk, and CD32 paths.
 - **Floppy Disk Images**:
   - **ADF & ADZ**: Standard Amiga Disk File format and gzipped ADF images across 4 virtual drives (DF0 to DF3).
   - **IPF (CAPS)**: Software Preservation Society format for original commercial copy-protected floppy dumps.
@@ -76,6 +77,20 @@ UAE4ALL2 HD supports the complete spectrum of Amiga computer and console hardwar
   - **ASF Savestates (`.asf`)**: Real-time snapshot saves across 5 independent slots per game, complete with screenshot preview thumbnails (`.png`).
 
 ---
+
+## Picasso96 / RTG Support
+
+UAE4ALL2 HD includes an **optional UAEGFX-compatible Picasso96/RTG device**. It provides a separate linear RTG VRAM area and exposes it to Amiga software through the emulated Zorro/autoconfig path. This is different from the normal OCS/ECS/AGA chipset: RTG is intended for Workbench, productivity software, and games that explicitly open a Picasso96 screen mode.
+
+RTG does **not** replace the Amiga chipset and is not required for normal software:
+
+- RTG **Disabled**: standard OCS/ECS/AGA video works as before.
+- RTG **Enabled**: standard Amiga video remains available, and RTG programs can use the additional RTG framebuffer.
+- WHDLoad, ADF, HDF, LHA, DMS, audio, input, reset, and normal non-RTG games do not require Picasso96.
+
+The current implementation includes CPU-visible linear VRAM, mode enumeration, palette/CLUT handling, common fill/copy operations, planar-to-chunky conversion, and Switch framebuffer conversion. It is a practical compatibility layer, not a claim of complete hardware Picasso96 compatibility; advanced board-specific features, hardware cursor support, and some accelerated primitives may fall back to software or remain unsupported.
+
+See the complete English setup and usage instructions in [`docs/PICASSO96_RTG_GUIDE.md`](docs/PICASSO96_RTG_GUIDE.md).
 
 ## Controls Guide
 
@@ -112,7 +127,7 @@ UAE4ALL2 HD supports the complete spectrum of Amiga computer and console hardwar
 
 ---
 
-### Dedicated Pinball Mode (v1.05)
+### Dedicated Pinball Mode (v1.06)
 
 If you play Amiga pinball classics like *Pinball Dreams*, *Pinball Fantasies*, *Pinball Illusions*, or *Slam Tilt*, you can turn your Nintendo Switch into an authentic pinball machine:
 
@@ -166,16 +181,16 @@ Perform common actions during gameplay without entering the configuration menu:
   Play original CD32 games directly from ISO, BIN/CUE, or compressed CHD images. Full Akiko custom chip emulation delivers hardware Chunky-to-Planar conversion and CD audio playback with authentic CD32 joypad controls.
 - **In-App Cover Downloader (Wi-Fi)**:
   Download official boxart directly onto the console without a PC. Highlight any game, press **(Y)** to open the Options dialog, and select **"Download Cover"**.
-- **Smooth 60 FPS Menus without Slowdowns (v1.05)**:
+- **Smooth 60 FPS Menus without Slowdowns (v1.06)**:
   All game lists, metadata, and boxart references are cached in RAM. Browsing hundreds of games is instant, responsive, and completely free from microSD card reading bottlenecks or stutter.
-- **Automatic Hardware Profiles (v1.05)**:
+- **Automatic Hardware Profiles (v1.06)**:
   The emulator automatically detects whether a WHDLoad game was designed for an Amiga 500 (OCS/ECS) or an Amiga 1200 (AGA) and applies the correct CPU architecture and memory layout. Clear color badges (Green for A500, Orange for A1200) indicate the active profile.
 - **Accurate Graphics & Speed Calibration**:
   Fixes timing issues in classic games: resolved the crash in *Shadow Dancer* during ninja movement, and fixed the doubled speed and distorted audio in *Golden Axe* by dynamically assigning the ideal blitter mode.
-- **Built-in Wireless FTP Server (v1.05)**:
+- **Built-in Wireless FTP Server (v1.06)**:
   Transfer games, Kickstarts, covers, and saves over Wi-Fi using FileZilla, WinSCP, or a smartphone without removing the microSD card. Full RFC 3659 parity (`MLSD`/`MLST`) guarantees flawless directory listing with no `502 Command not implemented` errors.
 - **Retro CRT Display Filters & Aspect Ratios**:
-  Enjoy authentic cathode-ray tube rendering with **CRT-Lottes** (phosphor mask, beam scanlines, and vignette) and **CRT-Easymode**, or razor-sharp pixel-art with **Sharp Bilinear** and **Scale2x**. Supports authentic **4:3**, classic monitor **5:4**, widescreen **16:9**, and **16:10 Wide**.
+  Enjoy authentic cathode-ray tube rendering with **CRT-Lottes**, **CRT-Easymode**, and the new **Classic CRT** preset (curvature, scanlines, phosphor grille, vignette, and subtle RGB separation), or razor-sharp pixel-art with **Sharp Bilinear** and **Scale2x**. Supports authentic **4:3**, classic monitor **5:4**, widescreen **16:9**, and **16:10 Wide**.
 - **Authentic Mechanical Drive Audio**:
   Real acoustic sound simulation using genuine audio samples for floppy drive motor spinning, track seeking, and hard disk access.
 - **Headphone-Friendly Stereo Panning**:
@@ -209,14 +224,45 @@ sdmc:/switch/uae4all2/
 
 Place your Kickstart ROM files into `sdmc:/switch/uae4all2/kickstarts/` using these recommended filenames:
 
-| Amiga Model | Version | Recommended Filename | Description |
-|---|---|---|---|
-| **Amiga 500** | Kickstart 1.3 | **`kick13.rom`** | Essential for most classic games (1985–1992) |
-| **Amiga 1200** | Kickstart 3.1 | **`kick31.rom`** | Essential for AGA games and WHDLoad titles |
-| **Amiga 500+** | Kickstart 2.04 | **`kick20.rom`** | Compatible with ECS titles |
-| **Amiga 600** | Kickstart 2.05 | **`kick37350.A600`** | Specific to Amiga 600 systems |
-| **Amiga CD32** | Kickstart 3.1 | **`kick40060.CD32`** | Primary BIOS for CD32 games |
-| **Amiga CD32** | Extended ROM | **`kick40060.CD32.ext`** | Akiko controller and CD-ROM filesystem |
+### Primary Kickstart ROMs
+
+| Amiga Model | Version | Recommended Filename | Alternative Filenames (Cloanto / TOSEC) | Size | MD5 Checksum | Description |
+|---|---|---|---|---|---|---|
+| **Amiga 500** | Kickstart 1.3 rev 34.005 | **`kick13.rom`** | `kick34005.A500`, `amiga-os-130.rom`, `kick1.3.rom` | 256 KB | `82a21c1890cae844b3df741f2762d48d`<br>*(raw: `c4f0f55f2d1e085ccae2722270083b97`)* | Essential for most classic games (1985–1992) |
+| **Amiga 1200** | Kickstart 3.1 rev 40.068 | **`kick31.rom`** | `kick40068.A1200`, `amiga-os-310-a1200.rom`, `kick3.1.rom` | 512 KB | `646773759326fbac3b2311fd8c8793ee` | Essential for AGA games and WHDLoad titles |
+| **Amiga 500+** | Kickstart 2.04 rev 37.175 | **`kick20.rom`** | `kick37175.A500`, `amiga-os-204.rom`, `kick204.rom` | 512 KB | `dc10d7bdd1b6f450773dfb558477c230` | Compatible with ECS titles |
+| **Amiga 600** | Kickstart 2.05 rev 37.350 | **`kick37350.A600`** | `kick205.rom`, `amiga-os-205-a600.rom`, `kick600.rom` | 512 KB | `465646c9b6729f77eea5314d1f057951` | Specific to Amiga 600 systems |
+| **Amiga CD32** | Kickstart 3.1 rev 40.060 | **`kick40060.CD32`** | `amiga-os-310-cd32.rom` | 512 KB | `5f8924d013dd57a89cf349f4cdedc6b1` | Primary BIOS for CD32 games |
+| **Amiga CD32** | Extended ROM rev 40.060 | **`kick40060.CD32.ext`** | `amiga-os-310-cd32-ext.rom` | 512 KB | `bb72565701b1b6faece07d68ea5da639` | Akiko controller and CD-ROM filesystem |
+
+> [!TIP]
+> A combined 1 MB CD32 ROM containing both the Kickstart and Extended ROM (`kick40060.CD32`, MD5: `f2f241bf094168cfb9e7805dc2856433`) is also supported.
+
+### Extended / Other Amiga Models
+
+| Amiga Model | Version | Recommended Filename | Alternative Filenames | Size | MD5 Checksum | Description |
+|---|---|---|---|---|---|---|
+| **Amiga 500 / 2000** | Kickstart 1.2 rev 33.180 | **`kick12.rom`** | `kick33180.A500`, `amiga-os-120.rom` | 256 KB | `85ad74194e87c08904327de1a9443b7a` | For older early software and Arcadia games |
+| **Amiga 1000** | Kickstart 1.1 rev 31.034 | **`kick31034.A1000`** | `amiga-os-110-ntsc.rom` | 256 KB | `0b8442c311caa54fb12ec88eaaa9facf` | Amiga 1000 NTSC initial bootstrap |
+| **Amiga 1000** | Kickstart 1.1 rev 32.034 | **`kick32034.A1000`** | `amiga-os-110-pal.rom` | 256 KB | `1fa1f93d3d7b51271dd1356b8b2b45a9` | Amiga 1000 PAL initial bootstrap |
+| **Amiga 600** | Kickstart 3.1 rev 40.063 | **`kick40063.A600`** | `amiga-os-310-a600.rom` | 512 KB | `e40a5dfb3d017ba8779faba30cbd1c8e` | A600 revision with IDE and PCMCIA support |
+| **Amiga 1200** | Kickstart 3.0 rev 39.106 | **`kick39106.A1200`** | `amiga-os-300-a1200.rom`, `kick30.rom` | 512 KB | `b7cc148386aa631136f510cd29e42fc3` | Original Commodore A1200 shipping ROM |
+| **Amiga 4000** | Kickstart 3.0 rev 39.106 | **`kick39106.A4000`** | `amiga-os-300-a4000.rom` | 512 KB | `9b8bdd5a3fd32c2a5a6f5b1aefc799a5` | Original Commodore A4000 shipping ROM |
+| **Amiga 4000** | Kickstart 3.1 rev 40.068 | **`kick40068.A4000`** | `amiga-os-310-a4000.rom` | 512 KB | `9bdedde6a4f33555b4a270c8ca53297d` | A4000 revision with IDE and SCSI drivers |
+| **Amiga CDTV** | Extended ROM v1.00 / 2.30 | **`kick34005.CDTV`** | `amiga-os-130-cdtv-ext.rom` | 256 KB | `89da1838a24460e4b93f4f0c5d92d48d` | CDTV CD-ROM controller and bookmark RAM |
+
+### How to Verify ROM MD5 Checksum
+
+You can quickly verify that your Kickstart ROM files match the expected checksums using your operating system terminal:
+
+- **Windows (PowerShell)**:
+  ```powershell
+  Get-FileHash -Algorithm MD5 kick13.rom
+  ```
+- **Linux / macOS**:
+  ```bash
+  md5sum kick13.rom
+  ```
 
 ---
 
@@ -248,7 +294,20 @@ Monkey_Island_Disk4.adf
 ```
 Load the `.m3u` file into drive DF0. When prompted by the game to change disks, press **`ZL + D-Pad Right`** to switch to the next disk.
 
-### 5. How do I install WHDLoad games (.lha)?
+### 5. How do I enable and use Picasso96/RTG?
+
+1. Open the **Hardware** tab before starting the Amiga software.
+2. Set **RTG VRAM (Picasso96)** to **2 MB** or **4 MB** instead of `Disabled`.
+3. Save/apply the configuration and restart the emulated machine if requested.
+4. Start software that supports Picasso96/RTG and select a mode offered by its RTG preferences.
+5. To return to normal chipset video, set **RTG VRAM (Picasso96)** back to `Disabled` and restart the emulated machine.
+
+RTG VRAM is separate from Chip RAM and Fast RAM. Enabling it does not convert an ECS/AGA game into an RTG game, and software that only uses the Amiga chipset will continue to use the normal video path.
+
+For troubleshooting, first try 640×480 or 1024×768 in 16-bit mode, then test 800×600. Replace older NRO files with the latest build when testing RTG fixes.
+
+### 6. How do I install WHDLoad games (.lha)?
+
 1. Copy the `.lha` file into `sdmc:/switch/uae4all2/roms/`.
 2. In the emulator's **WHDLoad** tab, press **X** on the file to install it. The archive is automatically extracted to `WHDLoad/`, and a prompt will ask if you want to boot the game immediately.
 
