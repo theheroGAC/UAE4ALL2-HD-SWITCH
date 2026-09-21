@@ -35,6 +35,7 @@ struct gui_info
     uae_u8 drive_writing[4];
     uae_u8 powerled;
     uae_u8 hdled;
+    uae_u8 cdled;
     uae_u16 fps;
 };
 
