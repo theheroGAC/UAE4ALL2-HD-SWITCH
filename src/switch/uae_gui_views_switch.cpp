@@ -22,6 +22,8 @@
 #include "gui.h"
 #include "cfgfile.h"
 #include "cdrom.h"
+#include "libchdr/chd.h"
+#include "libchdr/cdrom.h"
 #include "hdf_manager.h"
 #include "midi_synth.h"
 #include "autoconf.h"
@@ -69,6 +71,8 @@ static int s_switch_ftp_port = 5000;
 static volatile int s_switch_ftp_running = 0;
 
 void switch_library_mark_dirty(void);
+static void switch_unmount_cd32(void);
+static void switch_reset_media_state(void);
 static int s_switch_server_fd = -1;
 static pthread_t s_switch_ftp_thread;
 
@@ -1609,6 +1613,7 @@ void switch_view_floppy(SwitchInputState *input, int *selected_item)
             input->pressed = 0;
             s_circle_cooldown = 3;
             if (res == 1) {
+                switch_unmount_cd32();
                 write_log("[VITA] floppy: selected DF%d path=%s\n", *selected_item, new_file);
                 if (*selected_item == 0) {
                     const char *dot = strrchr(new_file, '.');
@@ -1793,6 +1798,7 @@ static void hdf_create_blank_into_slot(int slot)
     }
 
     char *hdf_files[4] = { uae4all_hard_file0, uae4all_hard_file1, uae4all_hard_file2, uae4all_hard_file3 };
+    switch_reset_media_state();
     strncpy(hdf_files[slot], path, 255);
     hdf_files[slot][255] = '\0';
     uae4all_hard_file_ro[slot] = 0;
@@ -2298,6 +2304,24 @@ static void vita_eject_all_hdf(void)
     uae4all_hard_file_ro[3] = 0;
     reset_hdConf();
     gui_update();
+}
+
+static void switch_unmount_cd32(void)
+{
+    cdrom_close_image();
+    cdrom_set_cd32_mode(0);
+}
+
+static void switch_reset_media_state(void)
+{
+    switch_unmount_cd32();
+    vita_eject_all_floppies();
+    vita_eject_all_hdf();
+    m3u_clear();
+    mainMenu_whdload_game[0] = '\0';
+    uae4all_hard_dir[0] = '\0';
+    mainMenu_bootHD = 0;
+    reset_hdConf();
 }
 
 int switch_confirm_eject_for_hard_disk_launch(void)
@@ -3148,6 +3172,25 @@ static void report_scan_progress(bool is_splash, float fraction, const char *sta
     }
 }
 
+static int switch_chd_is_cdrom(const char *path)
+{
+    chd_file *chd = NULL;
+    char meta[512];
+    uint32_t meta_len = 0;
+    int is_cd = 0;
+
+    if (!path || chd_open(path, CHD_OPEN_READ, NULL, &chd) != CHDERR_NONE || !chd)
+        return 0;
+    if (chd_get_metadata(chd, CDROM_TRACK_METADATA2_TAG, 0, meta, sizeof(meta) - 1, &meta_len, NULL, NULL) == CHDERR_NONE)
+        is_cd = 1;
+    else if (chd_get_metadata(chd, CDROM_TRACK_METADATA_TAG, 0, meta, sizeof(meta) - 1, &meta_len, NULL, NULL) == CHDERR_NONE)
+        is_cd = 1;
+    else if (chd_get_metadata(chd, GDROM_TRACK_METADATA_TAG, 0, meta, sizeof(meta) - 1, &meta_len, NULL, NULL) == CHDERR_NONE)
+        is_cd = 1;
+    chd_close(chd);
+    return is_cd;
+}
+
 static void lib_scan_directory(const char *dir_path, int depth, int *processed, int total, bool is_splash)
 {
     if (!dir_path || s_lib_game_count >= 4096)
@@ -3215,9 +3258,12 @@ static void lib_scan_directory(const char *dir_path, int depth, int *processed, 
         } else if (strcasecmp(dot, ".zip") == 0 ||
                    strcasecmp(dot, ".7z") == 0) {
             gtype = SWITCH_LIB_ZIP;
-        } else if (strcasecmp(dot, ".chd") == 0 ||
-                   strcasecmp(dot, ".iso") == 0 ||
-                   strcasecmp(dot, ".cue") == 0) {
+        } else if (strcasecmp(dot, ".chd") == 0) {
+            gtype = switch_chd_is_cdrom(full) ? SWITCH_LIB_CD32 : SWITCH_LIB_HDF;
+        } else if (strcasecmp(dot, ".iso") == 0 ||
+                   strcasecmp(dot, ".cue") == 0 ||
+                   strcasecmp(dot, ".bin") == 0 ||
+                   strcasecmp(dot, ".img") == 0) {
             gtype = SWITCH_LIB_CD32;
         } else if (strcasecmp(dot, ".hdf") == 0) {
             gtype = SWITCH_LIB_HDF;
@@ -3465,9 +3511,12 @@ static void lib_fast_scan_dir(const char *dir_path, int depth, bool *modified)
         } else if (strcasecmp(dot, ".zip") == 0 ||
                    strcasecmp(dot, ".7z") == 0) {
             gtype = SWITCH_LIB_ZIP;
-        } else if (strcasecmp(dot, ".chd") == 0 ||
-                   strcasecmp(dot, ".iso") == 0 ||
-                   strcasecmp(dot, ".cue") == 0) {
+        } else if (strcasecmp(dot, ".chd") == 0) {
+            gtype = switch_chd_is_cdrom(full) ? SWITCH_LIB_CD32 : SWITCH_LIB_HDF;
+        } else if (strcasecmp(dot, ".iso") == 0 ||
+                   strcasecmp(dot, ".cue") == 0 ||
+                   strcasecmp(dot, ".bin") == 0 ||
+                   strcasecmp(dot, ".img") == 0) {
             gtype = SWITCH_LIB_CD32;
         } else if (strcasecmp(dot, ".hdf") == 0) {
             gtype = SWITCH_LIB_HDF;
@@ -3923,6 +3972,7 @@ void switch_view_library(SwitchInputState *input, int *selected_item)
         if (vis_count > 0 && *selected_item >= 0 && *selected_item < vis_count) {
             SwitchLibGame *game = &s_lib_games[vis_index[*selected_item]];
             if (game->type == SWITCH_LIB_FLOPPY || game->type == SWITCH_LIB_ZIP) {
+                switch_unmount_cd32();
                 if (emulating && uae4all_image_file0[0] != '\0') {
                     int act = switch_show_disk_swap_dialog(game->title, game->model);
                     if (act == 1) {
@@ -3990,6 +4040,7 @@ void switch_view_library(SwitchInputState *input, int *selected_item)
                 mainMenu_case = MAIN_MENU_CASE_RESET;
                 return;
             } else if (game->type == SWITCH_LIB_M3U) {
+                switch_unmount_cd32();
                 if (emulating && uae4all_image_file0[0] != '\0') {
                     int act = switch_show_disk_swap_dialog(game->title, game->model);
                     if (act == 1) {
@@ -4052,6 +4103,7 @@ void switch_view_library(SwitchInputState *input, int *selected_item)
                 mainMenu_case = MAIN_MENU_CASE_RESET;
                 return;
             } else if (game->type == SWITCH_LIB_LHA) {
+                switch_unmount_cd32();
                 char installed_path[512];
                 installed_path[0] = '\0';
                 if (switch_whdload_install_lha(game->path, installed_path, sizeof(installed_path))) {
@@ -4077,6 +4129,7 @@ void switch_view_library(SwitchInputState *input, int *selected_item)
                     }
                 }
             } else if (game->type == SWITCH_LIB_WHDLOAD) {
+                switch_unmount_cd32();
                 if (switch_whdload_can_launch(game->title)) {
                     vita_eject_all_floppies();
                     vita_eject_all_hdf();
@@ -4098,8 +4151,7 @@ void switch_view_library(SwitchInputState *input, int *selected_item)
                     switch_show_message_box("WHDLoad Error", "No .slave file was found in the game directory.", "OK (A)");
                 }
             } else if (game->type == SWITCH_LIB_CD32) {
-                vita_eject_all_floppies();
-                vita_eject_all_hdf();
+                switch_reset_media_state();
                 if (cdrom_open_image(game->path)) {
                     mainMenu_whdload_game[0] = '\0';
                     uae4all_hard_dir[0] = '\0';
@@ -4115,8 +4167,7 @@ void switch_view_library(SwitchInputState *input, int *selected_item)
                     switch_show_message_box("CD32 Error", "The selected CD image could not be loaded.", "OK (A)");
                 }
             } else if (game->type == SWITCH_LIB_HDF) {
-                vita_eject_all_floppies();
-                vita_eject_all_hdf();
+                switch_reset_media_state();
                 copy_drive_path(uae4all_hard_file0, game->path);
                 make_hard_file_cfg_line(uae4all_hard_file0);
                 mainMenu_whdload_game[0] = '\0';
@@ -4406,7 +4457,7 @@ void switch_view_library(SwitchInputState *input, int *selected_item)
 
 void switch_view_presets(SwitchInputState *input, int *selected_item)
 {
-    const int total_items = 5;
+    const int total_items = 6;
     if (*selected_item < 0) *selected_item = 0;
     if (*selected_item >= total_items) *selected_item = total_items - 1;
 
@@ -4505,6 +4556,25 @@ void switch_view_presets(SwitchInputState *input, int *selected_item)
                 switch_show_message_box("Preset Applied", "Amiga CD32 (Akiko, CD32 Kickstart + Extended ROM) configured! Press Save Game Configuration to save it.", "OK (A)");
             else
                 switch_show_message_box("Kickstart Missing", "Kickstart CD32 ROM (kick40060.CD32) not found in ./data/kickstarts/.", "OK (A)");
+        } else if (*selected_item == 5) {
+            cdrom_close_image();
+            cdrom_audio_stop();
+            kickstart = 4;
+            extfile[0] = '\0';
+            mainMenu_CPU_model = 1;
+            mainMenu_chipset = 2 | 0x100;
+            mainMenu_chipMemory = 2;
+            mainMenu_slowMemory = 0;
+            mainMenu_fastMemory = 4;
+            UpdateCPUModelSettings();
+            UpdateMemorySettings();
+            UpdateChipsetSettings();
+            int kickstart_loaded = switch_set_kickstart(kickstart, 0);
+            bReloadKickstart = 1;
+            if (kickstart_loaded)
+                switch_show_message_box("Preset Applied", "Custom ROM (68020 AGA, 2MB Chip + 8MB Fast RAM) configured! Press Save Game Configuration to save it.", "OK (A)");
+            else
+                switch_show_message_box("Kickstart Missing", "Custom ROM (kickcustom.rom / custom.rom) not found in ./data/kickstarts/.", "OK (A)");
         }
     }
 
@@ -4520,12 +4590,13 @@ void switch_view_presets(SwitchInputState *input, int *selected_item)
         const char *desc;
         const char *tag;
         const char *recom;
-    } presets[5] = {
+    } presets[6] = {
         { "Amiga 500 (Classic OCS 1.3)", "68000 7MHz | Kickstart 1.3 | 512KB Chip + 512KB Slow RAM", "OCS", "Recommended for 95% of classic Amiga games (1985-1993)" },
         { "Amiga 500+ (Enhanced ECS 2.04)", "68000 7MHz | Kickstart 2.04 | 1MB Chip + 1MB Fast RAM", "ECS", "Recommended for late ECS titles and productivity software" },
         { "Amiga 600 (Enhanced ECS 2.05)", "68000 7MHz | Kickstart 2.05 | 2MB Chip + 8MB Fast RAM", "ECS", "Recommended for Amiga 600 games and ECS software" },
         { "Amiga 1200 (Advanced AGA 3.1)", "68020 14MHz | Kickstart 3.1 | 2MB Chip + 4MB Fast RAM", "AGA", "Recommended for AGA games (Alien Breed 3D, Slam Tilt, Gloom)" },
-        { "Amiga CD32 (Console CD Mode)", "68020 14MHz | Kickstart 3.1 CD32 | 2MB Chip RAM + Akiko", "CD32", "Recommended for Amiga CD32 ISO and CUE disc images" }
+        { "Amiga CD32 (Console CD Mode)", "68020 14MHz | Kickstart 3.1 CD32 | 2MB Chip RAM + Akiko", "CD32", "Recommended for Amiga CD32 ISO and CUE disc images" },
+        { "Amiga Custom (Custom ROM)", "68020 14MHz | Custom Kickstart | 2MB Chip + 8MB Fast RAM", "CUST", "Uses kickcustom.rom / custom.rom in ./data/kickstarts/" }
     };
 
     const int visible_items = switch_list_visible_rows(start_y, item_h, item_gap);
@@ -4539,8 +4610,11 @@ void switch_view_presets(SwitchInputState *input, int *selected_item)
 
         switch_draw_card(card_x, cy, card_w, item_h, focused, false);
 
-        unsigned int badge_col = (item == 3) ? SWITCH_COLOR_AMIGA_RED : ((item == 0) ? SWITCH_COLOR_AMIGA_BLUE : RGBA8(40, 50, 70, 255));
-        float badge_x = card_x + ((item == 4) ? 8.0f : 14.0f);
+        unsigned int badge_col = (item == 0) ? SWITCH_COLOR_AMIGA_BLUE :
+                                 ((item == 1 || item == 2) ? SWITCH_COLOR_AMIGA_GREEN :
+                                 ((item == 3 || item == 4) ? SWITCH_COLOR_AMIGA_RED :
+                                 RGBA8(147, 51, 234, 255)));
+        float badge_x = card_x + ((item == 4 || item == 5) ? 8.0f : 14.0f);
         switch_draw_badge(badge_x, cy + 14.0f, presets[item].tag, badge_col, SWITCH_COLOR_TEXT_WHITE);
 
         switch_draw_text(card_x + 72.0f, cy + 12.0f, focused ? SWITCH_COLOR_TEXT_WHITE : RGBA8(230, 240, 255, 255), 1.05f, presets[item].title);
@@ -4580,6 +4654,7 @@ void switch_view_hardware(SwitchInputState *input, int *selected_item)
         new_file[0] = '\0';
         int res = switch_gui_run_browser(new_file, currentDir, 8);
         if (res == 1) {
+            switch_reset_media_state();
             if (cdrom_open_image(new_file)) {
                 mainMenu_whdload_game[0] = '\0';
                 ApplyCd32Profile();
@@ -4592,6 +4667,7 @@ void switch_view_hardware(SwitchInputState *input, int *selected_item)
     }
     if (input->pressed & SWITCH_BTN_Y && *selected_item == 14) {
         cdrom_close_image();
+        cdrom_set_cd32_mode(0);
         switch_show_message_box("CD32 Image", "CD image ejected.", "OK (A)");
     }
 
@@ -5546,6 +5622,7 @@ static bool vita_savestate_file_exists(const char *path)
 
 static const char *vita_get_active_game_path(void)
 {
+    if (cdrom_is_cd32_mode() && current_cd_image[0] != '\0') return current_cd_image;
     if (uae4all_image_file0[0] != '\0') return uae4all_image_file0;
     if (mainMenu_bootHD == 2) {
         if (uae4all_hard_file0[0] != '\0') return uae4all_hard_file0;

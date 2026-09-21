@@ -1352,10 +1352,10 @@ void switch_show_about_box(void)
 {
     static const CreditLine credits[] = {
         { "UAE4ALL2 HD Switch", CR_TITLE },
-        { "Version 1.06 - Picasso96 / RTG Edition", CR_SUBTITLE },
+        { "Version 1.07 - CD32 / Akiko Edition", CR_SUBTITLE },
         { "Amiga Emulator for Nintendo Switch", CR_DIM },
         { "", CR_EMPTY },
-        { "Version 1.06 by theheroGAC", CR_TEXT },
+        { "Version 1.07 by theheroGAC", CR_TEXT },
         { "A high-definition port of the classic UAE4ALL Amiga emulator,", CR_TEXT },
         { "now with WHDLoad, HDF, IPF and CD32 support on Switch.", CR_TEXT },
         { "Optional Picasso96 / RTG and UAEGFX support", CR_TEXT },
@@ -2172,6 +2172,7 @@ int run_overlay_switch(void)
                 break;
             } else if (selected == 9) {
                 cdrom_close_image();
+                cdrom_set_cd32_mode(0);
                 switch_osd_show("CD32: EJECTED", 1500);
                 mainMenu_case = MAIN_MENU_CASE_RUN;
                 break;

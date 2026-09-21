@@ -74,6 +74,7 @@ static bool is_supported_ext(const char *name)
                 strcasecmp(ext, ".cue") == 0 ||
                 strcasecmp(ext, ".chd") == 0 ||
                 strcasecmp(ext, ".bin") == 0 ||
+                strcasecmp(ext, ".img") == 0 ||
                 strcasecmp(ext, ".zip") == 0 ||
                 strcasecmp(ext, ".7z") == 0);
     }
@@ -524,7 +525,7 @@ int switch_gui_run_browser(char *out_path, const char *start_dir, int disk_drive
                             b_bg = RGBA8(60, 50, 15, 255); b_fg = RGBA8(234, 179, 8, 255);
                         } else if (!strcasecmp(ext, ".zip") || !strcasecmp(ext, ".7z")) {
                             b_bg = RGBA8(65, 20, 45, 255); b_fg = RGBA8(236, 72, 153, 255);
-                        } else if (!strcasecmp(ext, ".chd") || !strcasecmp(ext, ".iso") || !strcasecmp(ext, ".cue")) {
+                        } else if (!strcasecmp(ext, ".chd") || !strcasecmp(ext, ".iso") || !strcasecmp(ext, ".cue") || !strcasecmp(ext, ".bin") || !strcasecmp(ext, ".img")) {
                             b_bg = RGBA8(60, 20, 20, 255); b_fg = RGBA8(229, 37, 33, 255);
                         } else if (!strcasecmp(ext, ".hdf") || !strcasecmp(ext, ".hda") || !strcasecmp(ext, ".vhd")) {
                             b_bg = RGBA8(15, 55, 35, 255); b_fg = RGBA8(16, 185, 129, 255);
@@ -609,7 +610,7 @@ int switch_gui_run_browser(char *out_path, const char *start_dir, int disk_drive
                     else if (!strcasecmp(ext, ".ipf")) type_desc = "CAPS / IPF Image";
                     else if (!strcasecmp(ext, ".adz")) type_desc = "Compressed ADF";
                     else if (!strcasecmp(ext, ".dms")) type_desc = "DMS Disk";
-                    else if (!strcasecmp(ext, ".iso") || !strcasecmp(ext, ".cue")) type_desc = "CD Image";
+                    else if (!strcasecmp(ext, ".iso") || !strcasecmp(ext, ".cue") || !strcasecmp(ext, ".bin") || !strcasecmp(ext, ".img")) type_desc = "CD Image";
                     else if (!strcasecmp(ext, ".lha") || !strcasecmp(ext, ".lzh")) type_desc = "LHA Archive";
                     else if (!strcasecmp(ext, ".zip")) type_desc = "ZIP Archive";
                     else if (!strcasecmp(ext, ".hdf")) type_desc = "Hard Disk Image";
