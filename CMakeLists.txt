@@ -246,7 +246,7 @@ if(BUILD_PSP2)
   add_custom_target(${PROJECT_NAME}.vpk
           DEPENDS ${PROJECT_NAME}.self-self
           COMMAND ${CMAKE_COMMAND} -E echo "[VPK] Generating param.sfo"
-          COMMAND ${VITASDK}/bin/vita-mksfoex -d ATTRIBUTE2=12 -s TITLE_ID=${TITLEID} -s APP_VER=01.06 "UAE4All2 HD" param.sfo
+          COMMAND ${VITASDK}/bin/vita-mksfoex -d ATTRIBUTE2=12 -s TITLE_ID=${TITLEID} -s APP_VER=01.07 "UAE4All2 HD" param.sfo
           COMMAND ${CMAKE_COMMAND} -E echo "[VPK] Packaging uae4all2hd.vpk"
           COMMAND ${VITASDK}/bin/vita-pack-vpk -s param.sfo -b ${PROJECT_NAME}.self -a ${CMAKE_SOURCE_DIR}/psp2data/data=data -a ${CMAKE_SOURCE_DIR}/psp2data/sce_sys=sce_sys uae4all2hd.vpk
   )
@@ -395,7 +395,7 @@ if(BUILD_NX)
   target_link_libraries(${PROJECT_NAME}.elf PRIVATE ${LIBS})
   add_custom_target(${PROJECT_NAME}.nro
     DEPENDS ${PROJECT_NAME}.elf
-    COMMAND ${DEVKITPRO}/tools/bin/nacptool --create "UAE4All2 HD" "theheroGAC" "v1.06" ${PROJECT_NAME}.nacp
+    COMMAND ${DEVKITPRO}/tools/bin/nacptool --create "UAE4All2 HD" "theheroGAC" "v1.07" ${PROJECT_NAME}.nacp
     COMMAND ${DEVKITPRO}/tools/bin/elf2nro ${PROJECT_NAME}.elf uae4all2hd.nro --icon=${CMAKE_SOURCE_DIR}/switchdata/icon0.jpg --nacp=${PROJECT_NAME}.nacp --romfsdir=${CMAKE_SOURCE_DIR}/switchdata
   )
   add_custom_target(${PROJECT_NAME}_switch.zip

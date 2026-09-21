@@ -1,4 +1,4 @@
-# UAE4ALL2 HD — Nintendo Switch Edition (v1.06)
+# UAE4ALL2 HD — Nintendo Switch Edition (v1.07)
 
 A modern, high-performance, and user-friendly Amiga emulator for Nintendo Switch, supporting Amiga 500, 500+, 600, 1200 (AGA), and CD32 hardware.
 
