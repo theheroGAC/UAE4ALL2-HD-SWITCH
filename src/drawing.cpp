@@ -33,6 +33,7 @@
 #include <time.h>
 #include "menu_config.h"
 #include "menu.h"
+#include "cdrom.h"
 
 #ifdef USE_DRAWING_EXTRA_INLINE
 #define _INLINE_ __inline__
@@ -2034,7 +2035,8 @@ static _INLINE_ void write_tdletter (int x, int y, char ch)
         *off_rgb = 0x400;
     } else {
         *track = -2;
-        switch (gui_data.hdled) {
+        int state = cdrom_is_cd32_mode() ? ((gui_data.cdled != HDLED_OFF) ? gui_data.cdled : gui_data.hdled) : gui_data.hdled;
+        switch (state) {
             case HDLED_OFF:
                 *on = 0;
                 *on_rgb = 0x004;
@@ -2094,6 +2096,10 @@ static _INLINE_ void draw_status_line (int line, int top_mode)
                 }
                 write_tdnumber(x + offs, y - TD_PADY, (track / 10) % 10);
                 write_tdnumber(x + offs + TD_NUM_WIDTH, y - TD_PADY, track % 10);
+            } else if (cdrom_is_cd32_mode()) {
+                int offs = (TD_LED_WIDTH - 2 * TD_NUM_WIDTH) / 2;
+                write_tdletter(x + offs, y - TD_PADY, 'C');
+                write_tdletter(x + offs + TD_NUM_WIDTH, y - TD_PADY, 'D');
             } else if (nr_units(currprefs.mountinfo) > 0) {
                 int offs = (TD_LED_WIDTH - 2 * TD_NUM_WIDTH) / 2;
                 write_tdletter(x + offs, y - TD_PADY, 'H');
@@ -2208,6 +2214,17 @@ static _INLINE_ void finish_drawing_frame (void)
 			}
 		} else {
 			countdown = HDLED_TIMEOUT;
+		}
+
+		static int cd_countdown = HDLED_TIMEOUT;
+		if (gui_data.cdled != HDLED_OFF)
+		{
+			if (cd_countdown-- <= 0) {
+				gui_data.cdled = HDLED_OFF;
+				cd_countdown = HDLED_TIMEOUT;
+			}
+		} else {
+			cd_countdown = HDLED_TIMEOUT;
 		}
 
 	if (mainMenu_showStatus == 0 || mainMenu_showStatus == 1)

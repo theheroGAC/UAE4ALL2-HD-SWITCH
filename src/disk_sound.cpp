@@ -1,4 +1,5 @@
 #include "disk_sound.h"
+#include "cdrom.h"
 #ifdef __PSP2__
 #include <vorbis/vorbisfile.h>
 #else
@@ -217,31 +218,37 @@ static void add_pending(volatile int *counter)
 
 void disk_sound_floppy_step(void)
 {
+    if (cdrom_is_cd32_mode()) return;
     add_pending(&pending_floppy_step);
 }
 
 void disk_sound_floppy_motor(void)
 {
+    if (cdrom_is_cd32_mode()) return;
     add_pending(&pending_floppy_motor);
 }
 
 void disk_sound_floppy_read(void)
 {
+    if (cdrom_is_cd32_mode()) return;
     add_pending(&pending_floppy_read);
 }
 
 void disk_sound_floppy_write(void)
 {
+    if (cdrom_is_cd32_mode()) return;
     add_pending(&pending_floppy_write);
 }
 
 void disk_sound_hard_read(void)
 {
+    if (cdrom_is_cd32_mode()) return;
     add_pending(&pending_hard_read);
 }
 
 void disk_sound_hard_write(void)
 {
+    if (cdrom_is_cd32_mode()) return;
     add_pending(&pending_hard_write);
 }
 
@@ -345,6 +352,7 @@ static int triangle_sample(uae_u32 phase)
 void disk_sound_mix(uae_s16 *samples, int frames, int channels, int output_rate)
 {
     int i;
+    if (cdrom_is_cd32_mode()) return;
     if (!samples || frames <= 0 || channels <= 0 || output_rate <= 0) return;
     for (i = 0; i < frames; i++) {
         int value = 0;

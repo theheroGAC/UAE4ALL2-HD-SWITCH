@@ -30,6 +30,7 @@
 #include "keyboard.h"
 #include "disk.h"
 #include "disk_sound.h"
+#include "cdrom.h"
 #include "savestate.h"
 #include <SDL.h>
 
@@ -2132,7 +2133,10 @@ if(!vkbd_mode)
 	{
 		if(!justLK)
 		{
-			vkbd_mode = !vkbd_mode;
+			if (cdrom_is_cd32_mode())
+				cdrom_audio_toggle_pause();
+			else
+				vkbd_mode = !vkbd_mode;
 			justLK=1;
 		}
 	}

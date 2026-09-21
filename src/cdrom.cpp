@@ -32,6 +32,7 @@ struct cdrom_track_entry {
     int number;
     int audio;
     int sector_size;
+    int data_offset;
     int file_index;
     int index0_valid;
     int index1_valid;
@@ -40,6 +41,7 @@ struct cdrom_track_entry {
     int pregap_frames;
     int postgap_frames;
     uae_u32 start_lba;
+    uae_u32 index1_lba;
     uae_u32 end_lba;
     long file_offset;
 };
@@ -57,9 +59,13 @@ static int cd_audio_playing = 0;
 static int cd_audio_paused = 0;
 static uae_u32 cd_audio_start_lba = 0;
 static uae_u32 cd_audio_end_lba = 0;
-static uae_u32 cd_audio_phase = 0;
+static uae_u64 cd_audio_phase = 0;
 static int cd_audio_sector_lba = -1;
+static uae_u32 cd_last_lba = 0;
+static int cd32_machine_mode = 0;
 static uae_u8 cd_audio_sector[2352];
+static FILE *cd_audio_file = NULL;
+static int cd_audio_file_index = -1;
 
 static int has_extension(const char *path, const char *extension)
 {
@@ -165,18 +171,20 @@ static int add_cue_file(const char *directory, const char *name)
     return cd_file_count++;
 }
 
-static int cue_track_sector_size(const char *line, int *audio)
+static int cue_track_sector_size(const char *line, int *audio, int *data_offset)
 {
     char mode[32];
     int number;
     if (sscanf(line, "TRACK %d %31s", &number, mode) != 2) return 0;
     *audio = strcasecmp(mode, "AUDIO") == 0;
+    *data_offset = 0;
     if (*audio) return 2352;
     if (strcasecmp(mode, "MODE1/2048") == 0 || strcasecmp(mode, "MODE2/2048") == 0)
         return 2048;
-    if (strcasecmp(mode, "MODE1/2352") == 0 || strcasecmp(mode, "MODE2/2352") == 0 ||
-        strcasecmp(mode, "MODE2/2336") == 0)
-        return 2352;
+    if (strcasecmp(mode, "MODE1/2352") == 0)
+        *data_offset = 16;
+    else if (strcasecmp(mode, "MODE2/2352") == 0 || strcasecmp(mode, "MODE2/2336") == 0)
+        *data_offset = 24;
     return 2352;
 }
 
@@ -204,13 +212,15 @@ static int open_cue(const char *cue_path)
             current_file = add_cue_file(directory, name);
         } else if (strncasecmp(line, "TRACK", 5) == 0 && isspace((unsigned char)line[5])) {
             int audio;
-            int sector_size = cue_track_sector_size(line, &audio);
+            int data_offset;
+            int sector_size = cue_track_sector_size(line, &audio, &data_offset);
             if (current_file < 0 || cd_track_count >= CDROM_MAX_TRACKS) continue;
             memset(&cd_tracks[cd_track_count], 0, sizeof(cd_tracks[cd_track_count]));
             cd_tracks[cd_track_count].number = 0;
             sscanf(line, "TRACK %d", &cd_tracks[cd_track_count].number);
             cd_tracks[cd_track_count].audio = audio;
             cd_tracks[cd_track_count].sector_size = sector_size;
+            cd_tracks[cd_track_count].data_offset = data_offset;
             cd_tracks[cd_track_count].file_index = current_file;
             cd_files[current_file].sector_size = sector_size;
             current_track = cd_track_count++;
@@ -258,13 +268,14 @@ static int open_cue(const char *cue_path)
         } else {
             track->start_lba = cd_tracks[i - 1].end_lba;
         }
+        track->index1_lba = track->start_lba;
         if (track->pregap_frames > 0)
-            track->start_lba += (uae_u32)track->pregap_frames;
+            track->index1_lba += (uae_u32)track->pregap_frames;
         if (i + 1 < cd_track_count && cd_tracks[i + 1].file_index == track->file_index) {
             int next_frames = cd_tracks[i + 1].index1_valid ? cd_tracks[i + 1].index1_frames : cd_tracks[i + 1].index0_frames;
             int length = next_frames - frames;
             if (length < 0) length = 0;
-            track->end_lba = track->start_lba + (uae_u32)length;
+            track->end_lba = track->index1_lba + (uae_u32)length;
         } else {
             FILE *data = fopen(cd_files[track->file_index].path, "rb");
             long size = 0;
@@ -273,13 +284,17 @@ static int open_cue(const char *cue_path)
                 size = ftell(data);
                 fclose(data);
             }
+            if (track->audio && has_extension(cd_files[track->file_index].path, ".wav")) {
+                if (size > 44) size -= 44;
+                else size = 0;
+            }
             if (size < track->file_offset)
-                track->end_lba = track->start_lba;
+                track->end_lba = track->index1_lba;
             else
-                track->end_lba = track->start_lba + (uae_u32)((size - track->file_offset) / track->sector_size);
+                track->end_lba = track->index1_lba + (uae_u32)((size - track->file_offset) / track->sector_size);
         }
-        if (track->end_lba < track->start_lba)
-            track->end_lba = track->start_lba;
+        if (track->end_lba < track->index1_lba)
+            track->end_lba = track->index1_lba;
     }
 
     cd_file = fopen(cd_files[cd_tracks[0].file_index].path, "rb");
@@ -297,8 +312,10 @@ static int open_plain_image(const char *path)
     cd_tracks[0].number = 1;
     cd_tracks[0].audio = 0;
     cd_tracks[0].sector_size = cd_files[0].sector_size;
+    cd_tracks[0].data_offset = 16;
     cd_tracks[0].file_index = 0;
     cd_tracks[0].start_lba = 0;
+    cd_tracks[0].index1_lba = 0;
     cd_tracks[0].file_offset = 0;
     cd_file = fopen(path, "rb");
     if (!cd_file) return 0;
@@ -316,6 +333,8 @@ static struct cdrom_track_entry *find_track(uae_u32 lba)
     }
     return NULL;
 }
+
+static uae_u8 to_bcd(int value);
 
 static int open_chd_image(const char *path)
 {
@@ -372,10 +391,12 @@ static int open_chd_image(const char *path)
         track->number = track_num;
         track->audio = (strcasecmp(type_str, "AUDIO") == 0);
         track->sector_size = 2352;
+        track->data_offset = track->audio ? 0 : (strncasecmp(type_str, "MODE2", 5) == 0 ? 24 : 16);
         track->file_index = 0;
         track->start_lba = current_lba;
-        track->end_lba = current_lba + frames;
-        current_lba += frames;
+        track->index1_lba = current_lba + (pregap > 0 ? (uae_u32)pregap : 0);
+        track->end_lba = track->index1_lba + frames;
+        current_lba = track->end_lba + (postgap > 0 ? (uae_u32)postgap : 0);
         cd_track_count++;
     }
 
@@ -385,8 +406,10 @@ static int open_chd_image(const char *path)
         track->number = 1;
         track->audio = 0;
         track->sector_size = 2352;
+        track->data_offset = 16;
         track->file_index = 0;
         track->start_lba = 0;
+        track->index1_lba = 0;
         track->end_lba = (uae_u32)(header->logicalbytes / s_cd_chd_frame_size);
         cd_track_count = 1;
     }
@@ -415,13 +438,33 @@ static int read_track_raw(struct cdrom_track_entry *track, uae_u32 lba, uae_u8 *
 
     if (!track || !buffer || lba < track->start_lba || lba >= track->end_lba)
         return 0;
-    file = cd_file;
-    if (!file) return 0;
-    if (track->file_index != 0 || cd_file_count > 1) {
+    if (lba < track->index1_lba) {
+        memset(buffer, 0, 2352);
+        return 1;
+    }
+
+    if (track->audio) {
+        if (!cd_audio_file || cd_audio_file_index != track->file_index) {
+            if (cd_audio_file) fclose(cd_audio_file);
+            cd_audio_file = fopen(cd_files[track->file_index].path, "rb");
+            cd_audio_file_index = track->file_index;
+        }
+        file = cd_audio_file;
+        if (!file) return 0;
+        long wav_offset = has_extension(cd_files[track->file_index].path, ".wav") ? 44 : 0;
+        offset = track->file_offset + wav_offset + (long)(lba - track->index1_lba) * track->sector_size;
+        if (fseek(file, offset, SEEK_SET) != 0) return 0;
+        read_bytes = fread(buffer, 1, 2352, file);
+        return read_bytes == 2352;
+    }
+
+    if (track->file_index == 0 && cd_file != NULL) {
+        file = cd_file;
+    } else {
         file = fopen(cd_files[track->file_index].path, "rb");
         if (!file) return 0;
     }
-    offset = track->file_offset + (long)(lba - track->start_lba) * track->sector_size;
+    offset = track->file_offset + (long)(lba - track->index1_lba) * track->sector_size;
     if (fseek(file, offset, SEEK_SET) != 0) {
         if (file != cd_file) fclose(file);
         return 0;
@@ -429,8 +472,15 @@ static int read_track_raw(struct cdrom_track_entry *track, uae_u32 lba, uae_u8 *
     if (track->sector_size == 2352) {
         read_bytes = fread(buffer, 1, 2352, file);
     } else {
-        memset(buffer, 0, 2352);
+        static const uae_u8 sync_hdr[12] = { 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00 };
+        uae_u32 msf = lba + 150;
+        memcpy(buffer, sync_hdr, 12);
+        buffer[12] = to_bcd((int)(msf / (60 * 75)));
+        buffer[13] = to_bcd((int)((msf / 75) % 60));
+        buffer[14] = to_bcd((int)(msf % 75));
+        buffer[15] = 1;
         read_bytes = fread(buffer + 16, 1, 2048, file);
+        memset(buffer + 16 + 2048, 0, 2352 - (16 + 2048));
     }
     if (file != cd_file) fclose(file);
     return track->sector_size == 2352 ? read_bytes == 2352 : read_bytes == 2048;
@@ -470,6 +520,7 @@ int cdrom_open_image(const char *path)
     strncpy(current_cd_image, path, sizeof(current_cd_image) - 1);
     current_cd_image[sizeof(current_cd_image) - 1] = '\0';
     cdrom_is_inserted = cd_total_sectors > 0;
+    cd_last_lba = 0;
     return cdrom_is_inserted;
 }
 
@@ -491,6 +542,7 @@ void cdrom_close_image(void)
     }
     current_cd_image[0] = '\0';
     cdrom_is_inserted = 0;
+    cd_last_lba = 0;
     cd_file_count = 0;
     cd_track_count = 0;
     cd_total_sectors = 0;
@@ -499,17 +551,20 @@ void cdrom_close_image(void)
 
 int cdrom_read_raw_sector(uae_u32 lba, uae_u8 *buffer)
 {
+    cd_last_lba = lba;
     return read_track_raw(find_track(lba), lba, buffer);
 }
 
 int cdrom_read_sector(uae_u32 lba, uae_u8 *buffer)
 {
     struct cdrom_track_entry *track = find_track(lba);
+    cd_last_lba = lba;
     if (!track || track->audio) return 0;
     if (!buffer) return 0;
+    if (lba < track->index1_lba || lba >= track->end_lba) return 0;
     if (track->sector_size == 2048) {
         FILE *file = cd_file;
-        long offset = track->file_offset + (long)(lba - track->start_lba) * 2048;
+        long offset = track->file_offset + (long)(lba - track->index1_lba) * 2048;
         size_t bytes;
         if (track->file_index != 0 || cd_file_count > 1) {
             file = fopen(cd_files[track->file_index].path, "rb");
@@ -524,7 +579,7 @@ int cdrom_read_sector(uae_u32 lba, uae_u8 *buffer)
         return bytes == 2048;
     }
     if (!read_track_raw(track, lba, cd_audio_sector)) return 0;
-    memcpy(buffer, cd_audio_sector + 16, 2048);
+    memcpy(buffer, cd_audio_sector + track->data_offset, 2048);
     return 1;
 }
 
@@ -543,7 +598,7 @@ int cdrom_get_track_info(int index, CdromTrackInfo *info)
     if (!info || index < 0 || index >= cd_track_count) return 0;
     info->number = cd_tracks[index].number;
     info->audio = cd_tracks[index].audio;
-    info->start_lba = cd_tracks[index].start_lba;
+    info->start_lba = cd_tracks[index].index1_lba;
     info->end_lba = cd_tracks[index].end_lba;
     return 1;
 }
@@ -557,24 +612,31 @@ int cdrom_get_subcode(uae_u32 lba, uae_u8 *buffer)
     int seconds;
     int frames;
     if (!track || !buffer) return 0;
-    memset(buffer, 0, 12);
-    buffer[0] = (uae_u8)(track->audio ? 0x01 : 0x41);
-    buffer[1] = to_bcd(track->number);
-    buffer[2] = 1;
-    relative = (int)(lba - track->start_lba);
+    memset(buffer, 0, 13);
+    buffer[0] = 0;
+    buffer[1] = (uae_u8)(track->audio ? 0x01 : 0x41);
+    buffer[2] = to_bcd(track->number);
+    if (lba < track->index1_lba) {
+        buffer[3] = 0;
+        relative = (int)(track->index1_lba - lba);
+    } else {
+        buffer[3] = 1;
+        relative = (int)(lba - track->index1_lba);
+    }
     absolute = (int)lba + 150;
     minutes = relative / (60 * 75);
     seconds = (relative / 75) % 60;
     frames = relative % 75;
-    buffer[3] = to_bcd(minutes);
-    buffer[4] = to_bcd(seconds);
-    buffer[5] = to_bcd(frames);
+    buffer[4] = to_bcd(minutes);
+    buffer[5] = to_bcd(seconds);
+    buffer[6] = to_bcd(frames);
+    buffer[7] = 0;
     minutes = absolute / (60 * 75);
     seconds = (absolute / 75) % 60;
     frames = absolute % 75;
-    buffer[7] = to_bcd(minutes);
-    buffer[8] = to_bcd(seconds);
-    buffer[9] = to_bcd(frames);
+    buffer[8] = to_bcd(minutes);
+    buffer[9] = to_bcd(seconds);
+    buffer[10] = to_bcd(frames);
     return 1;
 }
 
@@ -584,9 +646,39 @@ int cdrom_is_audio_lba(uae_u32 lba)
     return track && track->audio;
 }
 
+uae_u32 cdrom_get_current_lba(void)
+{
+    if (cd_audio_playing) {
+        uae_u32 source_frame = (uae_u32)(cd_audio_phase >> CDROM_AUDIO_PHASE_SHIFT);
+        cd_last_lba = cd_audio_start_lba + source_frame / CDROM_AUDIO_FRAMES_PER_SECTOR;
+        if (cd_last_lba > cd_audio_end_lba) cd_last_lba = cd_audio_end_lba;
+    }
+    return cd_last_lba;
+}
+
+void cdrom_set_cd32_mode(int enabled)
+{
+    cd32_machine_mode = enabled != 0;
+}
+
+int cdrom_is_cd32_mode(void)
+{
+    extern int kickstart;
+    return cd32_machine_mode || kickstart == 6 || cdrom_is_inserted;
+}
+
 void cdrom_audio_start(uae_u32 start_lba, uae_u32 end_lba)
 {
     struct cdrom_track_entry *track = find_track(start_lba);
+    if (track && !track->audio) {
+        for (int i = 0; i < cd_track_count; i++) {
+            if (cd_tracks[i].audio && cd_tracks[i].start_lba >= start_lba) {
+                track = &cd_tracks[i];
+                start_lba = track->start_lba;
+                break;
+            }
+        }
+    }
     if (!track || !track->audio) {
         cdrom_audio_stop();
         return;
@@ -599,11 +691,17 @@ void cdrom_audio_start(uae_u32 start_lba, uae_u32 end_lba)
     cd_audio_sector_lba = -1;
     cd_audio_paused = 0;
     cd_audio_playing = 1;
+    cd_last_lba = start_lba;
 }
 
 void cdrom_audio_pause(int paused)
 {
     if (cd_audio_playing) cd_audio_paused = paused != 0;
+}
+
+void cdrom_audio_toggle_pause(void)
+{
+    if (cd_audio_playing) cd_audio_paused = !cd_audio_paused;
 }
 
 void cdrom_audio_stop(void)
@@ -619,7 +717,7 @@ int cdrom_audio_is_playing(void)
     return cd_audio_playing && !cd_audio_paused;
 }
 
-void cdrom_audio_get_state(uae_u32 *start_lba, uae_u32 *end_lba, uae_u32 *phase, int *playing, int *paused)
+void cdrom_audio_get_state(uae_u32 *start_lba, uae_u32 *end_lba, uae_u64 *phase, int *playing, int *paused)
 {
     if (start_lba) *start_lba = cd_audio_start_lba;
     if (end_lba) *end_lba = cd_audio_end_lba;
@@ -628,7 +726,7 @@ void cdrom_audio_get_state(uae_u32 *start_lba, uae_u32 *end_lba, uae_u32 *phase,
     if (paused) *paused = cd_audio_paused;
 }
 
-void cdrom_audio_set_state(uae_u32 start_lba, uae_u32 end_lba, uae_u32 phase, int playing, int paused)
+void cdrom_audio_set_state(uae_u32 start_lba, uae_u32 end_lba, uae_u64 phase, int playing, int paused)
 {
     cd_audio_start_lba = start_lba;
     cd_audio_end_lba = end_lba;
@@ -647,7 +745,7 @@ void cdrom_mix_audio(uae_s16 *samples, int frames, int channels, int output_rate
     increment = (uae_u32)(((uae_u64)44100 * CDROM_AUDIO_PHASE_ONE) / (uae_u32)output_rate);
     if (increment == 0) increment = 1;
     for (i = 0; i < frames && cd_audio_playing; i++) {
-        uae_u32 source_frame = cd_audio_phase >> CDROM_AUDIO_PHASE_SHIFT;
+        uae_u32 source_frame = (uae_u32)(cd_audio_phase >> CDROM_AUDIO_PHASE_SHIFT);
         uae_u32 lba = cd_audio_start_lba + source_frame / CDROM_AUDIO_FRAMES_PER_SECTOR;
         int frame = (int)(source_frame % CDROM_AUDIO_FRAMES_PER_SECTOR);
         int left;

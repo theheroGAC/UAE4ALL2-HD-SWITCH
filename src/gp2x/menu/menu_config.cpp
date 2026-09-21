@@ -13,9 +13,7 @@
 #include "custom.h"
 #include "gp2x.h"
 #include "cfgfile.h"
-#ifdef __PSP2__
 #include "cdrom.h"
-#endif
 #if defined(__PSP2__) || defined(__SWITCH__)
 #include "midi_synth.h"
 #endif
@@ -677,6 +675,8 @@ static int has_hdf_files(void)
 
 void ApplyA500Profile(void)
 {
+    cdrom_close_image();
+    cdrom_set_cd32_mode(0);
     kickstart = 1;
     extfile[0] = '\0';
     mainMenu_CPU_model = 0;
@@ -695,6 +695,8 @@ void ApplyA500Profile(void)
 
 void ApplyA1200Profile(void)
 {
+    cdrom_close_image();
+    cdrom_set_cd32_mode(0);
     kickstart = 3;
     extfile[0] = '\0';
     mainMenu_CPU_model = 1;
@@ -712,6 +714,8 @@ void ApplyA1200Profile(void)
 
 void ApplyCd32Profile(void)
 {
+    disk_sound_reset();
+    cdrom_set_cd32_mode(1);
     kickstart = 6;
     mainMenu_CPU_model = 1;
     mainMenu_chipset = 2;
@@ -730,6 +734,8 @@ void ApplyCd32Profile(void)
 
 void ApplyWHDLoadA500Profile(void)
 {
+    cdrom_close_image();
+    cdrom_set_cd32_mode(0);
     kickstart = 3;
     extfile[0] = '\0';
     mainMenu_CPU_model = 0;
@@ -799,6 +805,8 @@ void ApplyWHDLoadPreset(const char *game_name)
 
 void ApplyAutomaticGamePreset(int media_type)
 {
+    if (media_type != 3)
+        cdrom_set_cd32_mode(0);
     if (media_type == 3) {
         ApplyCd32Profile();
     } else if (media_type == 2) {
@@ -1686,6 +1694,10 @@ int saveconfig(int general)
     } else {
             fputs("df3=\n",f);
     }
+#if defined(__PSP2__) || defined(__SWITCH__)
+    snprintf((char*)buffer, 255, "cdimage=%s\n", current_cd_image[0] ? current_cd_image : "");
+    fputs(buffer,f);
+#endif
     snprintf((char*)buffer, 255, "script=%d\n",mainMenu_enableScripts);
     fputs(buffer,f);
     snprintf((char*)buffer, 255, "screenshot=%d\n",mainMenu_enableScreenshots);
@@ -2293,7 +2305,7 @@ void loadconfig(int general)
         if (fscanf(f,"rtgMemory=%d\n",&mainMenu_rtgMemory) != 1) mainMenu_rtgMemory = 0;
         if (mainMenu_rtgMemory < 0 || mainMenu_rtgMemory > 2) mainMenu_rtgMemory = 0;
 #endif
-#ifdef __PSP2__
+#if defined(__PSP2__) || defined(__SWITCH__)
         memset(filebuffer, 0, 256);
         if (fscanf(f,"cdimage=%255[^\n]\n",filebuffer) == 1 && filebuffer[0] != '\0') {
             if (cdrom_open_image(filebuffer))

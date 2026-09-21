@@ -52,6 +52,8 @@ extern "C" int main( int argc, char *argv[] );
 #include "menu.h"
 #include "menu_config.h"
 #include "gp2xutil.h"
+#include "akiko.h"
+#include "cdrom.h"
 #ifdef __SWITCH__
 #include "switch/whdload_manager_switch.h"
 #include "switch/uae_gui_switch.h"
@@ -257,6 +259,7 @@ void do_leave_program (void)
     SDL_FreeSurface(current_screenshot);
 #endif
 
+    akiko_nvram_flush ();
     graphics_leave ();
 #ifdef PICASSO96
     picasso_shutdown ();

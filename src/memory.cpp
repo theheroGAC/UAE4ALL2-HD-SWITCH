@@ -836,6 +836,23 @@ static int read_kickstart (FILE *f, uae_u8 *mem, int size, int dochecksum, int *
     return 1;
 }
 
+static void patch_cd32_extended_rom (uae_u8 *p, int size)
+{
+    static const uae_u8 patchdata[] = { 0x0c, 0x82, 0x00, 0x00, 0x03, 0xe8, 0x64, 0x00, 0x00, 0x46 };
+    if (!p || size < 524288)
+        return;
+    for (int j = 0; j < size - (int)sizeof(patchdata); j++) {
+        if (!memcmp(p + j, patchdata, sizeof(patchdata))) {
+            p[j + 6] = 0x4e;
+            p[j + 7] = 0x71;
+            p[j + 8] = 0x4e;
+            p[j + 9] = 0x71;
+            write_log("[CD32] extended rom delay loop patched at 0x%08x\n", 0xE00000 + j + 6);
+            return;
+        }
+    }
+}
+
 static int load_extendedkickstart (void)
 {
   FILE *f;
@@ -898,6 +915,8 @@ static int load_extendedkickstart (void)
   }
   fclose (f);
   printf("Extended ROM loaded: %s\n", extfile);
+  if (extromtype () == EXTENDED_ROM_CD32)
+      patch_cd32_extended_rom (extendedkickmemory, extendedkickmem_size);
   swab_memory(extendedkickmemory, extendedkickmem_size);
 
   return 1;
